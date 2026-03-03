@@ -62,7 +62,7 @@ export default function LoginScreen() {
           <Text style={styles.signupText}>
             Bạn không có tài khoản vui lòng?{" "}
           </Text>
-          <TouchableOpacity onPress={() => router.push("/../components/Client/DangKy/signup")}>
+          <TouchableOpacity onPress={() => router.push("/signup")}>
             <Text style={styles.signupLink}>Đăng ký</Text>
           </TouchableOpacity>
         </View>

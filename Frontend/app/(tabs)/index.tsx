@@ -1,10 +1,10 @@
-import Welcome from '../../components/Client/Welcome/welcome';
-import Login from '../../components/Client/DangNhap/login';
-import Signup from '../../components/Client/DangKy/signup';
+import Welcome from '../welcome';
+import Login from '../login';
+import Signup from '../signup';
 import { Redirect } from 'expo-router';
 
 export default function Index() {
-  return <Redirect href="/../components/Client/Welcome/welcome" />;
+  return <Redirect href="/welcome" />;
 }
 export {
   Welcome,

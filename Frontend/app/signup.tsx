@@ -131,7 +131,7 @@ export default function SignupScreen() {
 
               <View style={styles.linkRow}>
                 <Text style={styles.linkText}>Bạn đã có tài khoản chưa?</Text>
-                <TouchableOpacity onPress={() => router.push("/../components/Client/DangNhap/login")}>
+                <TouchableOpacity onPress={() => router.push("/login")}>
                   <Text style={styles.linkHighlight}> Đăng nhập</Text>
                 </TouchableOpacity>
               </View>

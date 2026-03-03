@@ -15,7 +15,7 @@ export default function WelcomeScreen() {
         <Text style={styles.title}>ECMS</Text>
 
         <Image
-          source={require('../assets/images/Logo.png')}
+          source={require("../assets/images/Logo.png")}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -25,14 +25,14 @@ export default function WelcomeScreen() {
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => router.push('/../components/Client/DangKy/signup')}
+          onPress={() => router.push('/signup')}
         >
           <Text style={styles.primaryText}>Sign Up</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => router.push('/../components/Client/DangNhap/login')}
+          onPress={() => router.push('/login')}
         >
           <Text style={styles.secondaryText}>Login</Text>
         </TouchableOpacity>
