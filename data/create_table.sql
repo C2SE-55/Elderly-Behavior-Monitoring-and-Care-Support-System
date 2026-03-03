@@ -3,7 +3,7 @@ USE data_ecms;
 CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     full_name VARCHAR(100),
-    username VARCHAR(100),
+    username VARCHAR(100) UNIQUE,
     email VARCHAR(100) UNIQUE,
     password VARCHAR(255),
     phone VARCHAR(20),
@@ -16,6 +16,11 @@ CREATE TABLE roles (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name ENUM('admin','caregiver','family') NOT NULL UNIQUE
 );
+-- Thêm dữ liệu mặc định cho các role
+INSERT INTO roles (name) VALUES
+  ('admin'),
+  ('caregiver'),
+  ('family');
  
 -- 3 user_roles (chia role)
 CREATE TABLE user_roles (
