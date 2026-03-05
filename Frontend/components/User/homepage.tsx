@@ -89,20 +89,22 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: "#F7F7FB",
-        paddingHorizontal: 20,
-        paddingTop: 40,
+        paddingHorizontal: 24,
+        paddingTop: 60,
     },
 
     header: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
+        paddingHorizontal: 6, 
         marginBottom: 24,
     },
 
     headerTextWrapper: {
         flexDirection: "row",
         alignItems: "center",
+        marginLeft: 12,
     },
 
     wave: {
@@ -114,6 +116,7 @@ const styles = StyleSheet.create({
         fontSize: scaleFont(22),
         fontWeight: "800",
         color: "#4B2E83",
+        letterSpacing: 0.5,
     },
 
     avatar: {
