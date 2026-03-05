@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import Logo from '@assets/images/Logo.png';
+import Logo from '../../assets/images/Logo.png';
 
 const PRIMARY = '#4B2E83';
 
@@ -26,14 +26,14 @@ export default function WelcomeScreen() {
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => router.push('/signup')}
+          onPress={() => router.push('/(auths)/signup')}
         >
           <Text style={styles.primaryText}>Sign Up</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => router.push('/login')}
+          onPress={() => router.push('/(auths)/login')}
         >
           <Text style={styles.secondaryText}>Login</Text>
         </TouchableOpacity>
@@ -42,6 +42,7 @@ export default function WelcomeScreen() {
   );
 }
 
+{/* Css style */}
 const styles = StyleSheet.create({
   container: {
     flex: 1,

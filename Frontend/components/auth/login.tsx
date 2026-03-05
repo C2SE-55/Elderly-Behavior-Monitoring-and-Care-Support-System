@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import Logo from "@assets/images/Logo.png";
+import Logo from "../../assets/images/Logo.png";
 
 const PRIMARY = "#4B2E83";
 
@@ -47,6 +47,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* <<<<<<< HEAD
         <TouchableOpacity style={styles.forgotContainer}>
           <Text style={styles.forgotText}>Quên mật khẩu?</Text>
         </TouchableOpacity>
@@ -54,15 +55,16 @@ export default function LoginScreen() {
         <TouchableOpacity
           style={styles.loginButton}
           onPress={() => router.replace("/getstared")}
-        >
+        > */}
+
+        <TouchableOpacity style={styles.loginButton}>
+
           <Text style={styles.loginText}>Đăng nhập</Text>
         </TouchableOpacity>
 
         <View style={styles.signupContainer}>
-          <Text style={styles.signupText}>
-            Bạn không có tài khoản vui lòng?{" "}
-          </Text>
-          <TouchableOpacity onPress={() => router.push("/signup")}>
+          <Text style={styles.signupText}>Bạn không có tài khoản vui lòng? </Text>
+          <TouchableOpacity onPress={() => router.push("/(auths)/signup")}>
             <Text style={styles.signupLink}>Đăng ký</Text>
           </TouchableOpacity>
         </View>
@@ -71,6 +73,7 @@ export default function LoginScreen() {
   );
 }
 
+{/* Css style */ }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
