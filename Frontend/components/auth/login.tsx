@@ -51,7 +51,10 @@ export default function LoginScreen() {
           <Text style={styles.forgotText}>Quên mật khẩu?</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.loginButton}>
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={() => router.replace("/getstared")}
+        >
           <Text style={styles.loginText}>Đăng nhập</Text>
         </TouchableOpacity>
 
