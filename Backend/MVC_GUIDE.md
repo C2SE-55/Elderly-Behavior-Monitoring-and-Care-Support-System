@@ -76,7 +76,7 @@ Content-Type: application/json
   "username": "john_doe",
   "email": "john@dtu.edu.vn",      # có thể là Gmail hoặc Google Workspace
   "password": "password123",
-  "role": "family",                # tùy chọn: 'family' hoặc 'caregiver' (không được chọn 'admin')
+ "confirmPassword": "securePass123",
   "dateOfBirth": "12/01/2004"      # định dạng hỗ trợ: 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'
   # các trường tùy chọn: "phone", "fullName"
 }
@@ -84,10 +84,10 @@ Content-Type: application/json
   "username": "john_doj",
   "email": "tranxuanhieu3@dtu.edu.vn",     
   "password": "password123",
+   "confirmPassword": "securePass123",
   "phone": "0905886957",
 "fullName": "Tran Hieu",
-"dateOfBirth": "12/01/2004",
-  "role": "family"  
+"dateOfBirth": "12/01/2004"
 }
 ```
 
@@ -123,9 +123,241 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "email": "john@example.com",
   "phone": "0987654321",
-  "fullName": "John Doe Updated"
+  "fullName": "John Doe Updated",
+  "password" : "dksakd"
+}
+```
+
+**Yêu cầu:**
+- `Authorization` Header (bắt buộc): JWT token
+- `phone` (tùy chọn): Số điện thoại (phải đúng 10 chữ số - định dạng Việt Nam)
+- `fullName` (tùy chọn): Tên đầy đủ
+
+**Ràng buộc - KHÔNG ĐƯỢC PHÉP chỉnh sửa:**
+- ❌ `email` - Email không thể thay đổi
+- ❌ `username` - Username không thể thay đổi
+- ❌ `dateOfBirth` - Ngày sinh không thể thay đổi
+
+**Ghi chú:**
+- Số điện thoại phải là 10 chữ số (định dạng Việt Nam), ví dụ: `0912345678`
+- Chỉ có thể cập nhật profile của chính mình
+- Nếu cố gắng cập nhật các trường bị cấm sẽ nhận lỗi retval
+- Ít nhất một trường (phone hoặc fullName) phải được cung cấp
+
+**Response Success:**
+```json
+{
+  "status": "success",
+  "message": "Cập nhật profile thành công",
+  "data": null
+}
+```
+
+**Response Error Examples:**
+```json
+// Số điện thoại không hợp lệ
+{
+  "status": "fail",
+  "message": "Số điện thoại phải có đúng 10 chữ số (định dạng Việt Nam)"
+}
+
+// Cố gắng cập nhật email hoặc username
+{
+  "status": "fail",
+  "message": "Không được phép chỉnh sửa email, username, và ngày sinh"
+}
+
+// Token không hợp lệ
+{
+  "status": "error",
+  "message": "Token không hợp lệ"
+}
+```
+
+### Admin Endpoints (Chỉ Admin)
+
+Tất cả các endpoint admin đều yêu cầu token của một admin. Nếu user không phải admin sẽ nhận lỗi 403 Forbidden.
+
+#### Get All Users
+```http
+GET /api/auth/admin/users
+Authorization: Bearer <admin_token>
+```
+
+**Yêu cầu:**
+- `Authorization` Header (bắt buộc): JWT token của admin
+
+**Ghi chú:**
+- Chỉ admin có quyền xem danh sách tất cả tài khoản
+
+**Response Success:**
+```json
+{
+  "status": "success",
+  "message": "Lấy danh sách tất cả tài khoản thành công",
+  "data": [
+    {
+      "id": 1,
+      "username": "john_doe",
+      "email": "john@gmail.com",
+      "phone": "0912345678",
+      "fullName": "John Doe",
+      "dateOfBirth": "2004-01-12",
+      "createdAt": "2024-03-05T10:30:00.000Z",
+      "role": "user"
+    },
+    {
+      "id": 2,
+      "username": "jane_smith",
+      "email": "jane@gmail.com",
+      "phone": "0987654321",
+      "fullName": "Jane Smith",
+      "dateOfBirth": "2005-05-20",
+      "createdAt": "2024-03-05T11:45:00.000Z",
+      "role": "caregiver"
+    }
+  ]
+}
+```
+
+**Response Error:**
+```json
+{
+  "status": "error",
+  "message": "Chỉ admin có quyền xem danh sách tất cả tài khoản"
+}
+```
+
+#### Get User By ID
+```http
+GET /api/auth/admin/users/:id
+Authorization: Bearer <admin_token>
+```
+
+**Yêu cầu:**
+- `Authorization` Header (bắt buộc): JWT token của admin
+- `id` (URL parameter, bắt buộc): ID của tài khoản cần xem
+
+**Ghi chú:**
+- Chỉ admin có quyền xem thông tin chi tiết của một tài khoản
+
+**Response Success:**
+```json
+{
+  "status": "success",
+  "message": "Lấy thông tin tài khoản thành công",
+  "data": {
+    "id": 1,
+    "username": "john_doe",
+    "email": "john@gmail.com",
+    "phone": "0912345678",
+    "full_name": "John Doe",
+    "date_of_birth": "2004-01-12",
+    "role": "user",
+    "created_at": "2024-03-05T10:30:00.000Z"
+  }
+}
+```
+
+**Response Error:**
+```json
+{
+  "status": "error",
+  "message": "Tài khoản không tồn tại"
+}
+```
+
+#### Delete User
+```http
+DELETE /api/auth/admin/users/:id
+Authorization: Bearer <admin_token>
+```
+
+**Yêu cầu:**
+- `Authorization` Header (bắt buộc): JWT token của admin
+- `id` (URL parameter, bắt buộc): ID của tài khoản cần xóa
+
+**Ghi chú:**
+- Chỉ admin có quyền xóa tài khoản
+- Khi xóa một tài khoản, tất cả dữ liệu liên quan (user_roles, health_profiles, v.v.) sẽ được xóa tự động
+- Hành động này không thể hoàn tác
+
+**Response Success:**
+```json
+{
+  "status": "success",
+  "message": "Xóa tài khoản thành công",
+  "data": null
+}
+```
+
+**Response Error:**
+```json
+{
+  "status": "error",
+  "message": "Tài khoản không tồn tại"
+}
+```
+
+#### Search Users By Name
+```http
+GET /api/auth/admin/search?name=john
+Authorization: Bearer <admin_token>
+```
+
+**Yêu cầu:**
+- `Authorization` Header (bắt buộc): JWT token của admin
+- `name` (Query parameter, bắt buộc): Từ khóa tìm kiếm (tìm theo username hoặc full_name)
+
+**Ghi chú:**
+- Chỉ admin có quyền tìm kiếm tài khoản
+- Tìm kiếm không phân biệt hoa thường
+- Kết quả được sắp xếp theo full_name tăng dần
+- Hỗ trợ tìm kiếm một phần (partial match)
+
+**Response Success:**
+```json
+{
+  "status": "success",
+  "message": "Tìm thấy 2 tài khoản phù hợp",
+  "data": [
+    {
+      "id": 1,
+      "username": "john_doe",
+      "email": "john@gmail.com",
+      "phone": "0912345678",
+      "fullName": "John Doe",
+      "dateOfBirth": "2004-01-12",
+      "createdAt": "2024-03-05T10:30:00.000Z",
+      "role": "user"
+    },
+    {
+      "id": 5,
+      "username": "johnson_smith",
+      "email": "johnson@gmail.com",
+      "phone": "0978654321",
+      "fullName": "Johnson Smith",
+      "dateOfBirth": "2003-06-15",
+      "createdAt": "2024-03-06T14:20:00.000Z",
+      "role": "caregiver"
+    }
+  ]
+}
+```
+
+**Response Error:**
+```json
+// Không cung cấp từ khóa tìm kiếm
+{
+  "status": "fail",
+  "message": "Vui lòng cung cấp từ khóa tìm kiếm"
+}
+
+// User không phải admin
+{
+  "status": "error",
+  "message": "Chỉ admin có quyền tìm kiếm tài khoản"
 }
 ```
 

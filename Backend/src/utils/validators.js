@@ -80,6 +80,12 @@ const isValidPhone = (phone) => {
   return phoneRegex.test(phone);
 };
 
+// Kiểm tra định dạng số điện thoại Việt Nam (đúng 10 chữ số)
+const isValidVietnamesePhone = (phone) => {
+  const phoneRegex = /^[0-9]{10}$/;
+  return phoneRegex.test(phone);
+};
+
 // Kiểm tra mật khẩu (tối thiểu 6 ký tự)
 const isValidPassword = (password) => {
   return password && password.length >= 6;
@@ -95,6 +101,7 @@ module.exports = {
   isGmail,
   parseDateToSQL,
   isValidPhone,
+  isValidVietnamesePhone,
   isValidPassword,
   isEmptyField,
 };

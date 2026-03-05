@@ -14,11 +14,12 @@ CREATE TABLE users (
 -- 2 ROLES 
 CREATE TABLE roles (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    name ENUM('admin','caregiver','family') NOT NULL UNIQUE
+    name ENUM('admin','user','caregiver','family') NOT NULL UNIQUE
 );
 -- Thêm dữ liệu mặc định cho các role
 INSERT INTO roles (name) VALUES
   ('admin'),
+  ('user'),
   ('caregiver'),
   ('family');
  
@@ -27,7 +28,7 @@ CREATE TABLE user_roles (
     user_id INT,
     role_id INT,
     PRIMARY KEY(user_id, role_id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
@@ -45,7 +46,7 @@ CREATE TABLE health_profiles (
     chronic_diseases TEXT,
     allergies TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- 5 CAMERAS (camera)

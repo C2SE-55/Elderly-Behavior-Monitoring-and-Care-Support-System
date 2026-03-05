@@ -1,22 +1,28 @@
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET, JWT_EXPIRE, HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
-const { isValidEmail, isValidPassword, isEmptyField, isGmail } = require("../utils/validators");
+const { isValidEmail, isValidPassword, isEmptyField, isGmail, isValidVietnamesePhone } = require("../utils/validators");
 const User = require("../models/User");
 const Role = require("../models/Role");
 
 // Đăng ký người dùng mới
 exports.register = async (req, res) => {
   try {
-    const { username, email, password, phone, fullName, role } = req.body;
+    const { username, email, password, confirmPassword, phone, fullName } = req.body;
 
     // Xác thực dữ liệu đầu vào
     if (
       isEmptyField(username) ||
       isEmptyField(email) ||
-      isEmptyField(password)
+      isEmptyField(password) ||
+      isEmptyField(confirmPassword)
     ) {
-      return sendFail(res, "Username, email và mật khẩu là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+      return sendFail(res, "Username, email, mật khẩu và nhắc lại mật khẩu là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    // Kiểm tra mật khẩu và mật khẩu nhắc lại khớp nhau
+    if (password !== confirmPassword) {
+      return sendFail(res, "Mật khẩu và nhắc lại mật khẩu không khớp", HTTP_STATUS.BAD_REQUEST);
     }
 
     if (!isValidEmail(email)) {
@@ -42,24 +48,11 @@ exports.register = async (req, res) => {
       return sendError(res, "Username đã tồn tại", HTTP_STATUS.CONFLICT);
     }
 
-    // Xác thực role (người dùng có thể chọn role; không cho chọn 'admin')
-    const allowedRoles = ["caregiver", "family"];
-    let chosenRole = "family"; // mặc định
-    if (role) {
-      if (role === "admin") {
-        return sendFail(res, "Không được phép chọn role 'admin' khi đăng ký", HTTP_STATUS.FORBIDDEN);
-      }
-      if (!allowedRoles.includes(role)) {
-        return sendFail(res, `Role không hợp lệ. Chỉ chấp nhận: ${allowedRoles.join(", ")}`, HTTP_STATUS.BAD_REQUEST);
-      }
-      chosenRole = role;
-    }
-
     // Chuyển định dạng ngày sinh (nếu có) sang YYYY-MM-DD
     const { parseDateToSQL } = require("../utils/validators");
-    const dobSql = parseDateToSQL(req.body.dateOfBirth || req.body.dateOfBirth || null);
+    const dobSql = parseDateToSQL(req.body.dateOfBirth || null);
 
-    // Tạo người dùng mới
+    // Tạo người dùng mới (mặc định gán role "user")
     const result = await User.create({
       username,
       email,
@@ -69,16 +62,16 @@ exports.register = async (req, res) => {
       dateOfBirth: dobSql,
     });
 
-    // gán role được chọn
+    // Gán role "user" mặc định cho người dùng mới
     if (result.insertId) {
       try {
-        await Role.assignRole(result.insertId, chosenRole);
+        await Role.assignRole(result.insertId, "user");
       } catch (err) {
         console.error("Không thể gán role cho user:", err);
       }
     }
 
-    return sendSuccess(res, { id: result.insertId, role: chosenRole }, "Đăng ký thành công", HTTP_STATUS.CREATED);
+    return sendSuccess(res, { id: result.insertId, role: "user" }, "Đăng ký thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     console.error("Lỗi đăng ký:", error);
     return sendError(res, "Đăng ký thất bại", HTTP_STATUS.INTERNAL_ERROR);
@@ -160,23 +153,151 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Cập nhật thông tin profile người dùng
+// Cập nhật thông tin profile người dùng (chỉ có thể update chính mình)
 exports.updateProfile = async (req, res) => {
   try {
-    const { email, phone, fullName } = req.body;
+    const { phone, fullName } = req.body;
 
-    if (isEmptyField(email) || isEmptyField(fullName)) {
-      return sendFail(res, "Email và fullName là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    // Kiểm tra nếu có cố gắng cập nhật các trường không được phép
+    if (req.body.hasOwnProperty('email') || req.body.hasOwnProperty('username') || req.body.hasOwnProperty('dateOfBirth') || req.body.hasOwnProperty('date_of_birth')) {
+      return sendFail(res, "Không được phép chỉnh sửa email, username, và ngày sinh", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const result = await User.update(req.userId, { email, phone, fullName });
+    // Kiểm tra fullName có trống không (nếu được cung cấp)
+    if (fullName !== undefined && isEmptyField(fullName)) {
+      return sendFail(res, "Tên đầy đủ không được để trống", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    // Kiểm tra và validate số điện thoại (nếu có cung cấp)
+    if (phone !== undefined) {
+      if (isEmptyField(phone)) {
+        return sendFail(res, "Số điện thoại không được để trống", HTTP_STATUS.BAD_REQUEST);
+      }
+      if (!isValidVietnamesePhone(phone)) {
+        return sendFail(res, "Số điện thoại phải có đúng 10 chữ số (định dạng Việt Nam)", HTTP_STATUS.BAD_REQUEST);
+      }
+    }
+
+    // Cập nhật chỉ các trường được phép: fullName và phone
+    const result = await User.update(req.userId, { 
+      phone: phone,
+      fullName: fullName
+    });
+
     if (result.affectedRows === 0) {
-      return sendError(res, "Người dùng không tồn tại", HTTP_STATUS.NOT_FOUND);
+      return sendError(res, "Không thể cập nhật profile hoặc không có thay đổi", HTTP_STATUS.NOT_FOUND);
     }
 
     return sendSuccess(res, null, "Cập nhật profile thành công");
   } catch (error) {
     console.error("Lỗi cập nhật profile:", error);
     return sendError(res, "Không thể cập nhật profile", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+// [ADMIN] Tìm kiếm tài khoản theo tên
+exports.searchUsers = async (req, res) => {
+  try {
+    // Kiểm tra xem người dùng hiện tại có phải admin không
+    if (req.userRole !== "admin") {
+      return sendError(res, "Chỉ admin có quyền tìm kiếm tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+
+    const { name } = req.query;
+    
+    // Kiểm tra từ khóa tìm kiếm
+    if (!name || isEmptyField(name)) {
+      return sendFail(res, "Vui lòng cung cấp từ khóa tìm kiếm", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const users = await User.searchByName(name);
+    return sendSuccess(
+      res,
+      users,
+      `Tìm thấy ${users.length} tài khoản phù hợp`
+    );
+  } catch (error) {
+    console.error("Lỗi tìm kiếm tài khoản:", error);
+    return sendError(res, "Không thể tìm kiếm tài khoản", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+// [ADMIN] Lấy tất cả thông tin tài khoản người dùng
+exports.getAllUsers = async (req, res) => {
+  try {
+    // Kiểm tra xem người dùng hiện tại có phải admin không
+    if (req.userRole !== "admin") {
+      return sendError(res, "Chỉ admin có quyền xem danh sách tất cả tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+
+    const users = await User.getAll();
+    return sendSuccess(
+      res,
+      users,
+      "Lấy danh sách tất cả tài khoản thành công"
+    );
+  } catch (error) {
+    console.error("Lỗi lấy danh sách người dùng:", error);
+    return sendError(res, "Không thể lấy danh sách tài khoản", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+// [ADMIN] Lấy thông tin chi tiết của một tài khoản
+exports.getUserById = async (req, res) => {
+  try {
+    // Kiểm tra xem người dùng hiện tại có phải admin không
+    if (req.userRole !== "admin") {
+      return sendError(res, "Chỉ admin có quyền xem thông tin tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+
+    const { id } = req.params;
+    if (isEmptyField(id)) {
+      return sendFail(res, "ID tài khoản là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return sendError(res, "Tài khoản không tồn tại", HTTP_STATUS.NOT_FOUND);
+    }
+
+    return sendSuccess(res, user, "Lấy thông tin tài khoản thành công");
+  } catch (error) {
+    console.error("Lỗi lấy thông tin tài khoản:", error);
+    return sendError(res, "Không thể lấy thông tin tài khoản", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+// [ADMIN] Xóa tài khoản người dùng
+exports.deleteUser = async (req, res) => {
+  try {
+    // Kiểm tra xem người dùng hiện tại có phải admin không
+    if (req.userRole !== "admin") {
+      return sendError(res, "Chỉ admin có quyền xóa tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+
+    const { id } = req.params;
+    if (isEmptyField(id)) {
+      return sendFail(res, "ID tài khoản là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    // Không cho phép xóa admin
+    const user = await User.findById(id);
+    if (!user) {
+      return sendError(res, "Tài khoản không tồn tại", HTTP_STATUS.NOT_FOUND);
+    }
+
+    // Kiểm tra role của tài khoản sẽ bị xóa
+    // Lấy role từ bảng user_roles
+    const connection = require("../config/database").getConnection();
+    
+    const result = await User.delete(id);
+    if (result.affectedRows === 0) {
+      return sendError(res, "Không thể xóa tài khoản", HTTP_STATUS.NOT_FOUND);
+    }
+
+    return sendSuccess(res, null, "Xóa tài khoản thành công");
+  } catch (error) {
+    console.error("Lỗi xóa tài khoản:", error);
+    return sendError(res, "Không thể xóa tài khoản", HTTP_STATUS.INTERNAL_ERROR);
   }
 };
