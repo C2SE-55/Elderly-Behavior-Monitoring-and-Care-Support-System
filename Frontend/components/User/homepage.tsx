@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
     SafeAreaView,
     View,
@@ -8,6 +8,7 @@ import {
     ScrollView,
     Dimensions,
 } from "react-native";
+import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
 
 const { width } = Dimensions.get("window");
@@ -31,7 +32,7 @@ const OPTIONS: HomeOption[] = [
 ];
 
 const HomepageUserScreen = () => {
-    const [selectedId, setSelectedId] = useState<string>("personal-info");
+    const router = useRouter();
 
     return (
         <SafeAreaView style={styles.container}>
@@ -53,14 +54,20 @@ const HomepageUserScreen = () => {
                 contentContainerStyle={styles.listContent}
             >
                 {OPTIONS.map((item) => {
-                    const isSelected = item.id === selectedId;
+                    const handlePress = () => {
+                        if (item.id === "personal-info") {
+                            router.push("/(profiles)/profile");
+                        } else if (item.id === "health") {
+                            router.push("/(healths)/health");
+                        }
+                    };
 
                     return (
                         <TouchableOpacity
                             key={item.id}
-                            style={[styles.card, isSelected && styles.cardSelected]}
+                            style={styles.card}
                             activeOpacity={0.85}
-                            onPress={() => setSelectedId(item.id)}
+                            onPress={handlePress}
                         >
                             <View style={styles.cardTextWrapper}>
                                 <Text style={styles.cardTitle}>{item.title}</Text>
@@ -71,7 +78,6 @@ const HomepageUserScreen = () => {
                     );
                 })}
             </ScrollView>
-
             <FloatingAssistant />
         </SafeAreaView>
     );
@@ -128,6 +134,7 @@ const styles = StyleSheet.create({
     listContent: {
         paddingBottom: 100,
         gap: 16,
+        alignItems: "center",
     },
 
     card: {
@@ -135,8 +142,11 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
 
-        paddingVertical: 22,
-        paddingHorizontal: 20,
+        width: "80%",
+        maxWidth: 300,
+
+        paddingVertical: 20,
+        paddingHorizontal: 18,
 
         borderRadius: 16,
 
@@ -148,12 +158,6 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 5 },
 
         elevation: 3,
-    },
-
-    cardSelected: {
-        borderWidth: 2,
-        borderColor: "#2563EB",
-        backgroundColor: "#E8EDFF",
     },
 
     cardTextWrapper: {

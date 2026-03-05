@@ -28,6 +28,7 @@ export default function RootLayout() {
 ======= */}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auths)" />
+        <Stack.Screen name="(homepages)" />
         <Stack.Screen name="(healths)" />
         <Stack.Screen name="(profiles)" />
         <Stack.Screen name="(tabs)" />

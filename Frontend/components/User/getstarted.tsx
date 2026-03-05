@@ -9,6 +9,7 @@ import {
     Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
+import Logo from "../../assets/images/Logo.png";
 
 const { width } = Dimensions.get("window");
 const scaleFont = (size: number) => size * (width / 375);
@@ -20,7 +21,7 @@ const WelcomeScreen = () => {
             <View style={styles.content}>
 
                 <Image
-                    source={require("@assets/images/logo_homepage.png")}
+                    source={Logo}
                     style={styles.image}
                     resizeMode="contain"
                 />

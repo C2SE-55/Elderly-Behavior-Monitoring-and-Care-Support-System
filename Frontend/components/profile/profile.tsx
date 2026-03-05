@@ -1,193 +1,280 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
   Image,
-  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from "react-native";
-import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
+import { Ionicons } from "@expo/vector-icons";
+import Avatar from "../../assets/images/avatar.png";
 const PRIMARY = "#4B2E83";
 
-export default function ProfileScreen() {
+// HEADER: giống trang Chỉ số sức khỏe
+const ProfileHeader = () => {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
+    <View style={headerStyles.container}>
+      <TouchableOpacity onPress={() => router.back()}>
+        <Ionicons name="arrow-back" size={22} color="white" />
+      </TouchableOpacity>
+      <Text style={headerStyles.title}>Thông tin cá nhân</Text>
+      <View style={{ width: 22 }} />
+    </View>
+  );
+};
+
+// AVATAR: Ảnh đại diện + nút đổi hình (giống health)
+const ProfileAvatar = () => {
+  return (
+    <View style={avatarStyles.container}>
+      <Image source={Avatar} style={avatarStyles.avatar} />
+      <TouchableOpacity>
+        <Text style={avatarStyles.change}>Đổi hình đại diện</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// INPUT: 1 label + 1 TextInput (giống health)
+type ProfileInputProps = {
+  label: string;
+  value?: string;
+  placeholder?: string;
+  secure?: boolean;
+};
+
+const ProfileInput = ({
+  label,
+  value,
+  placeholder,
+  secure,
+}: ProfileInputProps) => {
+  return (
+    <View style={inputStyles.wrapper}>
+      <Text style={inputStyles.label}>{label}</Text>
+      <TextInput
+        style={inputStyles.input}
+        defaultValue={value}
+        placeholder={placeholder}
+        placeholderTextColor="#999"
+        secureTextEntry={secure}
+      />
+    </View>
+  );
+};
+
+// Vai trò (read-only box)
+const ProfileRoleBox = () => (
+  <View style={inputStyles.wrapper}>
+    <Text style={inputStyles.label}>Vai trò</Text>
+    <View style={roleBoxStyles.box}>
+      <Text style={roleBoxStyles.text}>Người chăm sóc</Text>
+    </View>
+  </View>
+);
+
+// Nút cập nhật
+const ProfileButton = () => (
+  <TouchableOpacity style={buttonStyles.button}>
+    <Text style={buttonStyles.text}>Cập Nhật</Text>
+  </TouchableOpacity>
+);
+
+export default function ProfileScreen() {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleScrollToEnd = () => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  };
+
+  return (
+    <View style={screenStyles.container}>
+      <ProfileHeader />
+
+      <KeyboardAvoidingView
+        style={screenStyles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={screenStyles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons name="arrow-back" size={22} color="white" />
-        </TouchableOpacity>
+          <ProfileAvatar />
 
-        <Text style={styles.headerTitle}>Thông tin cá nhân</Text>
-      </View>
+          <ProfileInput
+            label="Họ và tên"
+            placeholder="Nhập họ và tên"
+            value=""
+          />
+          <ProfileInput
+            label="Tên đăng nhập"
+            placeholder="Nhập username"
+            value=""
+          />
+          <ProfileInput label="Email" placeholder="Nhập email" value="" />
+          <ProfileInput
+            label="Số điện thoại"
+            placeholder="Nhập số điện thoại"
+            value=""
+          />
+          <ProfileInput
+            label="Mật khẩu"
+            placeholder="Nhập mật khẩu"
+            secure
+          />
+          <ProfileInput
+            label="Xác thực mật khẩu"
+            placeholder="Nhập lại mật khẩu"
+            secure
+          />
+          <ProfileRoleBox />
+          <ProfileButton />
+        </ScrollView>
 
-      {/* AVATAR */}
-      <View style={styles.avatarWrapper}>
-        <Image
-          source={{
-            uri: "https://images.unsplash.com/photo-1544723795-3fb6469f5b39",
-          }}
-          style={styles.avatar}
-        />
-      </View>
-
-      {/* FORM */}
-      <View style={styles.form}>
-        {renderInput("Full Name", "Nguyen Van A")}
-        {renderInput("Username", "nguyenvana123")}
-        {renderInput("Email", "vana@gmail.com")}
-        {renderInput("Phone Number", "0392223332")}
-        {renderInput("Password", "*************", true)}
-        {renderInput("Confirm Password", "*************", true)}
-
-        <Text style={styles.label}>Role</Text>
-        <View style={styles.roleBox}>
-          <Text style={styles.roleText}>Người chăm sóc</Text>
-        </View>
-
-        <TouchableOpacity style={styles.updateBtn}>
-          <Text style={styles.updateText}>Cập Nhật</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* BOTTOM TAB */}
-      <View style={styles.bottomTab}>
-        <MaterialIcons name="dashboard" size={24} color="#8E8EFF" />
-        <Feather name="bar-chart-2" size={24} color="#8E8EFF" />
-        <Ionicons name="notifications-outline" size={24} color="#8E8EFF" />
-        <Ionicons name="settings-outline" size={24} color="#8E8EFF" />
-      </View>
-    </SafeAreaView>
+        {keyboardVisible && (
+          <TouchableOpacity
+            style={screenStyles.scrollDownButton}
+            onPress={handleScrollToEnd}
+          >
+            <Text style={screenStyles.scrollDownText}>Cuộn xuống</Text>
+          </TouchableOpacity>
+        )}
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
-/* ========= HELPER RENDER INPUT ========= */
-
-const renderInput = (
-  label: string,
-  value: string,
-  secure: boolean = false
-) => (
-  <>
-    <Text style={styles.label}>{label}</Text>
-    <TextInput
-      style={styles.input}
-      value={value}
-      secureTextEntry={secure}
-      editable={false}
-    />
-  </>
-);
-
-/* ================= STYLES ================= */
-
-const styles = StyleSheet.create({
+// STYLES (giống health)
+const screenStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: "#F5F5F5",
   },
+  flex: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  scrollDownButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 20,
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  scrollDownText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+});
 
-  header: {
+const headerStyles = StyleSheet.create({
+  container: {
     backgroundColor: PRIMARY,
     height: 110,
-    justifyContent: "center",
+    paddingTop: 45,
+    paddingHorizontal: 16,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
   },
-
-  backBtn: {
-    position: "absolute",
-    left: 15,
-    top: 50,
-  },
-
-  headerTitle: {
+  title: {
     color: "white",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
-    marginTop: 40,
   },
+});
 
-  avatarWrapper: {
+const avatarStyles = StyleSheet.create({
+  container: {
     alignItems: "center",
-    marginTop: -40,
-    marginBottom: 10,
+    marginTop: 20,
+    marginBottom: 20,
   },
-
   avatar: {
-    width: 90,
-    height: 90,
+    width: 100,
+    height: 100,
     borderRadius: 50,
-    borderWidth: 4,
-    borderColor: "white",
   },
-
-  form: {
-    paddingHorizontal: 20,
+  change: {
+    marginTop: 8,
+    color: PRIMARY,
+    fontSize: 13,
   },
+});
 
+const inputStyles = StyleSheet.create({
+  wrapper: {
+    marginBottom: 15,
+  },
   label: {
     fontSize: 13,
-    marginTop: 12,
     marginBottom: 6,
     color: "#333",
   },
-
   input: {
-    backgroundColor: "#EDEDED",
+    backgroundColor: "#EEEEEE",
+    height: 45,
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 45,
     fontSize: 14,
-    color: "#555",
   },
+});
 
-  roleBox: {
-    backgroundColor: "#CFCFCF",
-    borderRadius: 8,
+const roleBoxStyles = StyleSheet.create({
+  box: {
+    backgroundColor: "#EEEEEE",
     height: 45,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     justifyContent: "center",
-    paddingHorizontal: 12,
   },
-
-  roleText: {
-    color: "#444",
+  text: {
     fontSize: 14,
+    color: "#333",
   },
+});
 
-  updateBtn: {
+const buttonStyles = StyleSheet.create({
+  button: {
     backgroundColor: PRIMARY,
     height: 48,
-    borderRadius: 10,
+    borderRadius: 8,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
+    marginTop: 10,
   },
-
-  updateText: {
+  text: {
     color: "white",
-    fontSize: 15,
     fontWeight: "600",
-  },
-
-  bottomTab: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    height: 65,
-    backgroundColor: "white",
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderColor: "#eee",
   },
 });

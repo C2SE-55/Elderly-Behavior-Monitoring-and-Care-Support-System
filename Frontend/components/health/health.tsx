@@ -174,7 +174,7 @@ export default function HealthScreen() {
           <HealthAvatar />
 
           {/* Các trường thông tin sức khỏe */}
-          <HealthInput placeholder="Nhập họ và tên" label="Full Name" value=""  />
+          <HealthInput placeholder="Nhập họ và tên" label="Họ và tên" value=""  />
           <HealthInput placeholder="Nhập tuổi của bạn" label="Tuổi" value="" />
 
           <HealthTwoColumn

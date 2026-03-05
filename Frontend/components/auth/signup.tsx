@@ -51,7 +51,7 @@ export default function SignupScreen() {
               />
               <TextInput
                 ref={usernameRef}
-                placeholder="Username"
+                placeholder="Tên đăng nhập"
                 placeholderTextColor="#999"
                 style={styles.input}
                 returnKeyType="next"

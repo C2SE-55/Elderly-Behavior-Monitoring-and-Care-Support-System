@@ -1,122 +1,77 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs } from "expo-router";
+import { Feather, Ionicons } from "@expo/vector-icons";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+const PRIMARY = "#A78BFA";   // tím nhạt
+const ACTIVE = "#56328C";    // tím đậm
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        // Giữ nguyên màu icon khi chọn / không chọn
-        tabBarActiveTintColor: '#a78bfa',
-        tabBarInactiveTintColor: '#a78bfa',
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: {
-          height: 68,
-          paddingBottom: 8,
-          paddingTop: 8,
-          backgroundColor: '#ffffff',
-          borderTopWidth: 0.5,
-          borderTopColor: '#E5E7EB',
-          elevation: 4,
-        },
-        // Ẩn chữ, chỉ hiển thị icon
-        tabBarLabelStyle: {
-          fontSize: 0,
-        },
+
+        tabBarActiveTintColor: ACTIVE,
+        tabBarInactiveTintColor: PRIMARY,
+
         tabBarShowLabel: false,
-      }}>
+
+        tabBarStyle: {
+          height: 75,
+          paddingBottom: 10,
+          paddingTop: 10,
+          backgroundColor: "#FFFFFF",
+          borderTopWidth: 0.5,
+          borderTopColor: "#E5E7EB",
+        },
+      }}
+    >
+      {/* HOME */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <>
-              <IconSymbol size={26} name="square.grid.2x2.fill" color={color} />
-              {focused && (
-                <IconSymbol
-                  size={4}
-                  name="circle.fill"
-                  color={Colors[colorScheme ?? 'light'].tint}
-                  style={{ marginTop: 4 }}
-                />
-              )}
-            </>
+          tabBarIcon: ({ color }) => (
+            <Feather name="grid" size={26} color={color} />
           ),
         }}
       />
+
+      {/* STATS */}
       <Tabs.Screen
         name="stats"
         options={{
-          title: 'Stats',
-          tabBarIcon: ({ color, focused }) => (
-            <>
-              <IconSymbol size={26} name="chart.bar.fill" color={color} />
-              {focused && (
-                <IconSymbol
-                  size={4}
-                  name="circle.fill"
-                  color={Colors[colorScheme ?? 'light'].tint}
-                  style={{ marginTop: 4 }}
-                />
-              )}
-            </>
+          tabBarIcon: ({ color }) => (
+            <Feather name="bar-chart-2" size={26} color={color} />
           ),
         }}
       />
+
+      {/* NOTIFICATIONS */}
       <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, focused }) => (
-            <>
-              <IconSymbol size={26} name="bell.fill" color={color} />
-              {focused && (
-                <IconSymbol
-                  size={4}
-                  name="circle.fill"
-                  color={Colors[colorScheme ?? 'light'].tint}
-                  style={{ marginTop: 4 }}
-                />
-              )}
-            </>
+          tabBarIcon: ({ color }) => (
+            <Ionicons
+              name="notifications-outline"
+              size={26}
+              color={color}
+            />
           ),
         }}
       />
+
+      {/* SETTINGS */}
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, focused }) => (
-            <>
-              <IconSymbol size={26} name="gearshape.fill" color={color} />
-              {focused && (
-                <IconSymbol
-                  size={4}
-                  name="circle.fill"
-                  color={Colors[colorScheme ?? 'light'].tint}
-                  style={{ marginTop: 4 }}
-                />
-              )}
-            </>
+          tabBarIcon: ({ color }) => (
+            <Ionicons
+              name="settings-outline"
+              size={26}
+              color={color}
+            />
           ),
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="person.fill" color={color} />
-          ),
-        }}
-        />
     </Tabs>
   );
 }

@@ -25,14 +25,14 @@ export default function LoginScreen() {
       {/* Form */}
       <View style={styles.form}>
         <TextInput
-          placeholder="Username"
+          placeholder="Tên đăng nhập"
           placeholderTextColor="#8E8E93"
           style={styles.input}
         />
 
         <View style={styles.passwordContainer}>
           <TextInput
-            placeholder="Password"
+            placeholder="Mật khẩu"
             placeholderTextColor="#8E8E93"
             secureTextEntry={secure}
             style={styles.passwordInput}
@@ -47,18 +47,10 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* <<<<<<< HEAD
-        <TouchableOpacity style={styles.forgotContainer}>
-          <Text style={styles.forgotText}>Quên mật khẩu?</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.loginButton}
-          onPress={() => router.replace("/getstared")}
-        > */}
-
-        <TouchableOpacity style={styles.loginButton}>
-
+          onPress={() => router.replace("/(homepages)/homepage_user")}
+        >
           <Text style={styles.loginText}>Đăng nhập</Text>
         </TouchableOpacity>
 
