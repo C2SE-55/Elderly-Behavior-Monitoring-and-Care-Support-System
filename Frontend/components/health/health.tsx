@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
 const PRIMARY = "#4B2E83";
 
 // HEADER: Thanh tiêu đề trên cùng

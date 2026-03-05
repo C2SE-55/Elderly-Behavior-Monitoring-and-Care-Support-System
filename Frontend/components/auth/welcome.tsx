@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import Logo from '@assets/images/logo.png';
+import Logo from '../../assets/images/Logo.png';
 
 const PRIMARY = '#4B2E83';
 
