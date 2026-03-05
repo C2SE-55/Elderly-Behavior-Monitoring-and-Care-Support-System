@@ -122,13 +122,16 @@ export default function SignupScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.primaryButton}>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => router.push("/(auths)/login")}
+              >
                 <Text style={styles.primaryText}>Đăng ký</Text>
               </TouchableOpacity>
 
               <View style={styles.linkRow}>
                 <Text style={styles.linkText}>Bạn đã có tài khoản chưa?</Text>
-                <TouchableOpacity onPress={() => router.push("/login")}>
+                <TouchableOpacity onPress={() => router.push("/(auths)/login")}>
                   <Text style={styles.linkHighlight}> Đăng nhập</Text>
                 </TouchableOpacity>
               </View>
@@ -140,6 +143,7 @@ export default function SignupScreen() {
   );
 }
 
+{/* Css style */}
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

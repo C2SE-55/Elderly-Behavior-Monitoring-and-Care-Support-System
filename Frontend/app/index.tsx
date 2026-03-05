@@ -1,8 +1,7 @@
 import { Redirect } from "expo-router";
 
 export default function Index() {
-
-  return <Redirect href="/(tabs)/profile" />;
+  return <Redirect href="/(auths)/welcome" />;
+  // return <Redirect href="/(tabs)/profile" />;
 }
 
-  // return <Redirect href="/welcome" />;
