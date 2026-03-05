@@ -31,6 +31,7 @@ const checkRole = (allowedRoles) => {
 };
 
 module.exports = {
+  protect: verifyToken,  // Alias for verifyToken
   verifyToken,
   checkRole,
 };
