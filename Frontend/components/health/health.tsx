@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { api, getCurrentUser } from "../../services/api";
 const PRIMARY = "#4B2E83";
 
 // HEADER: Thanh tiêu đề trên cùng
@@ -51,13 +52,15 @@ const HealthAvatar = () => {
   );
 };
 
-// INPUT ĐƠN: 1 label + 1 TextInput
+// INPUT ĐƠN: 1 label + 1 TextInput (controlled)
 type HealthInputProps = {
   label: string;
-  value?: string;
+  value: string;
   placeholder?: string;
   multiline?: boolean;
   numberOfLines?: number;
+  keyboardType?: "default" | "numeric";
+  onChangeText: (text: string) => void;
 };
 
 const HealthInput = ({
@@ -66,18 +69,22 @@ const HealthInput = ({
   placeholder,
   multiline,
   numberOfLines,
+  keyboardType = "default",
+  onChangeText,
 }: HealthInputProps) => {
   return (
     <View style={inputStyles.wrapper}>
       <Text style={inputStyles.label}>{label}</Text>
       <TextInput
         style={[inputStyles.input, multiline && inputStyles.multiline]}
-        defaultValue={value}
+        value={value}
+        onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#999"
         multiline={multiline}
         numberOfLines={multiline ? numberOfLines ?? 3 : 1}
         textAlignVertical={multiline ? "top" : "center"}
+        keyboardType={keyboardType}
       />
     </View>
   );
@@ -86,11 +93,13 @@ const HealthInput = ({
 // INPUT HAI CỘT: ví dụ chiều cao / cân nặng
 type HealthTwoColumnProps = {
   label1: string;
-  value1?: string;
+  value1: string;
   unit1?: string;
   label2: string;
-  value2?: string;
+  value2: string;
   unit2?: string;
+  onChangeValue1: (text: string) => void;
+  onChangeValue2: (text: string) => void;
 };
 
 const HealthTwoColumn = ({
@@ -100,6 +109,8 @@ const HealthTwoColumn = ({
   label2,
   value2,
   unit2,
+  onChangeValue1,
+  onChangeValue2,
 }: HealthTwoColumnProps) => {
   return (
     <View style={twoColStyles.row}>
@@ -107,7 +118,12 @@ const HealthTwoColumn = ({
       <View style={twoColStyles.col}>
         <Text style={twoColStyles.label}>{label1}</Text>
         <View style={twoColStyles.unitWrapper}>
-          <TextInput style={twoColStyles.input} defaultValue={value1} />
+          <TextInput
+            style={twoColStyles.input}
+            value={value1}
+            onChangeText={onChangeValue1}
+            keyboardType="numeric"
+          />
           {unit1 && <Text style={twoColStyles.unit}>{unit1}</Text>}
         </View>
       </View>
@@ -116,7 +132,12 @@ const HealthTwoColumn = ({
       <View style={twoColStyles.col}>
         <Text style={twoColStyles.label}>{label2}</Text>
         <View style={twoColStyles.unitWrapper}>
-          <TextInput style={twoColStyles.input} defaultValue={value2} />
+          <TextInput
+            style={twoColStyles.input}
+            value={value2}
+            onChangeText={onChangeValue2}
+            keyboardType="numeric"
+          />
           {unit2 && <Text style={twoColStyles.unit}>{unit2}</Text>}
         </View>
       </View>
@@ -125,18 +146,38 @@ const HealthTwoColumn = ({
 };
 
 // NÚT CẬP NHẬT
-const HealthButton = () => {
-  return (
-    <TouchableOpacity style={buttonStyles.button}>
-      <Text style={buttonStyles.text}>Cập Nhật</Text>
-    </TouchableOpacity>
-  );
+type HealthButtonProps = {
+  onPress: () => void;
+  disabled?: boolean;
 };
+
+const HealthButton = ({ onPress, disabled }: HealthButtonProps) => (
+  <TouchableOpacity
+    style={[buttonStyles.button, disabled && { opacity: 0.7 }]}
+    onPress={onPress}
+    disabled={disabled}
+  >
+    <Text style={buttonStyles.text}>Cập Nhật</Text>
+  </TouchableOpacity>
+);
 
 // MÀN HÌNH CHÍNH: gộp tất cả lại
 export default function HealthScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [age, setAge] = useState("");
+  const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
+  const [bloodPressure, setBloodPressure] = useState("");
+  const [chronicDisease, setChronicDisease] = useState("");
+  const [allergy, setAllergy] = useState("");
+  const [bloodType, setBloodType] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const user = getCurrentUser();
 
   // Bàn phím cuộn xuống khi nhập vào input
   useEffect(() => {
@@ -157,6 +198,75 @@ export default function HealthScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   };
 
+  const BLOOD_TYPES = [
+    "A+",
+    "A-",
+    "B+",
+    "B-",
+    "AB+",
+    "AB-",
+    "O+",
+    "O-",
+    "Rh-null",
+  ];
+
+  const handleSubmit = async () => {
+    // Reset thông báo
+    setError("");
+    setSuccess("");
+
+    // Validate tuổi
+    const ageNum = Number(age);
+    if (Number.isNaN(ageNum) || ageNum <= 10 || ageNum >= 150) {
+      setError("Tuổi phải lớn hơn 10 và nhỏ hơn 150.");
+      return;
+    }
+
+    // Validate huyết áp
+    const bpNum = Number(bloodPressure);
+    if (Number.isNaN(bpNum) || bpNum < 50 || bpNum > 250) {
+      setError("Huyết áp phải từ 50 đến 250 mmHg.");
+      return;
+    }
+
+    // Validate nhóm máu
+    if (!bloodType || !BLOOD_TYPES.includes(bloodType)) {
+      setError("Vui lòng chọn nhóm máu hợp lệ.");
+      return;
+    }
+
+    // Cần có user/profile để gửi API
+    const profileId = user?.id;
+    if (!profileId) {
+      setError("Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      // Gửi chỉ số huyết áp lên API health-metrics
+      await api.post("/health-metrics", {
+        profileId,
+        metricType: "blood_pressure",
+        valueNumeric: bpNum,
+        unit: "mmHg",
+        status: "normal",
+        notes: `Tuổi: ${ageNum}, Nhóm máu: ${bloodType}, Chiều cao: ${height} cm, Cân nặng: ${weight} kg, Bệnh nền: ${chronicDisease}, Dị ứng: ${allergy}`,
+      });
+
+      setSuccess("Lưu chỉ số sức khỏe thành công.");
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.message;
+      setError(
+        backendMessage ||
+          "Không thể lưu chỉ số sức khỏe. Vui lòng kiểm tra kết nối và thử lại."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <View style={screenStyles.container}>
       <HealthHeader />
@@ -174,39 +284,91 @@ export default function HealthScreen() {
           <HealthAvatar />
 
           {/* Các trường thông tin sức khỏe */}
-          <HealthInput placeholder="Nhập họ và tên" label="Họ và tên" value=""  />
-          <HealthInput placeholder="Nhập tuổi của bạn" label="Tuổi" value="" />
-
-          <HealthTwoColumn
-            label1="Chiều cao"
-            value1=""
-            unit1="cm"
-            label2="Cân nặng"
-            value2=""
-            unit2="kg"
+          <HealthInput
+            placeholder="Nhập họ và tên"
+            label="Họ và tên"
+            value={fullName}
+            onChangeText={setFullName}
+          />
+          <HealthInput
+            placeholder="Nhập tuổi của bạn"
+            label="Tuổi"
+            value={age}
+            onChangeText={setAge}
+            keyboardType="numeric"
           />
 
           <HealthTwoColumn
-            label1="Nhóm máu"
-            value1=""
-            label2="Huyết áp"
-            value2=""
-            unit2="mmHg"
+            label1="Chiều cao"
+            value1={height}
+            unit1="cm"
+            label2="Cân nặng"
+            value2={weight}
+            unit2="kg"
+            onChangeValue1={setHeight}
+            onChangeValue2={setWeight}
+          />
+
+          {/* Nhóm máu (select) + huyết áp */}
+          <View style={bloodStyles.wrapper}>
+            <Text style={bloodStyles.label}>Nhóm máu</Text>
+            <View style={bloodStyles.chipRow}>
+              {BLOOD_TYPES.map((type) => {
+                const selected = bloodType === type;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      bloodStyles.chip,
+                      selected && bloodStyles.chipSelected,
+                    ]}
+                    onPress={() => setBloodType(type)}
+                  >
+                    <Text
+                      style={[
+                        bloodStyles.chipText,
+                        selected && bloodStyles.chipTextSelected,
+                      ]}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <HealthInput
+            label="Huyết áp (tâm thu)"
+            placeholder="Nhập huyết áp (mmHg)"
+            value={bloodPressure}
+            onChangeText={setBloodPressure}
+            keyboardType="numeric"
           />
 
           <HealthInput
             label="Bệnh nền"
             placeholder="Nhập bệnh nền"
             multiline
+            value={chronicDisease}
+            onChangeText={setChronicDisease}
           />
           <HealthInput
             label="Dị ứng"
             placeholder="Nhập dị ứng"
             multiline
+            value={allergy}
+            onChangeText={setAllergy}
           />
 
+          {/* Thông báo lỗi / thành công */}
+          {error ? <Text style={screenStyles.errorText}>{error}</Text> : null}
+          {success ? (
+            <Text style={screenStyles.successText}>{success}</Text>
+          ) : null}
+
           {/* Nút lưu / cập nhật */}
-          <HealthButton />
+          <HealthButton onPress={handleSubmit} disabled={submitting} />
         </ScrollView>
 
         {/* Khi bàn phím mở, hiện nút để cuộn xuống cuối form */}
@@ -249,6 +411,18 @@ const screenStyles = StyleSheet.create({
     color: "white",
     fontSize: 12,
     fontWeight: "500",
+  },
+  errorText: {
+    marginTop: 16,
+    color: "red",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  successText: {
+    marginTop: 8,
+    color: "green",
+    fontSize: 13,
+    textAlign: "center",
   },
 });
 
@@ -351,6 +525,42 @@ const buttonStyles = StyleSheet.create({
   },
   text: {
     color: "white",
+    fontWeight: "600",
+  },
+});
+
+const bloodStyles = StyleSheet.create({
+  wrapper: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
+    marginBottom: 6,
+    color: "#333",
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#F9FAFB",
+  },
+  chipSelected: {
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
+  },
+  chipText: {
+    fontSize: 12,
+    color: "#111827",
+  },
+  chipTextSelected: {
+    color: "#FFFFFF",
     fontWeight: "600",
   },
 });

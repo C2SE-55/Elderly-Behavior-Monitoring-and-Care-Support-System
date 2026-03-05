@@ -16,6 +16,7 @@ import { useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { api } from "../../services/api";
 import Logo from "../../assets/images/Logo.png";
 
 export default function SignupScreen() {
@@ -28,6 +29,51 @@ export default function SignupScreen() {
   const phoneRef = useRef<TextInput>(null);
   const passRef = useRef<TextInput>(null);
   const confirmRef = useRef<TextInput>(null);
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSignup = async () => {
+    if (!fullName || !username || !email || !password || !confirmPassword) {
+      setError("Vui lòng điền đầy đủ các trường bắt buộc");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      await api.post("/auth/register", {
+        fullName,
+        username,
+        email,
+        dateOfBirth,
+        phone,
+        password,
+        confirmPassword,
+      });
+
+      router.push("/(auths)/login");
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.message;
+      const networkMessage = err?.message;
+      const message =
+        backendMessage ||
+        (networkMessage === "Network Error"
+          ? "Không thể kết nối tới server. Vui lòng kiểm tra lại API_BASE_URL và việc backend đã chạy chưa."
+          : networkMessage) ||
+        "Đăng ký thất bại, vui lòng thử lại";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -48,6 +94,8 @@ export default function SignupScreen() {
                 style={styles.input}
                 returnKeyType="next"
                 onSubmitEditing={() => usernameRef.current?.focus()}
+                value={fullName}
+                onChangeText={setFullName}
               />
               <TextInput
                 ref={usernameRef}
@@ -56,6 +104,9 @@ export default function SignupScreen() {
                 style={styles.input}
                 returnKeyType="next"
                 onSubmitEditing={() => emailRef.current?.focus()}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
               />
               <TextInput
                 ref={emailRef}
@@ -65,6 +116,9 @@ export default function SignupScreen() {
                 returnKeyType="next"
                 keyboardType="email-address"
                 onSubmitEditing={() => dateRef.current?.focus()}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
               />
               <TextInput
                 ref={dateRef}
@@ -73,6 +127,8 @@ export default function SignupScreen() {
                 style={styles.input}
                 returnKeyType="next"
                 onSubmitEditing={() => phoneRef.current?.focus()}
+                value={dateOfBirth}
+                onChangeText={setDateOfBirth}
               />
               <TextInput
                 ref={phoneRef}
@@ -82,6 +138,8 @@ export default function SignupScreen() {
                 returnKeyType="next"
                 keyboardType="phone-pad"
                 onSubmitEditing={() => passRef.current?.focus()}
+                value={phone}
+                onChangeText={setPhone}
               />
 
               <View style={styles.passwordContainer}>
@@ -93,6 +151,8 @@ export default function SignupScreen() {
                   style={styles.passwordInput}
                   returnKeyType="next"
                   onSubmitEditing={() => confirmRef.current?.focus()}
+                  value={password}
+                  onChangeText={setPassword}
                 />
                 <TouchableOpacity onPress={() => setSecure1(!secure1)}>
                   <Ionicons
@@ -112,6 +172,8 @@ export default function SignupScreen() {
                   style={styles.passwordInput}
                   returnKeyType="done"
                   onSubmitEditing={() => Keyboard.dismiss()}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
                 />
                 <TouchableOpacity onPress={() => setSecure2(!secure2)}>
                   <Ionicons
@@ -122,11 +184,16 @@ export default function SignupScreen() {
                 </TouchableOpacity>
               </View>
 
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
               <TouchableOpacity
                 style={styles.primaryButton}
-                onPress={() => router.push("/(auths)/login")}
+                onPress={handleSignup}
+                disabled={loading}
               >
-                <Text style={styles.primaryText}>Đăng ký</Text>
+                <Text style={styles.primaryText}>
+                  {loading ? "Đang đăng ký..." : "Đăng ký"}
+                </Text>
               </TouchableOpacity>
 
               <View style={styles.linkRow}>
@@ -210,5 +277,12 @@ const styles = StyleSheet.create({
     color: "#4B2E83",
     fontWeight: "600",
     fontSize: 14,
+  },
+  errorText: {
+    color: "red",
+    marginTop: 8,
+    marginBottom: 8,
+    fontSize: 13,
+    textAlign: "center",
   },
 });

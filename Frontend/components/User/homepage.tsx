@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
+import { getCurrentUser } from "../../services/api";
 
 const { width } = Dimensions.get("window");
 
@@ -33,6 +34,11 @@ const OPTIONS: HomeOption[] = [
 
 const HomepageUserScreen = () => {
     const router = useRouter();
+    const user = getCurrentUser();
+
+    const displayName =
+        user?.fullName || user?.username || "A";
+    const avatarLetter = (displayName || "A").charAt(0).toUpperCase();
 
     return (
         <SafeAreaView style={styles.container}>
@@ -40,11 +46,11 @@ const HomepageUserScreen = () => {
             <View style={styles.header}>
                 <View style={styles.headerTextWrapper}>
                     <Text style={styles.wave}>👋</Text>
-                    <Text style={styles.greeting}>Xin chào A</Text>
+                    <Text style={styles.greeting}>Xin chào {displayName}</Text>
                 </View>
 
                 <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>A</Text>
+                    <Text style={styles.avatarText}>{avatarLetter}</Text>
                 </View>
             </View>
 
