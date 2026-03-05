@@ -16,7 +16,7 @@ import { useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import Logo from "@assets/images/Logo.png";
+import Logo from "../../assets/images/Logo.png";
 
 export default function SignupScreen() {
   const router = useRouter();
