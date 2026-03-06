@@ -14,6 +14,7 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Avatar from "../../assets/images/avatar.png";
+import { api } from "../../services/api";
 const PRIMARY = "#4B2E83";
 
 // HEADER: giống trang Chỉ số sức khỏe
@@ -49,6 +50,9 @@ type ProfileInputProps = {
   value?: string;
   placeholder?: string;
   secure?: boolean;
+  editable?: boolean;
+  helperText?: string;
+  onChangeText?: (text: string) => void;
 };
 
 const ProfileInput = ({
@@ -56,17 +60,25 @@ const ProfileInput = ({
   value,
   placeholder,
   secure,
+  editable = true,
+  helperText,
+  onChangeText,
 }: ProfileInputProps) => {
   return (
     <View style={inputStyles.wrapper}>
       <Text style={inputStyles.label}>{label}</Text>
       <TextInput
         style={inputStyles.input}
-        defaultValue={value}
+        value={value}
+        editable={editable}
         placeholder={placeholder}
         placeholderTextColor="#999"
         secureTextEntry={secure}
+        onChangeText={onChangeText}
       />
+      {helperText ? (
+        <Text style={inputStyles.helper}>{helperText}</Text>
+      ) : null}
     </View>
   );
 };
@@ -81,16 +93,16 @@ const ProfileRoleBox = () => (
   </View>
 );
 
-// Nút cập nhật
-const ProfileButton = () => (
-  <TouchableOpacity style={buttonStyles.button}>
-    <Text style={buttonStyles.text}>Cập Nhật</Text>
-  </TouchableOpacity>
-);
-
 export default function ProfileScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () =>
@@ -105,8 +117,81 @@ export default function ProfileScreen() {
     };
   }, []);
 
+  // Khi mở màn hình, lấy ngay thông tin profile từ API
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        setSuccess("");
+
+        const response = await api.get("/auth/profile");
+        const data = response.data?.data;
+
+        if (!data) {
+          setError("Không lấy được thông tin tài khoản. Vui lòng đăng nhập lại.");
+          return;
+        }
+
+        setFullName(data.fullName || data.full_name || "");
+        setUsername(data.username || "");
+        setEmail(data.email || "");
+        setPhone(data.phone || "");
+      } catch (err: any) {
+        const backendMessage = err?.response?.data?.message;
+        setError(
+          backendMessage ||
+            "Không thể tải thông tin tài khoản. Vui lòng kiểm tra kết nối hoặc đăng nhập lại."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
   const handleScrollToEnd = () => {
     scrollRef.current?.scrollToEnd({ animated: true });
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!fullName && !phone) {
+      setError("Vui lòng nhập ít nhất Họ và tên hoặc Số điện thoại.");
+      setSuccess("");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await api.put("/auth/profile", {
+        fullName,
+        phone,
+      });
+
+      const status = response.data?.status;
+      const message = response.data?.message;
+
+      if (status && status !== "success") {
+        setError(
+          message || "Cập nhật hồ sơ thất bại. Vui lòng kiểm tra lại thông tin."
+        );
+        return;
+      }
+
+      setSuccess(message || "Cập nhật profile thành công.");
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.message;
+      setError(
+        backendMessage ||
+          "Không thể cập nhật thông tin tài khoản. Vui lòng thử lại."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -128,31 +213,52 @@ export default function ProfileScreen() {
           <ProfileInput
             label="Họ và tên"
             placeholder="Nhập họ và tên"
-            value=""
+            value={fullName}
+            editable
+            onChangeText={setFullName}
+            helperText="Có thể thay đổi. "
           />
+          <View style={{ height: 4 }} />
           <ProfileInput
             label="Tên đăng nhập"
             placeholder="Nhập username"
-            value=""
+            value={username}
+            editable={false}
+            helperText="Không thể thay đổi username ."
           />
-          <ProfileInput label="Email" placeholder="Nhập email" value="" />
+          <ProfileInput
+            label="Email"
+            placeholder="Nhập email"
+            value={email}
+            editable={false}
+            helperText="Không thể thay đổi email ."
+          />
           <ProfileInput
             label="Số điện thoại"
             placeholder="Nhập số điện thoại"
-            value=""
-          />
-          <ProfileInput
-            label="Mật khẩu"
-            placeholder="Nhập mật khẩu"
-            secure
-          />
-          <ProfileInput
-            label="Xác thực mật khẩu"
-            placeholder="Nhập lại mật khẩu"
-            secure
+            value={phone}
+            editable
+            onChangeText={setPhone}
+            helperText="Phải có đúng 10 chữ số ."
           />
           <ProfileRoleBox />
-          <ProfileButton />
+
+          {error ? (
+            <Text style={screenStyles.errorText}>{error}</Text>
+          ) : null}
+          {success ? (
+            <Text style={screenStyles.successText}>{success}</Text>
+          ) : null}
+
+          <TouchableOpacity
+            style={buttonStyles.button}
+            onPress={handleUpdateProfile}
+            disabled={loading}
+          >
+            <Text style={buttonStyles.text}>
+              {loading ? "Đang cập nhật..." : "Cập Nhật"}
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
 
         {keyboardVisible && (
@@ -194,6 +300,18 @@ const screenStyles = StyleSheet.create({
     color: "white",
     fontSize: 12,
     fontWeight: "500",
+  },
+  errorText: {
+    marginTop: 12,
+    color: "red",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  successText: {
+    marginTop: 12,
+    color: "green",
+    fontSize: 13,
+    textAlign: "center",
   },
 });
 
@@ -247,6 +365,11 @@ const inputStyles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     fontSize: 14,
+  },
+  helper: {
+    marginTop: 4,
+    fontSize: 11,
+    color: "#6B7280",
   },
 });
 
