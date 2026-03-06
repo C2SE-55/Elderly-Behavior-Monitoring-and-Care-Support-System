@@ -55,8 +55,8 @@ export default function LoginScreen() {
         setAuth(token, user);
       }
 
-      // Đăng nhập thành công -> chuyển sang màn hình chính
-      router.replace("/(homepages)/homepage_user");
+      // Đăng nhập thành công -> chuyển sang nhóm (tabs) để hiện thanh menu
+      router.replace("/(tabs)");
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
       const networkMessage = err?.message;

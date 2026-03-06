@@ -39,6 +39,23 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const handleDateChange = (text: string) => {
+    // Chỉ cho nhập số, tối đa 8 ký tự (ddMMyyyy)
+    const digits = text.replace(/[^\d]/g, "").slice(0, 8);
+
+    let formatted = digits;
+
+    if (digits.length > 4) {
+      // ddMMyyyy -> dd/MM/yyyy
+      formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    } else if (digits.length > 2) {
+      // ddMM -> dd/MM
+      formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    }
+
+    setDateOfBirth(formatted);
+  };
+
   const handleSignup = async () => {
     if (!fullName || !username || !email || !password || !confirmPassword) {
       setError("Vui lòng điền đầy đủ các trường bắt buộc");
@@ -125,10 +142,12 @@ export default function SignupScreen() {
                 placeholder="dd/mm/yyyy"
                 placeholderTextColor="#999"
                 style={styles.input}
+                keyboardType="number-pad"
+                maxLength={10}
                 returnKeyType="next"
                 onSubmitEditing={() => phoneRef.current?.focus()}
                 value={dateOfBirth}
-                onChangeText={setDateOfBirth}
+                onChangeText={handleDateChange}
               />
               <TextInput
                 ref={phoneRef}
