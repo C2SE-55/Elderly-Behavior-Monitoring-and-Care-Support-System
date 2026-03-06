@@ -1,63 +1,128 @@
 const pool = require("../config/database");
 
-// Model HealthMetric - Quản lý các thao tác với bảng health_metrics
+// Model HealthMetric - Quản lý các thao tác với bảng health_profiles
 class HealthMetric {
-  // Tạo chỉ số sức khỏe mới
+  // Cập nhật chỉ số sức khỏe vào health_profiles (ghi đè lên dữ liệu cũ)
   static async create(metricData) {
     const connection = await pool.getConnection();
     try {
       const {
-        profileId,
+        profileId, // Thực sự là userId từ frontend
         metricType,
         valueNumeric,
         valueText,
-        unit,
-        status,
-        notes,
-        recordedBy,
+        age,
+        bloodType,
+        chronicDiseases,
+        allergies,
       } = metricData;
 
-      const query = `
-        INSERT INTO health_metrics (
-          profile_id, metric_type, value_numeric, value_text, unit, status, notes, recorded_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
+      // Bước 1: Tìm health_profiles.id từ user_id
+      let [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
+        [profileId]
+      );
 
-      const [result] = await connection.execute(query, [
-        profileId,
-        metricType,
-        valueNumeric || null,
-        valueText || null,
-        unit || null,
-        status || "normal",
-        notes || null,
-        recordedBy || null,
-      ]);
+      let actualProfileId;
 
-      return result;
+      // Nếu chưa có, tự động tạo health_profiles mới
+      if (!profiles || profiles.length === 0) {
+        const [insertResult] = await connection.execute(
+          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
+          [profileId, profileId]
+        );
+        actualProfileId = insertResult.insertId;
+      } else {
+        actualProfileId = profiles[0].id;
+      }
+
+      // Map metricType sang field trong health_profiles (tất cả đều snake_case)
+      const metricMap = {
+        blood_pressure: "blood_pressure",
+        weight: "weight",
+        height: "height",
+        blood_type: "blood_type",
+        age: "age",
+        chronic_diseases: "chronic_diseases",
+        allergies: "allergies",
+        elderly_name: "elderly_name",
+      };
+
+      // Tìm field cần update từ metricType
+      const fieldName = metricMap[metricType];
+
+      if (!fieldName) {
+        throw new Error(`Metric type không được hỗ trợ: ${metricType}`);
+      }
+
+      // Xác định giá trị cần update
+      let updateValue = null;
+
+      if (metricType === "age" && age !== null) {
+        updateValue = age;
+      } else if (metricType === "blood_type" && bloodType) {
+        updateValue = bloodType;
+      } else if (metricType === "chronic_diseases" && chronicDiseases) {
+        updateValue = chronicDiseases;
+      } else if (metricType === "allergies" && allergies) {
+        updateValue = allergies;
+      } else if (valueNumeric !== null && valueNumeric !== undefined) {
+        updateValue = valueNumeric;
+      } else if (valueText) {
+        updateValue = valueText;
+      }
+
+      // Nếu không có giá trị, skip
+      if (updateValue === null || updateValue === undefined) {
+        return {
+          insertId: actualProfileId,
+          affectedRows: 0,
+        };
+      }
+
+      // Xây dựng và chạy query UPDATE (dùng actual profile ID)
+      const query = `UPDATE health_profiles SET ${fieldName} = ? WHERE id = ?`;
+      const [result] = await connection.execute(query, [updateValue, actualProfileId]);
+
+      return {
+        insertId: actualProfileId,
+        affectedRows: result.affectedRows,
+      };
     } finally {
       connection.release();
     }
   }
 
-  // Lấy tất cả chỉ số sức khỏe theo profile ID
-  static async getByProfileId(profileId, limit = 100, offset = 0) {
+  // Lấy chỉ số sức khỏe mới nhất theo profile ID (profileId thực sự là userId)
+  static async getLatest(profileId, limit = 50, offset = 0) {
+    // Trả về dữ liệu từ health_profiles
     const connection = await pool.getConnection();
     try {
-      const query = `
-        SELECT hm.*, u.full_name as recorded_by_name
-        FROM health_metrics hm
-        LEFT JOIN users u ON hm.recorded_by = u.id
-        WHERE hm.profile_id = ?
-        ORDER BY hm.recorded_at DESC
-        LIMIT ? OFFSET ?
-      `;
+      // Bước 1: Tìm health_profiles.id từ user_id
+      let [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
+        [profileId]
+      );
 
-      const [rows] = await connection.execute(query, [
-        profileId,
-        limit,
-        offset,
-      ]);
+      let actualProfileId;
+
+      // Nếu chưa có, tự động tạo
+      if (!profiles || profiles.length === 0) {
+        const [insertResult] = await connection.execute(
+          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
+          [profileId, profileId]
+        );
+        actualProfileId = insertResult.insertId;
+      } else {
+        actualProfileId = profiles[0].id;
+      }
+
+      const limitNum = Number(limit) || 50;
+      const offsetNum = Number(offset) || 0;
+      const query =
+        "SELECT id, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies " +
+        `FROM health_profiles WHERE id = ? LIMIT ${limitNum} OFFSET ${offsetNum}`;
+      const [rows] = await connection.execute(query, [actualProfileId]);
       return rows;
     } finally {
       connection.release();
@@ -66,169 +131,106 @@ class HealthMetric {
 
   // Lấy chỉ số sức khỏe theo loại và profile ID
   static async getByMetricType(profileId, metricType, limit = 50) {
-    const connection = await pool.getConnection();
-    try {
-      const query = `
-        SELECT hm.*, u.full_name as recorded_by_name
-        FROM health_metrics hm
-        LEFT JOIN users u ON hm.recorded_by = u.id
-        WHERE hm.profile_id = ? AND hm.metric_type = ?
-        ORDER BY hm.recorded_at DESC
-        LIMIT ?
-      `;
-
-      const [rows] = await connection.execute(query, [
-        profileId,
-        metricType,
-        limit,
-      ]);
-      return rows;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return [];
   }
 
   // Lấy chỉ số sức khỏe theo ID
   static async findById(id) {
-    const connection = await pool.getConnection();
-    try {
-      const query = `
-        SELECT hm.*, u.full_name as recorded_by_name
-        FROM health_metrics hm
-        LEFT JOIN users u ON hm.recorded_by = u.id
-        WHERE hm.id = ?
-      `;
-
-      const [rows] = await connection.execute(query, [id]);
-      return rows[0] || null;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return null;
   }
 
   // Cập nhật chỉ số sức khỏe
   static async update(id, updateData) {
-    const connection = await pool.getConnection();
-    try {
-      const { valueNumeric, valueText, unit, status, notes } = updateData;
-
-      const query = `
-        UPDATE health_metrics 
-        SET value_numeric = ?, value_text = ?, unit = ?, status = ?, notes = ?, updated_at = NOW()
-        WHERE id = ?
-      `;
-
-      const [result] = await connection.execute(query, [
-        valueNumeric || null,
-        valueText || null,
-        unit || null,
-        status || "normal",
-        notes || null,
-        id,
-      ]);
-
-      return result;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return { affectedRows: 0 };
   }
 
   // Xóa chỉ số sức khỏe
   static async delete(id) {
-    const connection = await pool.getConnection();
-    try {
-      const query = "DELETE FROM health_metrics WHERE id = ?";
-      const [result] = await connection.execute(query, [id]);
-      return result;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return { affectedRows: 0 };
   }
 
   // Lấy thống kê chỉ số sức khỏe (trung bình, min, max)
   static async getStatistics(profileId, metricType, days = 7) {
-    const connection = await pool.getConnection();
-    try {
-      const query = `
-        SELECT 
-          metric_type,
-          COUNT(*) as count,
-          AVG(value_numeric) as avg_value,
-          MIN(value_numeric) as min_value,
-          MAX(value_numeric) as max_value,
-          unit
-        FROM health_metrics
-        WHERE profile_id = ? 
-          AND metric_type = ?
-          AND recorded_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-        GROUP BY metric_type, unit
-      `;
-
-      const [rows] = await connection.execute(query, [
-        profileId,
-        metricType,
-        days,
-      ]);
-      return rows[0] || null;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return null;
   }
 
   // Lấy chỉ số sức khỏe gần nhất theo loại
   static async getLatestByMetricType(profileId, metricType) {
-    const connection = await pool.getConnection();
-    try {
-      const query = `
-        SELECT hm.*, u.full_name as recorded_by_name
-        FROM health_metrics hm
-        LEFT JOIN users u ON hm.recorded_by = u.id
-        WHERE hm.profile_id = ? AND hm.metric_type = ?
-        ORDER BY hm.recorded_at DESC
-        LIMIT 1
-      `;
-
-      const [rows] = await connection.execute(query, [
-        profileId,
-        metricType,
-      ]);
-      return rows[0] || null;
-    } finally {
-      connection.release();
-    }
+    // Stub function - không sử dụng
+    return null;
   }
 
   // Lấy tất cả chỉ số gần nhất
   static async getLatestAllMetrics(profileId) {
+    // Stub function - không sử dụng
+    return [];
+  }
+
+  // Đếm số lượng chỉ số sức khỏe theo profile (profileId thực sự là userId)
+  static async countByProfileId(profileId) {
     const connection = await pool.getConnection();
     try {
-      const query = `
-        SELECT hm.*, u.full_name as recorded_by_name
-        FROM health_metrics hm
-        LEFT JOIN users u ON hm.recorded_by = u.id
-        WHERE hm.profile_id = ? 
-          AND hm.recorded_at = (
-            SELECT MAX(recorded_at) 
-            FROM health_metrics 
-            WHERE profile_id = hm.profile_id AND metric_type = hm.metric_type
-          )
-        ORDER BY hm.recorded_at DESC
-      `;
+      // Tìm hoặc tạo health_profiles
+      let [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
+        [profileId]
+      );
 
-      const [rows] = await connection.execute(query, [profileId]);
-      return rows;
+      let actualProfileId;
+
+      if (!profiles || profiles.length === 0) {
+        const [insertResult] = await connection.execute(
+          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
+          [profileId, profileId]
+        );
+        actualProfileId = insertResult.insertId;
+      } else {
+        actualProfileId = profiles[0].id;
+      }
+
+      const query = "SELECT COUNT(*) as count FROM health_profiles WHERE id = ?";
+      const [rows] = await connection.execute(query, [actualProfileId]);
+      return rows[0]?.count || 0;
     } finally {
       connection.release();
     }
   }
 
-  // Đếm số lượng chỉ số sức khỏe theo profile
-  static async countByProfileId(profileId) {
+  // Lấy tất cả chỉ số sức khỏe theo profile ID (profileId thực sự là userId)
+  static async getByProfileId(profileId, limit = 100, offset = 0) {
     const connection = await pool.getConnection();
     try {
-      const query = "SELECT COUNT(*) as count FROM health_metrics WHERE profile_id = ?";
-      const [rows] = await connection.execute(query, [profileId]);
-      return rows[0]?.count || 0;
+      // Bước 1: Tìm health_profiles.id từ user_id
+      let [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
+        [profileId]
+      );
+
+      let actualProfileId;
+
+      // Nếu chưa có, tự động tạo
+      if (!profiles || profiles.length === 0) {
+        const [insertResult] = await connection.execute(
+          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
+          [profileId, profileId]
+        );
+        actualProfileId = insertResult.insertId;
+      } else {
+        actualProfileId = profiles[0].id;
+      }
+
+      const limitNum = Number(limit) || 100;
+      const offsetNum = Number(offset) || 0;
+      const query =
+        "SELECT id, user_id, elderly_name, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies " +
+        `FROM health_profiles WHERE id = ? LIMIT ${limitNum} OFFSET ${offsetNum}`;
+      const [rows] = await connection.execute(query, [actualProfileId]);
+      return rows;
     } finally {
       connection.release();
     }
@@ -236,18 +238,16 @@ class HealthMetric {
 
   // Lấy tất cả các loại metric có sẵn
   static async getAvailableMetricTypes() {
-    const connection = await pool.getConnection();
-    try {
-      const query = `
-        SELECT DISTINCT metric_type 
-        FROM health_metrics 
-        ORDER BY metric_type
-      `;
-      const [rows] = await connection.execute(query);
-      return rows;
-    } finally {
-      connection.release();
-    }
+    // Trả về danh sách hỗ trợ
+    return [
+      { metric_type: "age" },
+      { metric_type: "weight" },
+      { metric_type: "height" },
+      { metric_type: "blood_type" },
+      { metric_type: "blood_pressure" },
+      { metric_type: "chronic_diseases" },
+      { metric_type: "allergies" },
+    ];
   }
 }
 

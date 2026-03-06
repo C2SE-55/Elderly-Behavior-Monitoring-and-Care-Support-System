@@ -179,6 +179,35 @@ export default function HealthScreen() {
 
   const user = getCurrentUser();
 
+  // Load chỉ số sức khỏe đã lưu khi mở màn hình (hiển thị các trường cũ để chỉnh sửa)
+  const loadHealthProfile = async () => {
+    if (!user?.id) return;
+    try {
+      const response = await api.get(`/health-metrics/profile/${user.id}`);
+      const payload = response.data?.data;
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      const profile = rows[0];
+      if (!profile) return;
+
+      setFullName(profile.elderly_name ?? "");
+      setAge(profile.age != null ? String(profile.age) : "");
+      setHeight(profile.height != null ? String(profile.height) : "");
+      setWeight(profile.weight != null ? String(profile.weight) : "");
+      setBloodPressure(
+        profile.blood_pressure != null ? String(profile.blood_pressure) : ""
+      );
+      setBloodType(profile.blood_type ?? null);
+      setChronicDisease(profile.chronic_diseases ?? "");
+      setAllergy(profile.allergies ?? "");
+    } catch (err) {
+      console.warn("Không thể tải chỉ số sức khỏe:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadHealthProfile();
+  }, [user?.id]);
+
   // Bàn phím cuộn xuống khi nhập vào input
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () =>
@@ -245,15 +274,98 @@ export default function HealthScreen() {
     try {
       setSubmitting(true);
 
-      // Gửi chỉ số huyết áp lên API health-metrics
-      await api.post("/health-metrics", {
-        profileId,
-        metricType: "blood_pressure",
-        valueNumeric: bpNum,
-        unit: "mmHg",
-        status: "normal",
-        notes: `Tuổi: ${ageNum}, Nhóm máu: ${bloodType}, Chiều cao: ${height} cm, Cân nặng: ${weight} kg, Bệnh nền: ${chronicDisease}, Dị ứng: ${allergy}`,
-      });
+      const requests: Promise<unknown>[] = [];
+
+      // Họ và tên
+      if (fullName.trim()) {
+        requests.push(
+          api.post("/health-metrics", {
+            profileId,
+            metricType: "elderly_name",
+            valueText: fullName.trim(),
+          })
+        );
+      }
+
+      // Tuổi
+      requests.push(
+        api.post("/health-metrics", {
+          profileId,
+          metricType: "age",
+          age: ageNum,
+        })
+      );
+
+      // Nhóm máu
+      requests.push(
+        api.post("/health-metrics", {
+          profileId,
+          metricType: "blood_type",
+          bloodType,
+        })
+      );
+
+      // Chiều cao
+      if (height) {
+        const h = Number(height);
+        if (!Number.isNaN(h)) {
+          requests.push(
+            api.post("/health-metrics", {
+              profileId,
+              metricType: "height",
+              valueNumeric: h,
+            })
+          );
+        }
+      }
+
+      // Cân nặng
+      if (weight) {
+        const w = Number(weight);
+        if (!Number.isNaN(w)) {
+          requests.push(
+            api.post("/health-metrics", {
+              profileId,
+              metricType: "weight",
+              valueNumeric: w,
+            })
+          );
+        }
+      }
+
+      // Huyết áp
+      requests.push(
+        api.post("/health-metrics", {
+          profileId,
+          metricType: "blood_pressure",
+          valueNumeric: bpNum,
+        })
+      );
+
+      // Bệnh nền
+      requests.push(
+        api.post("/health-metrics", {
+          profileId,
+          metricType: "chronic_diseases",
+          valueText: chronicDisease || "",
+          chronicDiseases: chronicDisease || "",
+        })
+      );
+
+      // Dị ứng
+      requests.push(
+        api.post("/health-metrics", {
+          profileId,
+          metricType: "allergies",
+          valueText: allergy || "",
+          allergies: allergy || "",
+        })
+      );
+
+      await Promise.all(requests);
+
+      // Load lại form từ DB để khớp dữ liệu
+      await loadHealthProfile();
 
       setSuccess("Lưu chỉ số sức khỏe thành công.");
     } catch (err: any) {
