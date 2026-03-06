@@ -1,5 +1,6 @@
-import { Redirect } from 'expo-router';
+import React from "react";
+import HomepageUserScreen from "@/components/User/homepage";
 
 export default function Index() {
-  return <Redirect href="/(auths)/welcome" />;
+  return <HomepageUserScreen />;
 }
