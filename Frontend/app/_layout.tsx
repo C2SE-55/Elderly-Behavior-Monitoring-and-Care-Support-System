@@ -19,6 +19,7 @@ export default function RootLayout() {
         initialRouteName="(tabs)"
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(admin)" />
         <Stack.Screen name="(auths)" />
         <Stack.Screen name="(homepages)" />
         <Stack.Screen name="(healths)" />
