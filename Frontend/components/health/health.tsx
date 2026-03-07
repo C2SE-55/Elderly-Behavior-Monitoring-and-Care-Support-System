@@ -28,7 +28,7 @@ const HealthHeader = () => {
       </TouchableOpacity>
 
       {/* Tiêu đề */}
-      <Text style={headerStyles.title}>Chỉ số sức khỏe</Text>
+      <Text style={headerStyles.title}>Quản lý thông tin sức khỏe</Text>
 
       {/* View rỗng để canh đều 2 bên icon */}
       <View style={{ width: 22 }} />

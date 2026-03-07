@@ -17,7 +17,7 @@ import Avatar from "../../assets/images/avatar.png";
 import { api } from "../../services/api";
 const PRIMARY = "#4B2E83";
 
-// HEADER: giống trang Chỉ số sức khỏe
+// HEADER: giống trang Quản lý thông tin sức khỏe
 const ProfileHeader = () => {
   const router = useRouter();
 
