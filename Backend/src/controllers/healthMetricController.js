@@ -3,18 +3,35 @@ const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const HealthMetric = require("../models/HealthMetric");
 const { isEmptyField } = require("../utils/validators");
 
-// Tạo chỉ số sức khỏe mới
+// Tạo / cập nhật chỉ số sức khỏe (ghi vào bảng health_profiles)
 exports.createMetric = async (req, res) => {
   try {
-    const { profileId, metricType, valueNumeric, valueText, unit, status, notes } = req.body;
-    const userId = req.user?.id; // Lấy từ JWT token
+    const {
+      profileId,
+      metricType: rawMetricType,
+      valueNumeric,
+      valueText,
+      age,
+      bloodType,
+      chronicDiseases,
+      allergies,
+    } = req.body;
 
-    // Xác thực dữ liệu đầu vào
-    if (isEmptyField(profileId) || isEmptyField(metricType)) {
-      return sendFail(res, "Profile ID và loại chỉ số sức khỏe là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    // Chuẩn hóa metricType (string, trim) để tránh lỗi khi FE gửi kiểu khác
+    const metricType =
+      rawMetricType != null && rawMetricType !== ""
+        ? String(rawMetricType).trim()
+        : "";
+
+    // 1. Kiểm tra trường bắt buộc
+    if (!profileId) {
+      return sendFail(res, "Profile ID là bắt buộc", HTTP_STATUS.BAD_REQUEST);
+    }
+    if (!metricType) {
+      return sendFail(res, "Loại chỉ số sức khỏe là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
 
-    // Kiểm tra metricType hợp lệ
+    // 2. Kiểm tra loại chỉ số hợp lệ
     const validMetricTypes = [
       "heart_rate",
       "blood_pressure",
@@ -22,56 +39,102 @@ exports.createMetric = async (req, res) => {
       "blood_sugar",
       "oxygen_saturation",
       "weight",
+      "height",
       "steps",
       "calories_burned",
       "sleep_quality",
       "blood_oxygen",
       "heart_rate_variability",
+      "age",
+      "blood_type",
+      "chronic_diseases",
+      "allergies",
+      "elderly_name",
     ];
 
     if (!validMetricTypes.includes(metricType)) {
       return sendFail(
         res,
-        `Loại chỉ số không hợp lệ. Được hỗ trợ: ${validMetricTypes.join(", ")}`,
+        `Loại chỉ số không hợp lệ: '${metricType}'. Được hỗ trợ: ${validMetricTypes.join(", ")}`,
         HTTP_STATUS.BAD_REQUEST
       );
     }
 
-    // Kiểm tra status hợp lệ
-    if (status && !["normal", "warning", "critical"].includes(status)) {
-      return sendFail(res, "Status phải là: normal, warning hoặc critical", HTTP_STATUS.BAD_REQUEST);
+    // 3. Ràng buộc business cho một số loại chỉ số
+    if (metricType === "age" && age != null) {
+      const ageNum = Number(age);
+      if (Number.isNaN(ageNum) || ageNum <= 10 || ageNum >= 150) {
+        return sendFail(
+          res,
+          "Tuổi phải lớn hơn 10 và nhỏ hơn 150",
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
     }
 
-    // Kiểm tra ít nhất một trong valueNumeric hoặc valueText
-    if (!valueNumeric && !valueText) {
-      return sendFail(res, "Phải cung cấp giá trị số hoặc văn bản", HTTP_STATUS.BAD_REQUEST);
+    if (metricType === "blood_pressure" && valueNumeric != null) {
+      const bpNum = Number(valueNumeric);
+      if (Number.isNaN(bpNum) || bpNum < 50 || bpNum > 250) {
+        return sendFail(
+          res,
+          "Huyết áp phải nằm trong khoảng 50–250 mmHg",
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
     }
 
+    if (metricType === "blood_type" && bloodType) {
+      const allowedBloodTypes = [
+        "A+",
+        "A-",
+        "B+",
+        "B-",
+        "AB+",
+        "AB-",
+        "O+",
+        "O-",
+        "Rh-null",
+      ];
+      if (!allowedBloodTypes.includes(bloodType)) {
+        return sendFail(
+          res,
+          `Nhóm máu không hợp lệ. Hỗ trợ: ${allowedBloodTypes.join(", ")}`,
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+    }
+
+    // 4. Chuẩn bị dữ liệu ghi xuống model
     const metricData = {
       profileId,
       metricType,
-      valueNumeric: valueNumeric || null,
-      valueText: valueText || null,
-      unit: unit || null,
-      status: status || "normal",
-      notes: notes || null,
-      recordedBy: userId || null,
+      valueNumeric: valueNumeric ?? null,
+      valueText: valueText ?? null,
+      age: age ?? null,
+      bloodType: bloodType ?? null,
+      chronicDiseases: chronicDiseases ?? null,
+      allergies: allergies ?? null,
     };
 
     const result = await HealthMetric.create(metricData);
 
+    // 5. Trả về kết quả thành công với đúng format sendSuccess(data, message, status)
     return sendSuccess(
       res,
-      "Tạo chỉ số sức khỏe thành công",
       {
         id: result.insertId,
         ...metricData,
       },
+      "Cập nhật chỉ số sức khỏe thành công",
       HTTP_STATUS.CREATED
     );
   } catch (error) {
     console.error("Error creating health metric:", error);
-    return sendError(res, "Lỗi khi tạo chỉ số sức khỏe", HTTP_STATUS.INTERNAL_ERROR);
+    return sendError(
+      res,
+      "Lỗi khi cập nhật chỉ số sức khỏe",
+      HTTP_STATUS.INTERNAL_ERROR
+    );
   }
 };
 
@@ -93,15 +156,19 @@ exports.getMetricsByProfile = async (req, res) => {
 
     const count = await HealthMetric.countByProfileId(profileId);
 
-    return sendSuccess(res, "Lấy danh sách chỉ số sức khỏe thành công", {
-      data: metrics,
-      pagination: {
-        total: count,
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        hasMore: parseInt(offset) + parseInt(limit) < count,
+    return sendSuccess(
+      res,
+      {
+        data: metrics,
+        pagination: {
+          total: count,
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          hasMore: parseInt(offset) + parseInt(limit) < count,
+        },
       },
-    });
+      "Lấy danh sách chỉ số sức khỏe thành công"
+    );
   } catch (error) {
     console.error("Error fetching health metrics:", error);
     return sendError(res, "Lỗi khi lấy chỉ số sức khỏe", HTTP_STATUS.INTERNAL_ERROR);
@@ -152,21 +219,48 @@ exports.getLatestMetricByType = async (req, res) => {
   }
 };
 
-// Lấy tất cả chỉ số gần nhất (tất cả loại)
+// Lấy tất cả chỉ số gần nhất (từ health_profiles)
 exports.getAllLatestMetrics = async (req, res) => {
   try {
-    const { profileId } = req.params;
+    const { profileId } = req.params; // Thực sự là userId
 
-    if (isEmptyField(profileId)) {
+    if (!profileId) {
       return sendFail(res, "Profile ID là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const metrics = await HealthMetric.getLatestAllMetrics(profileId);
+    // Lấy dữ liệu từ health_profiles table dùng user_id (profileId thực sự là userId)
+    const pool = require("../config/database");
+    const connection = await pool.getConnection();
+    
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
+        [profileId]
+      );
 
-    return sendSuccess(res, "Lấy tất cả chỉ số gần nhất thành công", {
-      data: metrics,
-      count: metrics.length,
-    });
+      if (!rows || rows.length === 0) {
+        return sendFail(res, "Không tìm thấy hồ sơ sức khỏe", HTTP_STATUS.NOT_FOUND);
+      }
+
+      const profile = rows[0];
+      const metrics = [];
+
+      // Convert thành format metric
+      if (profile.age) metrics.push({ metric_type: "age", value_numeric: profile.age });
+      if (profile.weight) metrics.push({ metric_type: "weight", value_numeric: profile.weight });
+      if (profile.height) metrics.push({ metric_type: "height", value_numeric: profile.height });
+      if (profile.blood_type) metrics.push({ metric_type: "blood_type", value_text: profile.blood_type });
+      if (profile.blood_pressure) metrics.push({ metric_type: "blood_pressure", value_numeric: profile.blood_pressure });
+      if (profile.chronic_diseases) metrics.push({ metric_type: "chronic_diseases", value_text: profile.chronic_diseases });
+      if (profile.allergies) metrics.push({ metric_type: "allergies", value_text: profile.allergies });
+
+      return sendSuccess(res, "Lấy tất cả chỉ số gần nhất thành công", {
+        data: metrics,
+        count: metrics.length,
+      });
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error("Error fetching all latest metrics:", error);
     return sendError(res, "Lỗi khi lấy chỉ số sức khỏe", HTTP_STATUS.INTERNAL_ERROR);

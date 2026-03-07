@@ -93,7 +93,24 @@ const isValidPassword = (password) => {
 
 // Kiểm tra trường rỗng
 const isEmptyField = (field) => {
-  return !field || field.trim() === "";
+  // Kiểm tra null, undefined
+  if (field === null || field === undefined) {
+    return true;
+  }
+  // Nếu là number 0, không coi là empty
+  if (typeof field === "number") {
+    return false;
+  }
+  // Nếu là string, kiểm tra trim
+  if (typeof field === "string") {
+    return field.trim() === "";
+  }
+  // Nếu là boolean, không empty
+  if (typeof field === "boolean") {
+    return false;
+  }
+  // Các type khác, coi như empty
+  return true;
 };
 
 module.exports = {

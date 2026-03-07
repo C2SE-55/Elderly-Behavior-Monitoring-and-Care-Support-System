@@ -216,7 +216,7 @@ export default function ProfileScreen() {
             value={fullName}
             editable
             onChangeText={setFullName}
-            helperText="Có thể thay đổi. "
+            helperText="Có thể thay đổi. Không được để trống nếu muốn cập nhật."
           />
           <View style={{ height: 4 }} />
           <ProfileInput
@@ -224,14 +224,14 @@ export default function ProfileScreen() {
             placeholder="Nhập username"
             value={username}
             editable={false}
-            helperText="Không thể thay đổi username ."
+            helperText="Không thể thay đổi username (ràng buộc từ backend)."
           />
           <ProfileInput
             label="Email"
             placeholder="Nhập email"
             value={email}
             editable={false}
-            helperText="Không thể thay đổi email ."
+            helperText="Không thể thay đổi email (ràng buộc từ backend)."
           />
           <ProfileInput
             label="Số điện thoại"
@@ -239,7 +239,7 @@ export default function ProfileScreen() {
             value={phone}
             editable
             onChangeText={setPhone}
-            helperText="Phải có đúng 10 chữ số ."
+            helperText="Phải có đúng 10 chữ số (định dạng Việt Nam, ví dụ: 0912345678)."
           />
           <ProfileRoleBox />
 
