@@ -65,6 +65,8 @@ const HomepageUserScreen = () => {
                             router.push("/(profiles)/profile");
                         } else if (item.id === "health") {
                             router.push("/(healths)/health");
+                        } else if (item.id === "behavior") {
+                            router.push("/(cameras)/camera");
                         }
                     };
 
