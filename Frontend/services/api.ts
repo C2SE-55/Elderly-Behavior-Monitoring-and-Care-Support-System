@@ -23,6 +23,20 @@ const getApiBaseUrl = () => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+/** Base URL cho Chatbot Service (Trợ lý ảo, meal plan) - cùng host, port 8000 */
+const getChatbotBaseUrl = () => {
+  try {
+    const base = getApiBaseUrl();
+    const url = new URL(base);
+    url.port = "8000";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "http://localhost:8000";
+  }
+};
+
+export const CHATBOT_BASE_URL = getChatbotBaseUrl();
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: {
@@ -47,4 +61,21 @@ export const setAuth = (token: string | null, user?: any) => {
 };
 
 export const getCurrentUser = () => currentUser;
+
+/** Gửi tin nhắn tới Trợ lý ảo (Chatbot Service). history: [{ role, content }] */
+export const sendChatMessage = async (
+  message: string,
+  options?: { user_id?: number; history?: { role: string; content: string }[] }
+): Promise<string> => {
+  const res = await axios.post(
+    `${CHATBOT_BASE_URL}/chat`,
+    {
+      message,
+      user_id: options?.user_id ?? null,
+      history: options?.history ?? [],
+    },
+    { timeout: 30000 }
+  );
+  return res.data?.reply ?? "Trợ lý chưa phản hồi.";
+};
 

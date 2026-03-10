@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   PanResponder,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -9,15 +11,27 @@ import {
   TouchableOpacity,
   Animated,
 } from "react-native";
+import { sendChatMessage, getCurrentUser } from "@/services/api";
 
 const { width, height } = Dimensions.get("window");
 
 const BOT_SIZE = 53;
 const BOTTOM_SAFE_OFFSET = 100; // để không đè lên thanh menu
 
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+
+const INITIAL_MESSAGE: ChatMessage = {
+  id: "welcome",
+  role: "assistant",
+  content: "Xin chào, mình là trợ lý ảo. Mình có thể giúp gì cho bạn?",
+};
+
 const FloatingAssistant: React.FC = () => {
   const [chatOpen, setChatOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const initialPos = {
     x: width - BOT_SIZE - 24,
@@ -81,6 +95,42 @@ const FloatingAssistant: React.FC = () => {
     []
   );
 
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: "user",
+      content: text,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
+    try {
+      const user = getCurrentUser();
+      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      const reply = await sendChatMessage(text, {
+        user_id: user?.id,
+        history,
+      });
+      setMessages((prev) => [
+        ...prev,
+        { id: `a-${Date.now()}`, role: "assistant", content: reply },
+      ]);
+    } catch (_e) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content: "Không thể kết nối trợ lý. Bạn kiểm tra Chatbot Service (port 8000) và thử lại.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }, [input, loading, messages]);
+
   return (
     <>
       {/* Nút trợ lý ảo trôi nổi */}
@@ -119,24 +169,39 @@ const FloatingAssistant: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Nội dung chat mẫu */}
-            <View style={styles.chatBody}>
-              <View style={styles.messageRowLeft}>
-                <View style={styles.messageBubbleLeft}>
-                  <Text style={styles.messageTextLeft}>
-                    Xin chào, mình là trợ lý ảo. Mình có thể giúp gì cho bạn?
-                  </Text>
+            {/* Nội dung chat */}
+            <ScrollView
+              ref={scrollRef}
+              style={styles.chatBody}
+              contentContainerStyle={styles.chatBodyContent}
+              onContentSizeChange={() =>
+                scrollRef.current?.scrollToEnd({ animated: true })
+              }
+              keyboardShouldPersistTaps="handled"
+            >
+              {messages.map((msg) =>
+                msg.role === "assistant" ? (
+                  <View key={msg.id} style={styles.messageRowLeft}>
+                    <View style={styles.messageBubbleLeft}>
+                      <Text style={styles.messageTextLeft}>{msg.content}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View key={msg.id} style={styles.messageRowRight}>
+                    <View style={styles.messageBubbleRight}>
+                      <Text style={styles.messageTextRight}>{msg.content}</Text>
+                    </View>
+                  </View>
+                )
+              )}
+              {loading && (
+                <View style={styles.messageRowLeft}>
+                  <View style={styles.messageBubbleLeft}>
+                    <ActivityIndicator size="small" color="#4B2E83" />
+                  </View>
                 </View>
-              </View>
-
-              <View style={styles.messageRowRight}>
-                <View style={styles.messageBubbleRight}>
-                  <Text style={styles.messageTextRight}>
-                    Mình muốn được hướng dẫn sử dụng ứng dụng.
-                  </Text>
-                </View>
-              </View>
-            </View>
+              )}
+            </ScrollView>
 
             {/* Thanh nhập tin nhắn */}
             <View style={styles.inputRow}>
@@ -146,8 +211,14 @@ const FloatingAssistant: React.FC = () => {
                 placeholderTextColor="#9CA3AF"
                 value={input}
                 onChangeText={setInput}
+                editable={!loading}
+                onSubmitEditing={handleSend}
               />
-              <TouchableOpacity style={styles.sendButton}>
+              <TouchableOpacity
+                style={[styles.sendButton, loading && styles.sendButtonDisabled]}
+                onPress={handleSend}
+                disabled={loading}
+              >
                 <Text style={styles.sendIcon}>➤</Text>
               </TouchableOpacity>
             </View>
@@ -245,9 +316,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   chatBody: {
+    maxHeight: 320,
+    backgroundColor: "#F3F4F6",
+  },
+  chatBodyContent: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: "#F3F4F6",
+    paddingBottom: 8,
+  },
+  sendButtonDisabled: {
+    opacity: 0.6,
   },
   messageRowLeft: {
     alignItems: "flex-start",

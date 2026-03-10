@@ -234,7 +234,7 @@ exports.getAllLatestMetrics = async (req, res) => {
     
     try {
       const [rows] = await connection.execute(
-        "SELECT id, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
+        "SELECT id, elderly_name, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
         [profileId]
       );
 
@@ -245,7 +245,8 @@ exports.getAllLatestMetrics = async (req, res) => {
       const profile = rows[0];
       const metrics = [];
 
-      // Convert thành format metric
+      // Convert thành format metric (elderly_name cho meal plan / cá nhân hóa)
+      if (profile.elderly_name) metrics.push({ metric_type: "elderly_name", value_text: profile.elderly_name });
       if (profile.age) metrics.push({ metric_type: "age", value_numeric: profile.age });
       if (profile.weight) metrics.push({ metric_type: "weight", value_numeric: profile.weight });
       if (profile.height) metrics.push({ metric_type: "height", value_numeric: profile.height });
