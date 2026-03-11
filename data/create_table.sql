@@ -168,8 +168,19 @@ CREATE TABLE meal_plans (
 CREATE TABLE chat_sessions (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT,
+    title VARCHAR(255),
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 15b CHAT MESSAGES (tin nhắn theo từng phiên chat)
+CREATE TABLE chat_messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id INT NOT NULL,
+    role VARCHAR(30) NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
 );
 
 -- 16 NOTES (ghi chú)

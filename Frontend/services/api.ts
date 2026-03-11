@@ -61,21 +61,85 @@ export const setAuth = (token: string | null, user?: any) => {
 };
 
 export const getCurrentUser = () => currentUser;
+let lastChatSessionId: number | null = null;
+export const getLastChatSessionId = () => lastChatSessionId;
+export const setLastChatSessionId = (sessionId: number | null) => {
+  lastChatSessionId = sessionId;
+};
 
-/** Gửi tin nhắn tới Trợ lý ảo (Chatbot Service). history: [{ role, content }] */
+export type ChatHistoryMessage = {
+  id?: number | string;
+  role: "user" | "assistant";
+  content: string;
+  created_at?: string;
+};
+
+export const createChatSession = async (user_id?: number): Promise<number> => {
+  const res = await axios.post(
+    `${CHATBOT_BASE_URL}/chat/sessions`,
+    { user_id: user_id ?? null },
+    { timeout: 20000 }
+  );
+  return Number(res.data?.session_id);
+};
+
+export type ChatSessionSummary = {
+  id: number;
+  started_at: string;
+  title?: string;
+  message_count?: number;
+};
+
+export const getChatSessions = async (user_id?: number): Promise<ChatSessionSummary[]> => {
+  if (!user_id) return [];
+  const res = await axios.get(`${CHATBOT_BASE_URL}/chat/sessions`, {
+    params: { user_id },
+    timeout: 20000,
+  });
+  return res.data?.sessions ?? [];
+};
+
+export const getChatSessionMessages = async (
+  session_id: number,
+  user_id?: number
+): Promise<ChatHistoryMessage[]> => {
+  const res = await axios.get(`${CHATBOT_BASE_URL}/chat/sessions/${session_id}/messages`, {
+    params: user_id ? { user_id } : {},
+    timeout: 20000,
+  });
+  return (res.data?.messages ?? []).map((m: any) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    created_at: m.created_at,
+  }));
+};
+
+export const deleteChatSession = async (session_id: number, user_id?: number): Promise<boolean> => {
+  const res = await axios.delete(`${CHATBOT_BASE_URL}/chat/sessions/${session_id}`, {
+    params: user_id ? { user_id } : {},
+    timeout: 20000,
+  });
+  return !!res.data?.deleted;
+};
+
+/** Gửi tin nhắn tới Trợ lý ảo, gắn với session hiện tại */
 export const sendChatMessage = async (
   message: string,
-  options?: { user_id?: number; history?: { role: string; content: string }[] }
-): Promise<string> => {
+  options?: { user_id?: number; session_id?: number }
+): Promise<{ reply: string; session_id: number | null }> => {
   const res = await axios.post(
     `${CHATBOT_BASE_URL}/chat`,
     {
       message,
       user_id: options?.user_id ?? null,
-      history: options?.history ?? [],
+      session_id: options?.session_id ?? null,
     },
     { timeout: 30000 }
   );
-  return res.data?.reply ?? "Trợ lý chưa phản hồi.";
+  return {
+    reply: res.data?.reply ?? "Trợ lý chưa phản hồi.",
+    session_id: res.data?.session_id ?? null,
+  };
 };
 

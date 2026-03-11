@@ -1,8 +1,9 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
   PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +12,16 @@ import {
   TouchableOpacity,
   Animated,
 } from "react-native";
-import { sendChatMessage, getCurrentUser } from "@/services/api";
+import {
+  sendChatMessage,
+  getCurrentUser,
+  getChatSessionMessages,
+  getChatSessions,
+  deleteChatSession,
+  getLastChatSessionId,
+  setLastChatSessionId,
+  type ChatSessionSummary,
+} from "@/services/api";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,7 +41,15 @@ const FloatingAssistant: React.FC = () => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [sessionList, setSessionList] = useState<ChatSessionSummary[]>([]);
+  const [initializing, setInitializing] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  const resolveUserId = useCallback(() => {
+    const user = getCurrentUser() as any;
+    return user?.id ?? user?.user_id ?? undefined;
+  }, []);
 
   const initialPos = {
     x: width - BOT_SIZE - 24,
@@ -97,7 +115,7 @@ const FloatingAssistant: React.FC = () => {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || initializing) return;
     setInput("");
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -107,16 +125,23 @@ const FloatingAssistant: React.FC = () => {
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
     try {
-      const user = getCurrentUser();
-      const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const reply = await sendChatMessage(text, {
-        user_id: user?.id,
-        history,
+      const userId = resolveUserId();
+      const res = await sendChatMessage(text, {
+        user_id: userId,
+        session_id: sessionId ?? undefined,
       });
+      if (res.session_id) {
+        setSessionId(res.session_id);
+        setLastChatSessionId(res.session_id);
+      }
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: "assistant", content: reply },
+        { id: `a-${Date.now()}`, role: "assistant", content: res.reply },
       ]);
+      if (userId) {
+        const sessions = await getChatSessions(userId);
+        setSessionList(sessions);
+      }
     } catch (_e) {
       setMessages((prev) => [
         ...prev,
@@ -129,7 +154,157 @@ const FloatingAssistant: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages]);
+  }, [input, loading, initializing, sessionId, resolveUserId]);
+
+  const handleStartNewSession = useCallback(async () => {
+    setSessionId(null);
+    setLastChatSessionId(null);
+    setMessages([INITIAL_MESSAGE]);
+  }, []);
+
+  const loadLatestSession = useCallback(async () => {
+    const userId = resolveUserId();
+    setInitializing(true);
+    try {
+      const rememberedSessionId = getLastChatSessionId();
+      if (rememberedSessionId) {
+        setSessionId(rememberedSessionId);
+        const rememberedRows = await getChatSessionMessages(rememberedSessionId, userId);
+        if (rememberedRows.length) {
+          setMessages(
+            rememberedRows.map((m, idx) => ({
+              id: String(m.id ?? `${m.role}-${idx}`),
+              role: m.role === "user" ? "user" : "assistant",
+              content: m.content,
+            }))
+          );
+          return;
+        }
+      }
+
+      const sessions = await getChatSessions(userId);
+      setSessionList(sessions);
+      if (!sessions.length) {
+        setSessionId(null);
+        setLastChatSessionId(null);
+        setMessages([INITIAL_MESSAGE]);
+        return;
+      }
+      const sid = Number(sessions[0].id);
+      setSessionId(sid);
+      setLastChatSessionId(sid);
+      const rows = await getChatSessionMessages(sid, userId);
+      if (!rows.length) {
+        setMessages([INITIAL_MESSAGE]);
+      } else {
+        setMessages(
+          rows.map((m, idx) => ({
+            id: String(m.id ?? `${m.role}-${idx}`),
+            role: m.role === "user" ? "user" : "assistant",
+            content: m.content,
+          }))
+        );
+      }
+    } catch {
+      setSessionId(null);
+      setMessages([INITIAL_MESSAGE]);
+    } finally {
+      setInitializing(false);
+    }
+  }, [resolveUserId]);
+
+  const handleSelectSession = useCallback(
+    async (sid: number) => {
+      const userId = resolveUserId();
+      setLoading(true);
+      try {
+        setSessionId(sid);
+        setLastChatSessionId(sid);
+        const rows = await getChatSessionMessages(sid, userId);
+        if (!rows.length) {
+          setMessages([INITIAL_MESSAGE]);
+          return;
+        }
+        setMessages(
+          rows.map((m, idx) => ({
+            id: String(m.id ?? `${m.role}-${idx}`),
+            role: m.role === "user" ? "user" : "assistant",
+            content: m.content,
+          }))
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [resolveUserId]
+  );
+
+  const handleDeleteSession = useCallback(
+    async (sid: number) => {
+      const doDelete = async () => {
+        const userId = resolveUserId();
+        setLoading(true);
+        try {
+          await deleteChatSession(sid, userId);
+          const sessions = await getChatSessions(userId);
+          setSessionList(sessions);
+
+          if (sessionId === sid) {
+            if (sessions.length > 0) {
+              const nextId = Number(sessions[0].id);
+              setSessionId(nextId);
+              setLastChatSessionId(nextId);
+              const rows = await getChatSessionMessages(nextId, userId);
+              if (!rows.length) {
+                setMessages([INITIAL_MESSAGE]);
+              } else {
+                setMessages(
+                  rows.map((m, idx) => ({
+                    id: String(m.id ?? `${m.role}-${idx}`),
+                    role: m.role === "user" ? "user" : "assistant",
+                    content: m.content,
+                  }))
+                );
+              }
+            } else {
+              setSessionId(null);
+              setLastChatSessionId(null);
+              setMessages([INITIAL_MESSAGE]);
+            }
+          }
+        } catch {
+          // Web không có Alert native ổn định, dùng confirm + fallback bằng chat message.
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: "assistant",
+              content: "Không thể xóa phiên chat. Bạn thử lại nhé.",
+            },
+          ]);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (Platform.OS === "web") {
+        const confirmed = typeof window !== "undefined" ? window.confirm("Bạn có chắc muốn xóa phiên chat này không?") : true;
+        if (!confirmed) return;
+        await doDelete();
+        return;
+      }
+
+      // Native: xóa trực tiếp để tránh lỗi chặn thao tác trên một số môi trường.
+      await doDelete();
+    },
+    [resolveUserId, sessionId]
+  );
+
+  useEffect(() => {
+    if (chatOpen) {
+      loadLatestSession();
+    }
+  }, [chatOpen, loadLatestSession]);
 
   return (
     <>
@@ -164,12 +339,60 @@ const FloatingAssistant: React.FC = () => {
                 </View>
               </View>
 
-              <TouchableOpacity onPress={() => setChatOpen(false)}>
-                <Text style={styles.closeText}>✕</Text>
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                <TouchableOpacity onPress={handleStartNewSession} disabled={loading || initializing}>
+                  <Text style={styles.newSessionText}>Phiên mới</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setChatOpen(false)}>
+                  <Text style={styles.closeText}>✕</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Nội dung chat */}
+            {sessionList.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.sessionList}
+              >
+                {sessionList.map((s) => (
+                  <View
+                    key={String(s.id)}
+                    style={[
+                      styles.sessionChip,
+                      sessionId === Number(s.id) && styles.sessionChipActive,
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.sessionMainBtn}
+                      onPress={() => handleSelectSession(Number(s.id))}
+                      disabled={loading || initializing}
+                    >
+                      <Text
+                        style={[
+                          styles.sessionChipText,
+                          sessionId === Number(s.id) && styles.sessionChipTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {s.title || `Phiên #${s.id}`}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.sessionDeleteBtn}
+                      onPress={() => {
+                        void handleDeleteSession(Number(s.id));
+                      }}
+                      disabled={loading || initializing}
+                    >
+                      <Text style={styles.sessionDeleteText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
             <ScrollView
               ref={scrollRef}
               style={styles.chatBody}
@@ -198,6 +421,13 @@ const FloatingAssistant: React.FC = () => {
                 <View style={styles.messageRowLeft}>
                   <View style={styles.messageBubbleLeft}>
                     <ActivityIndicator size="small" color="#4B2E83" />
+                  </View>
+                </View>
+              )}
+              {initializing && (
+                <View style={styles.messageRowLeft}>
+                  <View style={styles.messageBubbleLeft}>
+                    <Text style={styles.messageTextLeft}>Đang tải lịch sử phiên chat...</Text>
                   </View>
                 </View>
               )}
@@ -314,10 +544,66 @@ const styles = StyleSheet.create({
   closeText: {
     color: "#E5E7EB",
     fontSize: 18,
+    marginLeft: 10,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  newSessionText: {
+    color: "#E5E7EB",
+    fontSize: 12,
+    fontWeight: "600",
   },
   chatBody: {
     maxHeight: 320,
     backgroundColor: "#F3F4F6",
+  },
+  sessionList: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E5E7EB",
+  },
+  sessionChip: {
+    maxWidth: 170,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#F3F4F6",
+  },
+  sessionMainBtn: {
+    flexShrink: 1,
+    marginRight: 6,
+  },
+  sessionDeleteBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E5E7EB",
+  },
+  sessionDeleteText: {
+    fontSize: 11,
+    color: "#6B7280",
+    lineHeight: 13,
+  },
+  sessionChipActive: {
+    backgroundColor: "#E9E2FB",
+  },
+  sessionChipText: {
+    fontSize: 12,
+    color: "#374151",
+  },
+  sessionChipTextActive: {
+    color: "#4B2E83",
+    fontWeight: "700",
   },
   chatBodyContent: {
     paddingHorizontal: 16,

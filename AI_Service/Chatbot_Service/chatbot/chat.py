@@ -8,10 +8,11 @@ from .meal_plan import get_health_profile_by_user_id
 load_dotenv()
 
 SYSTEM_PROMPT = """Bạn là Trợ lý ảo DINH DƯỠNG của ứng dụng Chăm sóc sức khỏe người cao tuổi. Quy tắc BẮT BUỘC:
-- Chỉ trả lời về: dinh dưỡng, thực đơn, khẩu phần ăn, thực phẩm, nước uống, thói quen ăn uống lành mạnh, hướng dẫn dùng tính năng dinh dưỡng trong ứng dụng.
+- Được phép trả lời về: dinh dưỡng, thực đơn, khẩu phần ăn, thực phẩm, nước uống, thói quen ăn uống, sở thích ăn uống, lối sống lành mạnh cho người cao tuổi (vận động nhẹ, ngủ nghỉ, sinh hoạt hằng ngày), và hướng dẫn dùng các tính năng trong ứng dụng.
 - Có thể hướng dẫn cách dùng app (mục Quản lý thông tin sức khỏe, Dị ứng, Thực đơn 7 ngày...).
-- TUYỆT ĐỐI KHÔNG trả lời các câu hỏi ngoài lề như: chính trị, lịch sử, người nổi tiếng, tin tức thời sự, giải trí, lập trình, toán khó, v.v.
-- Nếu người dùng hỏi nội dung ngoài phạm vi trên, hãy nói ngắn gọn: "Mình chỉ hỗ trợ về dinh dưỡng, thực đơn và hướng dẫn sử dụng ứng dụng cho người cao tuổi."
+- Luôn ưu tiên cá nhân hóa theo hồ sơ người cần chăm sóc trong bảng health_profiles (tuổi, cân nặng, chiều cao, huyết áp, bệnh nền, dị ứng).
+- TUYỆT ĐỐI KHÔNG trả lời các câu hỏi ngoài lề như: chính trị, lịch sử, người nổi tiếng, tin tức thời sự, giải trí thuần túy, lập trình, toán học không liên quan chăm sóc sức khỏe.
+- Nếu người dùng hỏi ngoài phạm vi trên, hãy nói ngắn gọn: "Mình tập trung hỗ trợ về sức khỏe, lối sống, dinh dưỡng và bữa ăn cho người cao tuổi trong ứng dụng này."
 - Gợi ý dinh dưỡng, thực đơn phù hợp người cao tuổi (có thể nhắc người dùng dùng tính năng "Thực đơn 7 ngày" trong app).
 - Khi người dùng yêu cầu "thực đơn 7 ngày": BẮT BUỘC trả lời ĐỦ 7 NGÀY (Ngày 1, 2, 3, 4, 5, 6, 7). Mỗi ngày ghi rõ Sáng/Trưa/Tối (có thể thêm giữa sáng/chiều nếu muốn). Không được dừng giữa chừng ở ngày 5 hay 6; phải hoàn thành hết Ngày 7. Dùng format gọn để đủ trong một tin nhắn.
 - Không đưa thông tin y tế thay thế bác sĩ; khi cần khuyên đến cơ sở y tế.
@@ -69,22 +70,29 @@ def chat_reply(user_message: str, history: list[dict], user_id: int | None = Non
     if not user_message:
         return "Bạn chưa nhập nội dung. Hãy gửi tin nhắn để mình hỗ trợ."
 
-    # Lọc nhanh những câu hỏi ngoài phạm vi dinh dưỡng / app để tránh tốn token
+    # Lọc theo blacklist (không dùng whitelist cứng) để tránh gò bó câu hỏi hợp lệ.
+    # Nếu câu hỏi không rõ ngoài lề thì vẫn cho model xử lý theo ngữ cảnh.
     lower = user_message.lower()
-    allowed_keywords = [
-        "ăn", "uống", "bữa", "thực đơn", "dinh dưỡng", "calo", "calories",
-        "cháo", "cơm", "canh", "rau", "thịt", "cá", "trứng", "sữa",
-        "tiểu đường", "huyết áp", "mỡ máu", "tim mạch",
-        "dị ứng", "thức ăn", "khẩu phần", "meal", "diet",
-        "ứng dụng", "app", "quản lý thông tin sức khỏe", "thực đơn 7 ngày",
+    off_topic_keywords = [
+        "tổng thống", "chính trị", "bầu cử", "chiến tranh", "lịch sử",
+        "bóng đá", "bóng rổ", "cricket", "game", "chơi game",
+        "lập trình", "code", "debug", "python", "javascript", "sql",
+        "toán", "giải phương trình", "đạo hàm", "tích phân",
+        "coin", "crypto", "chứng khoán", "forex",
+        "ca sĩ", "diễn viên", "showbiz", "phim", "anime",   
     ]
-    if not any(k in lower for k in allowed_keywords):
-        return "Mình chỉ hỗ trợ về dinh dưỡng, thực đơn và hướng dẫn sử dụng ứng dụng cho người cao tuổi. Bạn thử hỏi lại theo hướng này nhé."
+    if any(k in lower for k in off_topic_keywords):
+        return "Mình tập trung hỗ trợ về sức khỏe, lối sống, dinh dưỡng và bữa ăn cho người cao tuổi trong ứng dụng này. Bạn thử hỏi lại theo hướng đó nhé."
 
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return "Trợ lý đang bảo trì. Vui lòng thử lại sau."
     profile = get_health_profile_by_user_id(user_id) if user_id else None
+    if user_id and not profile:
+        return (
+            "Mình chưa đọc được hồ sơ người cần chăm sóc trong health_profiles cho tài khoản này. "
+            "Bạn vào mục 'Quản lý thông tin sức khỏe' để cập nhật hồ sơ trước nhé."
+        )
     messages = build_messages(profile, user_message, history or [])
     client = Groq(api_key=api_key)
     try:
