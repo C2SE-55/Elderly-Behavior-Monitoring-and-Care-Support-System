@@ -96,7 +96,24 @@ export const getChatSessions = async (user_id?: number): Promise<ChatSessionSumm
     params: { user_id },
     timeout: 20000,
   });
-  return res.data?.sessions ?? [];
+  const raw = res.data?.sessions ?? [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s: Record<string, unknown>) => {
+    const id = Number(s?.id ?? s?.ID ?? 0);
+    const rawTitle = s?.title ?? s?.Title ?? "";
+    const title =
+      typeof rawTitle === "string" && rawTitle.trim()
+        ? rawTitle.trim()
+        : id > 0
+          ? `Phiên #${id}`
+          : "Phiên chat";
+    return {
+      id,
+      title,
+      started_at: (s?.started_at as string) || undefined,
+      message_count: Number(s?.message_count ?? 0) || undefined,
+    } as ChatSessionSummary;
+  }).filter((s) => s.id > 0);
 };
 
 export const getChatSessionMessages = async (
