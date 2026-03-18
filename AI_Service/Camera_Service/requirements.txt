@@ -1,0 +1,8 @@
+matplotlib>=3.8
+torch>=2.0
+torchvision>=0.24
+opencv-python>=4.10
+xmltodict>=0.13
+requests>=2.28
+# Nhận diện khuôn mặt (người cần giám sát). Trên Windows có thể cần cài dlib trước: pip install dlib
+face_recognition>=1.3

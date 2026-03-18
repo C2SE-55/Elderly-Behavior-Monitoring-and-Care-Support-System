@@ -219,6 +219,33 @@ exports.getLatestMetricByType = async (req, res) => {
   }
 };
 
+// Danh sách ảnh khuôn mặt tham chiếu (cho Camera Service nhận diện người cần giám sát)
+exports.getFaceReferences = async (req, res) => {
+  try {
+    const pool = require("../config/database");
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, user_id, elderly_name, face_image_url FROM health_profiles WHERE face_image_url IS NOT NULL AND TRIM(face_image_url) != ''"
+      );
+      const baseUrl = process.env.BACKEND_URL || (req.protocol + "://" + req.get("host") || "http://localhost:5000");
+      const data = (rows || []).map((r) => ({
+        id: r.id,
+        user_id: r.user_id,
+        elderly_name: r.elderly_name || "",
+        face_image_url: r.face_image_url,
+        image_full_url: baseUrl.replace(/\/$/, "") + (r.face_image_url.startsWith("/") ? r.face_image_url : "/" + r.face_image_url),
+      }));
+      return sendSuccess(res, { data, count: data.length }, "Lấy danh sách ảnh tham chiếu thành công");
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error("Error fetching face references:", error);
+    return sendError(res, "Lỗi khi lấy danh sách ảnh tham chiếu", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
 // Lấy tất cả chỉ số gần nhất (từ health_profiles)
 exports.getAllLatestMetrics = async (req, res) => {
   try {
@@ -234,7 +261,7 @@ exports.getAllLatestMetrics = async (req, res) => {
     
     try {
       const [rows] = await connection.execute(
-        "SELECT id, elderly_name, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
+        "SELECT id, elderly_name, face_image_url, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
         [profileId]
       );
 
@@ -378,6 +405,48 @@ exports.getMetricById = async (req, res) => {
   } catch (error) {
     console.error("Error fetching metric by id:", error);
     return sendError(res, "Lỗi khi lấy chi tiết chỉ số sức khỏe", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+// Upload ảnh khuôn mặt (đại diện) — lưu vào health_profiles.face_image_url để dùng cho nhận diện người cần giám sát
+exports.uploadFaceImage = async (req, res) => {
+  try {
+    const { profileId } = req.params; // Thực chất là user_id từ frontend
+    const userId = req.userId; // Từ JWT
+
+    if (!profileId || Number(profileId) !== Number(userId)) {
+      return sendFail(
+        res,
+        "Chỉ được cập nhật ảnh đại diện của chính mình",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
+
+    if (!req.file || !req.file.filename) {
+      return sendFail(
+        res,
+        "Vui lòng chọn ảnh (định dạng jpg, png)",
+        HTTP_STATUS.BAD_REQUEST
+      );
+    }
+
+    // URL tương đối để client ghép với API_BASE_URL (vd: /uploads/face/123_xxx.jpg)
+    const faceImageUrl = "/uploads/face/" + req.file.filename;
+    await HealthMetric.updateFaceImageByUserId(profileId, faceImageUrl);
+
+    return sendSuccess(
+      res,
+      { face_image_url: faceImageUrl },
+      "Lưu ảnh đại diện thành công. Ảnh sẽ được dùng để nhận diện khi quét khuôn mặt.",
+      HTTP_STATUS.OK
+    );
+  } catch (error) {
+    console.error("Error uploading face image:", error);
+    return sendError(
+      res,
+      "Lỗi khi lưu ảnh đại diện",
+      HTTP_STATUS.INTERNAL_ERROR
+    );
   }
 };
 

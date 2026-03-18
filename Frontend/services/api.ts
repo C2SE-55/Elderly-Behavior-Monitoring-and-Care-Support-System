@@ -37,6 +37,37 @@ const getChatbotBaseUrl = () => {
 
 export const CHATBOT_BASE_URL = getChatbotBaseUrl();
 
+/** Base URL cho Camera Service (AI stream + fall detection) - port 9000 */
+const getCameraServiceBaseUrl = () => {
+  try {
+    const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
+    if (extra?.cameraServiceUrl) return extra.cameraServiceUrl.replace(/\/$/, "");
+    const base = getApiBaseUrl();
+    const url = new URL(base);
+    url.port = "9000";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "http://localhost:9000";
+  }
+};
+
+export const CAMERA_SERVICE_BASE_URL = getCameraServiceBaseUrl();
+
+/** URL stream MJPEG (video đã qua model té ngã, quét liên tục) */
+export const CAMERA_STREAM_URL = `${CAMERA_SERVICE_BASE_URL}/stream`;
+
+/** Lấy trạng thái fall detection (fallcount, fps) */
+export const getCameraStatus = async (): Promise<{
+  fallcount: number;
+  fps: number;
+  ready: boolean;
+}> => {
+  const { data } = await axios.get(`${CAMERA_SERVICE_BASE_URL}/api/status`, {
+    timeout: 5000,
+  });
+  return data;
+};
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: {
@@ -61,6 +92,13 @@ export const setAuth = (token: string | null, user?: any) => {
 };
 
 export const getCurrentUser = () => currentUser;
+
+/** Header Authorization để gửi request upload (fetch) — không set Content-Type để browser tự thêm boundary */
+export const getAuthHeaders = (): Record<string, string> => {
+  const token = api.defaults.headers.common?.Authorization;
+  if (token && typeof token === "string") return { Authorization: token };
+  return {};
+};
 let lastChatSessionId: number | null = null;
 export const getLastChatSessionId = () => lastChatSessionId;
 export const setLastChatSessionId = (sessionId: number | null) => {

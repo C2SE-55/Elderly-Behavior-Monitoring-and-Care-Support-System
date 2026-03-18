@@ -129,6 +129,31 @@ class HealthMetric {
     }
   }
 
+  // Cập nhật ảnh khuôn mặt (face_image_url) theo user_id - dùng cho nhận diện người cần giám sát
+  static async updateFaceImageByUserId(userId, faceImageUrl) {
+    const connection = await pool.getConnection();
+    try {
+      let [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
+        [userId]
+      );
+      if (!profiles || profiles.length === 0) {
+        await connection.execute(
+          "INSERT INTO health_profiles (user_id, elderly_name, face_image_url) VALUES (?, CONCAT('User ', ?), ?)",
+          [userId, userId, faceImageUrl]
+        );
+        return { affectedRows: 1 };
+      }
+      const [result] = await connection.execute(
+        "UPDATE health_profiles SET face_image_url = ? WHERE user_id = ?",
+        [faceImageUrl, userId]
+      );
+      return { affectedRows: result.affectedRows };
+    } finally {
+      connection.release();
+    }
+  }
+
   // Lấy chỉ số sức khỏe theo loại và profile ID
   static async getByMetricType(profileId, metricType, limit = 50) {
     // Stub function - không sử dụng
@@ -227,7 +252,7 @@ class HealthMetric {
       const limitNum = Number(limit) || 100;
       const offsetNum = Number(offset) || 0;
       const query =
-        "SELECT id, user_id, elderly_name, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies " +
+        "SELECT id, user_id, elderly_name, face_image_url, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies " +
         `FROM health_profiles WHERE id = ? LIMIT ${limitNum} OFFSET ${offsetNum}`;
       const [rows] = await connection.execute(query, [actualProfileId]);
       return rows;

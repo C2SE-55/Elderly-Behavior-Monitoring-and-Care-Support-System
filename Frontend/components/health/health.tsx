@@ -10,10 +10,13 @@ import {
   TouchableOpacity,
   View,
   Image,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { api, getCurrentUser } from "../../services/api";
+import * as ImagePicker from "expo-image-picker";
+import { api, getCurrentUser, API_BASE_URL, getAuthHeaders } from "../../services/api";
 const PRIMARY = "#4B2E83";
 
 // HEADER: Thanh tiêu đề trên cùng
@@ -36,17 +39,25 @@ const HealthHeader = () => {
   );
 };
 
-// AVATAR: Ảnh đại diện + nút đổi hình
-const HealthAvatar = () => {
+// AVATAR: Ảnh đại diện + nút đổi hình (lưu DB để quét khuôn mặt nhận diện người cần giám sát)
+type HealthAvatarProps = {
+  faceImageUrl: string | null;
+  onUpload: () => void;
+  loading?: boolean;
+};
+const HealthAvatar = ({ faceImageUrl, onUpload, loading }: HealthAvatarProps) => {
+  const imageSource = faceImageUrl
+    ? { uri: faceImageUrl }
+    : require("../../assets/images/avatar.png");
   return (
     <View style={avatarStyles.container}>
-      <Image
-        // Ảnh avatar mẫu, bạn có thể thay file khác trong assets
-        source={require("../../assets/images/avatar.png")}
-        style={avatarStyles.avatar}
-      />
-      <TouchableOpacity>
-        <Text style={avatarStyles.change}>Đổi hình đại diện</Text>
+      <Image source={imageSource} style={avatarStyles.avatar} />
+      <TouchableOpacity onPress={onUpload} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 8 }} />
+        ) : (
+          <Text style={avatarStyles.change}>Đổi hình đại diện</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -176,6 +187,8 @@ export default function HealthScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [faceImageUrl, setFaceImageUrl] = useState<string | null>(null);
+  const [loadingAvatar, setLoadingAvatar] = useState(false);
 
   const user = getCurrentUser();
 
@@ -199,8 +212,80 @@ export default function HealthScreen() {
       setBloodType(profile.blood_type ?? null);
       setChronicDisease(profile.chronic_diseases ?? "");
       setAllergy(profile.allergies ?? "");
+      // Ảnh đại diện (khuôn mặt) — dùng cho nhận diện khi quét
+      const url = profile.face_image_url;
+      setFaceImageUrl(url ? `${API_BASE_URL}${url.startsWith("/") ? url : "/" + url}` : null);
     } catch (err) {
       console.warn("Không thể tải chỉ số sức khỏe:", err);
+    }
+  };
+
+  const handleChangeAvatar = async () => {
+    if (!user?.id) {
+      setError("Vui lòng đăng nhập để đổi hình đại diện.");
+      return;
+    }
+    try {
+      const permMethod = ImagePicker.requestMediaLibraryPermissionsAsync;
+      if (permMethod) {
+        const { status } = await permMethod();
+        if (status !== "granted") {
+          Alert.alert("Quyền truy cập", "Cần quyền truy cập ảnh để chọn hình đại diện.");
+          return;
+        }
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      setLoadingAvatar(true);
+      setError("");
+      const uri = result.assets[0].uri;
+      const name = "face.jpg";
+      const type = "image/jpeg";
+      const formData = new FormData();
+
+      if (Platform.OS === "web" || uri.startsWith("blob:")) {
+        const res = await fetch(uri);
+        const blob = await res.blob();
+        const file = new File([blob], name, { type: "image/jpeg" });
+        formData.append("image", file);
+      } else {
+        formData.append("image", { uri, name, type } as any);
+      }
+
+      const uploadUrl = `${API_BASE_URL}/api/health-metrics/profile/${user.id}/face-image`;
+      const headers: Record<string, string> = getAuthHeaders();
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        throw Object.assign(new Error(json?.message || "Lỗi tải ảnh"), {
+          response: { data: json, status: response.status },
+        });
+      }
+      const data = json?.data;
+      const path = data?.face_image_url;
+      if (path) {
+        const fullUrl = `${API_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
+        setFaceImageUrl(`${fullUrl}?t=${Date.now()}`);
+        setSuccess("Đã lưu ảnh đại diện. Ảnh sẽ được dùng để nhận diện khi quét khuôn mặt.");
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Không thể tải ảnh lên. Kiểm tra đăng nhập và thử lại.";
+      setError(msg);
+    } finally {
+      setLoadingAvatar(false);
     }
   };
 
@@ -392,8 +477,12 @@ export default function HealthScreen() {
           contentContainerStyle={screenStyles.content}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Ảnh đại diện + nút đổi hình */}
-          <HealthAvatar />
+          {/* Ảnh đại diện + nút đổi hình (lưu DB, dùng cho quét khuôn mặt nhận diện) */}
+          <HealthAvatar
+            faceImageUrl={faceImageUrl}
+            onUpload={handleChangeAvatar}
+            loading={loadingAvatar}
+          />
 
           {/* Các trường thông tin sức khỏe */}
           <HealthInput

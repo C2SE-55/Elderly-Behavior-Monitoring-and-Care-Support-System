@@ -12,6 +12,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Thư mục ảnh upload (ảnh đại diện / khuôn mặt cho nhận diện)
+const path = require("path");
+const uploadsDir = path.join(__dirname, "uploads");
+app.use("/uploads", express.static(uploadsDir));
+
 // Routes
 app.use("/", routes);
 

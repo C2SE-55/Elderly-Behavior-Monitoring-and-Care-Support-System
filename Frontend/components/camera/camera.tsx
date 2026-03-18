@@ -5,12 +5,19 @@ import {
   StyleSheet,
   TouchableOpacity,
   PanResponder,
-  Dimensions
+  Dimensions,
+  Platform,
+  Image,
+  Modal,
+  useWindowDimensions
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
+import { CAMERA_STREAM_URL, getCameraStatus } from "../../services/api";
+
+// WebView chỉ dùng trên iOS/Android; trên web dùng Image/iframe
+const WebView = Platform.OS === "web" ? null : require("react-native-webview").WebView;
 
 const TIMELINE_TIMES = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -26,7 +33,13 @@ export default function CameraLiveScreen() {
   const insets = useSafeAreaInsets();
   const [currentTime, setCurrentTime] = useState(formatTime(new Date()));
   const [playPositionPercent, setPlayPositionPercent] = useState(30);
+  const [streamReady, setStreamReady] = useState(false);
+  const [fallCount, setFallCount] = useState(0);
+  const [fps, setFps] = useState(0);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
   const gestureStartPercent = useRef(30);
   const gestureStartX = useRef(0);
   const latestPercentRef = useRef(30);
@@ -37,6 +50,22 @@ export default function CameraLiveScreen() {
       setCurrentTime(formatTime(new Date()));
     }, 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Poll trạng thái AI (fall count, FPS) từ Camera Service - quét tự động và liên tục
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const status = await getCameraStatus();
+        setStreamReady(status.ready);
+        setFallCount(status.fallcount);
+        setFps(status.fps);
+        setStreamError(null);
+      } catch {
+        setStreamError("Chưa kết nối Camera Service");
+      }
+    }, 1500);
+    return () => clearInterval(interval);
   }, []);
 
   const panResponder = useMemo(
@@ -81,24 +110,91 @@ export default function CameraLiveScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      {/* CAMERA PREVIEW */}
+      {/* CAMERA PREVIEW - stream từ AI_Service/Camera_Service (pose + fall detection), quét tự động liên tục */}
       <View style={styles.cameraBox}>
-        <Video
-          source={require("../../assets/videos/video.mp4")}
-          style={styles.camera}
-          shouldPlay
-          isLooping
-          isMuted
-          resizeMode={ResizeMode.COVER}
-        />
+        {Platform.OS === "web" ? (
+          <Image
+            source={{ uri: CAMERA_STREAM_URL }}
+            style={styles.camera}
+            resizeMode="cover"
+          />
+        ) : WebView ? (
+          <WebView
+            source={{
+              html: `<html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0;background:#000"><img src="${CAMERA_STREAM_URL}" style="width:100%;height:100%;object-fit:contain" alt="Live"/></body></html>`
+            }}
+            style={styles.camera}
+            scrollEnabled={false}
+            originWhitelist={["*"]}
+            mixedContentMode="compatibility"
+          />
+        ) : (
+          <View style={[styles.camera, styles.placeholderCamera]}>
+            <Ionicons name="videocam-outline" size={48} color="#999" />
+            <Text style={styles.placeholderText}>Không hỗ trợ WebView</Text>
+          </View>
+        )}
+        {(streamReady || fallCount > 0) && (
+          <View style={styles.overlayBadge}>
+            <Text style={styles.overlayText}>FPS: {fps}</Text>
+            <Text style={[styles.overlayText, fallCount > 0 && styles.fallText]}>
+              Té: {fallCount}
+            </Text>
+          </View>
+        )}
+        {streamError && (
+          <View style={styles.overlayBadge}>
+            <Text style={styles.errorText}>{streamError}</Text>
+          </View>
+        )}
       </View>
 
       {/* CONTROL BAR */}
       <View style={styles.controlRow}>
         <Ionicons name="videocam-outline" size={22} color="#444" />
         <Ionicons name="camera-outline" size={22} color="#444" />
-        <Ionicons name="expand-outline" size={22} color="#444" />
+        <TouchableOpacity onPress={() => setIsFullscreen(true)} hitSlop={12}>
+          <Ionicons name="expand-outline" size={22} color="#444" />
+        </TouchableOpacity>
       </View>
+
+      {/* MODAL PHÓNG TO TOÀN MÀN HÌNH */}
+      <Modal
+        visible={isFullscreen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsFullscreen(false)}
+      >
+        <View style={[styles.fullscreenOverlay, { width: winWidth, height: winHeight }]}>
+          <View style={styles.fullscreenStream}>
+            {Platform.OS === "web" ? (
+              <Image
+                source={{ uri: CAMERA_STREAM_URL }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="contain"
+              />
+            ) : WebView ? (
+              <WebView
+                source={{
+                  html: `<html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0;background:#000"><img src="${CAMERA_STREAM_URL}" style="width:100%;height:100%;object-fit:contain" alt="Live"/></body></html>`
+                }}
+                style={StyleSheet.absoluteFill}
+                scrollEnabled={false}
+                originWhitelist={["*"]}
+                mixedContentMode="compatibility"
+              />
+            ) : null}
+          </View>
+          <TouchableOpacity
+            style={[styles.fullscreenClose, { top: insets.top + 10 }]}
+            onPress={() => setIsFullscreen(false)}
+            hitSlop={16}
+          >
+            <Ionicons name="contract-outline" size={28} color="#fff" />
+            <Text style={styles.fullscreenCloseText}>Thu nhỏ</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* DATE */}
       <View style={styles.dateRow}>
@@ -187,6 +283,78 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 180,
     borderRadius: 6
+  },
+
+  placeholderCamera: {
+    backgroundColor: "#eee",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+
+  placeholderText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#666"
+  },
+
+  overlayBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    pointerEvents: "none"
+  },
+
+  overlayText: {
+    fontSize: 12,
+    color: "#fff",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4
+  },
+
+  fallText: {
+    color: "#fecaca",
+    backgroundColor: "rgba(185,28,28,0.7)"
+  },
+
+  errorText: {
+    fontSize: 11,
+    color: "#fff",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4
+  },
+
+  fullscreenOverlay: {
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+
+  fullscreenStream: {
+    ...StyleSheet.absoluteFillObject
+  },
+
+  fullscreenClose: {
+    position: "absolute",
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+
+  fullscreenCloseText: {
+    color: "#fff",
+    fontSize: 14,
+    marginLeft: 6
   },
 
   controlRow: {
