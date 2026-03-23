@@ -25,7 +25,6 @@ import io
 import os
 import sys
 import time
-import cProfile, pstats
 
 import PIL
 import torch
@@ -34,11 +33,19 @@ import torch.multiprocessing as mp
 import cv2  # pylint: disable=import-error
 from . import decoder, network, show, transforms, visualizer, __version__
 from . import config, core, logger
-from .core import face_recognizer, fall_event_client
+from .core import face_recognizer, fall_event_client, pipeline_config, yolo_detector
+from .core.safe_zone import SafeZoneTracker
 
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
-FACE_RECOGNITION_INTERVAL = 20  # chạy mỗi N frame để giảm lag (8GB)
 LOG = logging.getLogger(__name__)
+
+_STREAM_JPEG_KWARGS = dict(
+    format="jpeg",
+    dpi=pipeline_config.STREAM_JPEG_DPI,
+    bbox_inches="tight",
+    pad_inches=0.02,
+    pil_kwargs={"quality": pipeline_config.STREAM_JPEG_QUALITY},
+)
 
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -193,12 +200,17 @@ def inference(args, stream, stream_state=None):
         LOG.warning("Nhận diện khuôn mặt tắt: không có ảnh tham chiếu. Kiểm tra Backend (GET /api/health-metrics/face-references) và đăng ảnh đại diện trong Quản lý thông tin sức khỏe.")
     else:
         LOG.info("Đã tải %d ảnh tham chiếu cho nhận diện khuôn mặt.", len(face_refs))
+    safe_zone = None
+    if face_refs:
+        safe_zone = SafeZoneTracker(
+            out_seconds=pipeline_config.OUT_OF_ZONE_SECONDS,
+            alert_cooldown=pipeline_config.OUT_OF_ZONE_ALERT_COOLDOWN,
+        )
+    last_yolo_boxes = []
+    last_face_matches = None
     skip_frames = max(1, int(getattr(args, 'skip_frames', 1)))
     max_fps = float(getattr(args, 'max_fps', 0))
-    
-    pr = cProfile.Profile()
-    pr.enable()
-    
+
     for frame_i, (ax, ax_second) in enumerate(animation.iter()):
         grabbed, image = capture.read()
         input_fps = capture.get(cv2.CAP_PROP_FPS)
@@ -261,10 +273,15 @@ def inference(args, stream, stream_state=None):
             preds = last_preds
 
         ax.imshow(image)
+        if frame_i % pipeline_config.YOLO_EVERY_N_FRAMES == 0 and yolo_detector.yolo_available():
+            last_yolo_boxes = yolo_detector.detect_person_boxes(
+                image, conf=pipeline_config.YOLO_CONF
+            )
         # Nhận diện khuôn mặt từ DB (health_profiles.face_image_url) để gắn tên người cần giám sát
-        if face_refs and (frame_i % FACE_RECOGNITION_INTERVAL == 0):
+        if face_refs and (frame_i % pipeline_config.FACE_RECOGNITION_INTERVAL == 0):
             try:
                 face_matches = face_recognizer.match_faces_in_image(image, face_refs)
+                last_face_matches = face_matches
                 last_face_texts = face_recognizer.assign_names_to_predictions(preds, face_matches, xy_scale=1.0)
                 if face_matches and any(getattr(m, "name", None) for m in face_matches):
                     LOG.info("Nhận diện: %s", [getattr(m, "name", "") for m in face_matches])
@@ -279,6 +296,33 @@ def inference(args, stream, stream_state=None):
             first_name = face_refs[0][0] if face_refs else ""
             if first_name:
                 texts_to_use = [first_name]
+
+        target_visible = False
+        if face_refs:
+            if texts_to_use and any(texts_to_use):
+                target_visible = True
+            elif last_face_matches and any(getattr(m, "name", None) for m in last_face_matches):
+                target_visible = True
+            elif len(preds) == 1 and len(face_refs) == 1:
+                target_visible = True
+            if pipeline_config.STRICT_EMPTY_ROOM and not last_yolo_boxes:
+                target_visible = False
+        if safe_zone is not None:
+            if target_visible:
+                safe_zone.mark_target_seen()
+            if safe_zone.should_emit_alert() and animation.fig is not None:
+                try:
+                    buf = io.BytesIO()
+                    animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
+                    buf.seek(0)
+                    pid = face_refs[0][1] if len(face_refs) == 1 else None
+                    fall_event_client.send_out_of_zone_snapshot(
+                        buf.getvalue(), pipeline_config.CAMERA_ID, profile_id=pid
+                    )
+                    LOG.warning("Cảnh báo: không thấy người được giám sát trong khung hình (đủ lâu).")
+                except Exception as e:
+                    LOG.warning("Gửi cảnh báo rời vùng quan sát thất bại: %s", e)
+
         fallcount = annotation_painter.annotations(ax, preds, ID, input_fps, texts=texts_to_use)
         if fallcount is not None:
             if fallcount > old_fallcount and animation.fig is not None:
@@ -286,13 +330,12 @@ def inference(args, stream, stream_state=None):
                     buf = io.BytesIO()
                     animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
                     buf.seek(0)
-                    camera_id = int(os.environ.get("CAMERA_ID", "1"))
                     profile_id = None
                     if face_refs and len(face_refs) == 1:
                         profile_id = face_refs[0][1]
                     fall_event_client.send_fall_image_to_backend(
                         buf.getvalue(),
-                        camera_id=camera_id,
+                        camera_id=pipeline_config.CAMERA_ID,
                         profile_id=profile_id,
                         severity_level="high",
                     )
@@ -319,11 +362,13 @@ def inference(args, stream, stream_state=None):
             ax.text(0, 0.9, "Fall Count: {}".format(old_fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
         
         if args.device == torch.device('cpu'):
-            LOG.info('frame %d, loop time = %.3fs, input FPS = %.3f, output FPS = %.3f',
-                    frame_i,
-                    loop_time,
-                    input_fps,
-                    output_fps)
+            LOG.debug(
+                'frame %d, loop time = %.3fs, input FPS = %.3f, output FPS = %.3f',
+                frame_i,
+                loop_time,
+                input_fps,
+                output_fps,
+            )
         else:
             print('frame {}, input FPS = {}, output FPS = {}'.format(
                 frame_i,
@@ -335,30 +380,19 @@ def inference(args, stream, stream_state=None):
         if stream_state is not None and animation.fig is not None:
             buf = io.BytesIO()
             try:
-                # dpi thấp hơn (72) → ảnh nhỏ hơn, encode nhanh hơn, tăng FPS đường truyền
-                animation.fig.savefig(buf, format='jpeg', dpi=50, bbox_inches='tight', pad_inches=0.02)
+                animation.fig.savefig(buf, **_STREAM_JPEG_KWARGS)
                 buf.seek(0)
                 stream_state['jpeg'] = buf.getvalue()
                 stream_state['fallcount'] = old_fallcount
                 stream_state['fps'] = output_fps
                 stream_state['ready'] = True
+                stream_state['target_visible'] = target_visible
+                stream_state['person_count'] = len(last_yolo_boxes)
             except Exception as e:
                 LOG.debug('stream_state savefig: %s', e)
-            
-        last_loop = time.time()
-        
-    pr.disable()
-    result = io.StringIO()
-    pstats.Stats(pr, stream=result).print_stats()
-    result=result.getvalue()
-    
-    result='ncalls'+result.split('ncalls')[-1]
-    result='\n'.join([','.join(line.rstrip().split(None,5)) for line in result.split('\n')])
 
-    with open(os.path.dirname(__file__)+'/results.csv', 'w+') as f:
-        f.write(result)
-        f.close()
-        
+        last_loop = time.time()
+
     return
 
 

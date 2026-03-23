@@ -7,9 +7,4 @@
             <Scale>0.7</Scale>
         </RTSPAPI>
     </Source>
-    <Output>
-        <FileOutput>
-            <FileName>{yyyymmdd}_{HHMMSS}_{streamID}_{algoName}_{fallcount}.jpg</FileName>
-        </FileOutput>
-    </Output>
 </config>

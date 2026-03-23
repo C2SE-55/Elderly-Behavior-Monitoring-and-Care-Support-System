@@ -13,6 +13,8 @@ except ImportError:
     matplotlib = None
 
 from .. import core
+from ..core import pipeline_config
+from ..core.falldetector import lying_hint_from_keypoints
 
 LOG = logging.getLogger(__name__)
 
@@ -167,7 +169,7 @@ class KeypointPainter:
         self.fallcount = 0
         self.centroid = -1
         self._last_fallback_fall_frame = -999  # fallback: đếm té trực tiếp từ bbox (khi tracker bỏ lỡ)
-        self._FALLBACK_COOLDOWN = 45  # frames giữa 2 lần đếm fallback (~1.5s)
+        self._FALLBACK_COOLDOWN = pipeline_config.FALL_FALLBACK_COOLDOWN_FRAMES
 
         self.ct = core.CentroidTracker()
         self.falls = core.FallDetector()
@@ -176,8 +178,6 @@ class KeypointPainter:
         self.fallen = OrderedDict()
         self.prev_fallen = OrderedDict()
 
-        self.imgwriter = core.ImgWriter()
-    
     def _draw_skeleton(self, ax, x, y, v, x_, y_, w_, h_, *, skeleton, color=None, **kwargs):
         if not np.any(v > 0):
             return
@@ -401,7 +401,14 @@ class KeypointPainter:
         ylim = ax.get_ylim()
         frame_height = abs(ylim[1] - ylim[0]) if ylim else None
         y_inverted = (ylim[0] > ylim[1]) if ylim and len(ylim) == 2 else False  # matplotlib imshow thường y đảo
-        self.fallen = self.falls.update(self.persons, self.framecount, fps, frame_height=frame_height, y_inverted=y_inverted)
+        self.fallen = self.falls.update(
+            self.persons,
+            self.framecount,
+            fps,
+            frame_height=frame_height,
+            y_inverted=y_inverted,
+            annotations=annotations,
+        )
         
         for ID, (x_, y_, w_, h_) in self.fallen.items():
             self._draw_box(ax, x_, y_, w_, h_, color='red')
@@ -409,7 +416,6 @@ class KeypointPainter:
             if ID not in self.prev_fallen:
                 self.fallcount += 1
                 LOG.info("FALL COUNT: {}".format(self.fallcount))
-                self.imgwriter.write(stream, self.fallcount)
 
         self.prev_fallen = self.fallen
 
@@ -421,20 +427,23 @@ class KeypointPainter:
                     w_ = w_ + 4
                 if h_ < 5:
                     h_ = h_ + 4
-                if w_ * h_ > 200 and w_ >= 1.1 * h_:
-                    on_floor = True
-                    if frame_height is not None and frame_height > 0:
-                        center_y = y_ + h_ / 2.0
-                        if y_inverted:
-                            on_floor = center_y <= (1.0 - core.falldetector.FLOOR_Y_RATIO) * frame_height
-                        else:
-                            on_floor = center_y >= core.falldetector.FLOOR_Y_RATIO * frame_height
-                    if on_floor:
-                        self.fallcount += 1
-                        self._last_fallback_fall_frame = self.framecount
-                        LOG.info("FALL COUNT (fallback): {}".format(self.fallcount))
-                        self.imgwriter.write(stream, self.fallcount)
-                        break
+                if w_ * h_ <= 200:
+                    continue
+                lying_bbox = h_ > 1e-6 and w_ >= pipeline_config.FALL_LYING_ASPECT * h_
+                if not (lying_bbox or lying_hint_from_keypoints(ann.data)):
+                    continue
+                on_floor = True
+                if pipeline_config.FALL_REQUIRE_FLOOR and frame_height is not None and frame_height > 0:
+                    center_y = y_ + h_ / 2.0
+                    if y_inverted:
+                        on_floor = center_y <= (1.0 - pipeline_config.FALL_FLOOR_Y_RATIO) * frame_height
+                    else:
+                        on_floor = center_y >= pipeline_config.FALL_FLOOR_Y_RATIO * frame_height
+                if on_floor:
+                    self.fallcount += 1
+                    self._last_fallback_fall_frame = self.framecount
+                    LOG.info("FALL COUNT (fallback): {}".format(self.fallcount))
+                    break
 
         self.framecount += 1
 
@@ -493,8 +502,8 @@ class KeypointPainter:
             self._draw_joint_confidences(ax, x, y, v, color)
 
         if self.show_box:
-            # Màu khung: xanh = đứng (h>=w), cam = nằm (w>=1.1*h) — trùng logic FallDetector
-            box_color = 'orange' if w_ >= 1.1 * h_ else 'green'
+            lying_bbox = h_ > 1e-6 and w_ >= pipeline_config.FALL_LYING_ASPECT * h_
+            box_color = 'orange' if (lying_bbox or lying_hint_from_keypoints(ann.data)) else 'green'
             self._draw_box(ax, x_, y_, w_, h_, box_color, ann.score(), linewidth=2)
 
         if text is not None:

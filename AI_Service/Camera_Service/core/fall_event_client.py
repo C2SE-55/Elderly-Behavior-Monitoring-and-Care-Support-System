@@ -27,7 +27,7 @@ def send_fall_image_to_backend(
 ):
     """
     POST ảnh (JPEG bytes) lên Backend API /api/fall-events.
-    Backend lưu file vào uploads/fall và ghi bản ghi vào fall_events.
+    Backend nhận ảnh và ghi bản ghi fall_events (POST /api/fall-events).
 
     :param image_bytes: bytes (ảnh JPEG)
     :param camera_id: int, bắt buộc (id camera trong bảng cameras)
@@ -64,3 +64,14 @@ def send_fall_image_to_backend(
     except Exception as e:
         LOG.warning("Gửi ảnh té lên Backend thất bại: %s", e)
         return False
+
+
+def send_out_of_zone_snapshot(image_bytes, camera_id, profile_id=None):
+    """Cùng API fall-events; note + severity medium để phân biệt với té ngã."""
+    return send_fall_image_to_backend(
+        image_bytes,
+        camera_id=camera_id,
+        profile_id=profile_id,
+        severity_level="medium",
+        note="Rời khỏi vùng quan sát (không thấy người được giám sát trong khung hình)",
+    )

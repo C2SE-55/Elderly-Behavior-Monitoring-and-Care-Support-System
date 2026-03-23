@@ -1,3 +1,4 @@
+# Tùy chọn / môi trường cũ — ưu tiên cài theo requirements.txt
 # Phiên bản tương thích cho Windows + Python 3.8 (torch 1.6/0.8 không còn trên PyPI)
 matplotlib==3.1.3
 torch==1.8.1
