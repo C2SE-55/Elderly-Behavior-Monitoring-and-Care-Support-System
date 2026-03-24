@@ -230,3 +230,58 @@ export const sendChatMessage = async (
   };
 };
 
+export type MedicationReminderStatus = "pending" | "done" | "early";
+
+export type MedicationReminder = {
+  id: number;
+  user_id: number;
+  target_user_id?: number | null;
+  medicine_name: string;
+  dosage?: string | null;
+  note?: string | null;
+  reminder_date?: string | null;
+  reminder_time: string;
+  status: MedicationReminderStatus;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type MedicationReminderPayload = {
+  target_user_id?: number | null;
+  medicine_name: string;
+  dosage?: string;
+  note?: string;
+  reminder_date?: string;
+  reminder_time: string;
+  status?: MedicationReminderStatus;
+};
+
+export const getMedicationReminders = async (): Promise<MedicationReminder[]> => {
+  const res = await api.get("/medication-reminders");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const createMedicationReminder = async (payload: MedicationReminderPayload): Promise<number | null> => {
+  const res = await api.post("/medication-reminders", payload);
+  const id = Number(res.data?.data?.id ?? 0);
+  return id > 0 ? id : null;
+};
+
+export const updateMedicationReminder = async (
+  id: number,
+  payload: MedicationReminderPayload
+): Promise<void> => {
+  await api.put(`/medication-reminders/${id}`, payload);
+};
+
+export const updateMedicationReminderStatus = async (
+  id: number,
+  status: MedicationReminderStatus
+): Promise<void> => {
+  await api.patch(`/medication-reminders/${id}/status`, { status });
+};
+
+export const deleteMedicationReminder = async (id: number): Promise<void> => {
+  await api.delete(`/medication-reminders/${id}`);
+};
+

@@ -72,6 +72,14 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      {/* MEDICINE REMINDER - hidden tab button */}
+      <Tabs.Screen
+        name="medicine-reminder"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

@@ -29,13 +29,18 @@ function formatTime(date: Date) {
   return date.toTimeString().slice(0, 5);
 }
 
-function formatMonthYear(value?: string | null) {
+function formatDate(value?: string | null) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) {
     const fallback = new Date();
-    return `${String(fallback.getMonth() + 1).padStart(2, "0")}/${fallback.getFullYear()}`;
+    return `${String(fallback.getDate()).padStart(2, "0")}/${String(
+      fallback.getMonth() + 1
+    ).padStart(2, "0")}/${fallback.getFullYear()}`;
   }
-  return `${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}/${date.getFullYear()}`;
 }
 
 function formatEventDateTime(value?: string | null) {
@@ -261,7 +266,7 @@ export default function CameraLiveScreen() {
 
         <View style={styles.dateRow}>
           <Ionicons name="calendar-outline" size={18} color="#444" style={{ marginRight: 6 }} />
-          <Text style={styles.dateText}>{formatMonthYear(selectedEvent?.created_at)}</Text>
+          <Text style={styles.dateText}>{formatDate(selectedEvent?.created_at)}</Text>
           <Ionicons name="chevron-down" size={16} color="#444" />
         </View>
 

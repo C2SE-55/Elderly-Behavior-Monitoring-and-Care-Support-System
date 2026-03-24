@@ -224,14 +224,14 @@ export default function ProfileScreen() {
             placeholder="Nhập username"
             value={username}
             editable={false}
-            helperText="Không thể thay đổi username (ràng buộc từ backend)."
+            helperText="Không thể thay đổi username."
           />
           <ProfileInput
             label="Email"
             placeholder="Nhập email"
             value={email}
             editable={false}
-            helperText="Không thể thay đổi email (ràng buộc từ backend)."
+            helperText="Không thể thay đổi email."
           />
           <ProfileInput
             label="Số điện thoại"

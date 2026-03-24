@@ -69,6 +69,7 @@ const styles = StyleSheet.create({
   streamFrame: {
     flex: 1,
     backgroundColor: "#000",
+    justifyContent: "center",
   },
   stream: {
     width: "100%",

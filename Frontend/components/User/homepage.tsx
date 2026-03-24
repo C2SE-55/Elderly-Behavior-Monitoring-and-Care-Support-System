@@ -25,6 +25,7 @@ type HomeOption = {
 };
 
 const OPTIONS: HomeOption[] = [
+    { id: "medicine-reminder", title: "Nhắc nhở uống\nthuốc", emoji: "💊" },
     { id: "family", title: "Kết nối với\nngười thân", emoji: "🧑‍🤝‍🧑" },
     { id: "personal-info", title: "Thông tin cá\nnhân", emoji: "🫃" },
     { id: "behavior", title: "Giám sát và phát\nhiện hành vi", emoji: "📷" },
@@ -61,7 +62,9 @@ const HomepageUserScreen = () => {
             >
                 {OPTIONS.map((item) => {
                     const handlePress = () => {
-                        if (item.id === "personal-info") {
+                        if (item.id === "medicine-reminder") {
+                            router.push("/(tabs)/medicine-reminder");
+                        } else if (item.id === "personal-info") {
                             router.push("/(profiles)/profile");
                         } else if (item.id === "health") {
                             router.push("/(healths)/health");
