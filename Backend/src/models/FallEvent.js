@@ -153,6 +153,45 @@ class FallEvent {
       connection.release();
     }
   }
+
+  static async listRecent(connection, options = {}) {
+    const limit = Math.min(Math.max(Number(options.limit) || 20, 1), 100);
+    const cameraId = options.camera_id ?? null;
+    const hasCameraId = Number.isInteger(cameraId) && cameraId > 0;
+    const whereClause = hasCameraId
+      ? "WHERE image_url IS NOT NULL AND image_url <> '' AND camera_id = ?"
+      : "WHERE image_url IS NOT NULL AND image_url <> ''";
+    const params = hasCameraId ? [cameraId] : [];
+    const safeLimit = String(limit);
+    const run = (sql) => (hasCameraId ? connection.execute(sql, params) : connection.query(sql));
+
+    try {
+      const [rows] = await run(
+        `SELECT id, camera_id, image_url, severity_level, created_at
+         FROM fall_events
+         ${whereClause}
+         ORDER BY created_at DESC, id DESC
+         LIMIT ${safeLimit}`
+      );
+      return rows.map((row) => ({ ...row, source_type: "fall_event" }));
+    } catch (err) {
+      if (err.code === "ER_BAD_FIELD_ERROR" || err.message?.includes("Unknown column")) {
+        const [rows] = await run(
+          `SELECT id, camera_id, image_url, severity_level
+           FROM fall_events
+           ${whereClause}
+           ORDER BY id DESC
+           LIMIT ${safeLimit}`
+        );
+        return rows.map((row) => ({
+          ...row,
+          created_at: null,
+          source_type: "fall_event",
+        }));
+      }
+      throw err;
+    }
+  }
 }
 
 module.exports = FallEvent;

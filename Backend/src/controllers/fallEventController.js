@@ -1,5 +1,6 @@
 const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
+const pool = require("../config/database");
 const FallEvent = require("../models/FallEvent");
 const LeftSafeZoneEvent = require("../models/LeftSafeZoneEvent");
 
@@ -53,6 +54,66 @@ exports.createFallEvent = async (req, res) => {
       HTTP_STATUS.INTERNAL_ERROR,
       error.message
     );
+  }
+};
+
+exports.getEventHistory = async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+  const requestedCameraId =
+    req.query.camera_id != null ? parseInt(req.query.camera_id, 10) : null;
+  const cameraId = isNaN(requestedCameraId) ? null : requestedCameraId;
+
+  const connection = await pool.getConnection();
+  try {
+    const [fallRows, leftRows] = await Promise.all([
+      FallEvent.listRecent(connection, { limit, camera_id: cameraId }),
+      LeftSafeZoneEvent.listRecent(connection, { limit, camera_id: cameraId }),
+    ]);
+
+    const baseUrl =
+      process.env.BACKEND_URL ||
+      `${req.protocol}://${req.get("host") || "localhost:5000"}`;
+
+    const toAbsoluteUrl = (imageUrl) => {
+      if (!imageUrl) return null;
+      if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+      const normalized = imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`;
+      return baseUrl.replace(/\/$/, "") + normalized;
+    };
+
+    const items = [...fallRows, ...leftRows]
+      .sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      })
+      .slice(0, limit)
+      .map((item) => ({
+        id: item.id,
+        camera_id: item.camera_id ?? null,
+        image_url: item.image_url,
+        image_full_url: toAbsoluteUrl(item.image_url),
+        severity_level: item.severity_level || "medium",
+        created_at: item.created_at || null,
+        source_type: item.source_type,
+        title: "Phát hiện chuyển động!",
+      }));
+
+    return sendSuccess(
+      res,
+      { data: items, count: items.length },
+      "Lấy lịch sử cảnh báo camera thành công"
+    );
+  } catch (error) {
+    console.error("Error fetching camera event history:", error);
+    return sendError(
+      res,
+      "Lỗi khi lấy lịch sử cảnh báo camera",
+      HTTP_STATUS.INTERNAL_ERROR,
+      error.message
+    );
+  } finally {
+    connection.release();
   }
 };
 

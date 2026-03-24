@@ -3,6 +3,9 @@ const router = express.Router();
 const fallEventController = require("../controllers/fallEventController");
 const { uploadFallImage } = require("../middleware/upload");
 
+// GET /api/fall-events/history — Lấy lịch sử cảnh báo cho màn Camera Live
+router.get("/history", fallEventController.getEventHistory);
+
 // POST /api/fall-events — Camera Service gửi ảnh té ngã + camera_id (multipart)
 router.post(
   "/",

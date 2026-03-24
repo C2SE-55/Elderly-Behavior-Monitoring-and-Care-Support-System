@@ -68,6 +68,38 @@ export const getCameraStatus = async (): Promise<{
   return data;
 };
 
+export type CameraHistoryEvent = {
+  id: number;
+  camera_id?: number | null;
+  image_url?: string | null;
+  image_full_url?: string | null;
+  severity_level?: string | null;
+  created_at?: string | null;
+  source_type?: string | null;
+  title?: string | null;
+};
+
+export const getCameraEventHistory = async (limit = 20): Promise<CameraHistoryEvent[]> => {
+  const { data } = await api.get("/fall-events/history", {
+    params: { limit },
+    timeout: 5000,
+  });
+
+  const raw = data?.data?.data ?? data?.data ?? [];
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((item: Record<string, unknown>) => ({
+    id: Number(item?.id ?? 0),
+    camera_id: item?.camera_id as number | null | undefined,
+    image_url: item?.image_url as string | null | undefined,
+    image_full_url: item?.image_full_url as string | null | undefined,
+    severity_level: item?.severity_level as string | null | undefined,
+    created_at: item?.created_at as string | null | undefined,
+    source_type: item?.source_type as string | null | undefined,
+    title: item?.title as string | null | undefined,
+  })).filter((item) => item.id > 0);
+};
+
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: {
