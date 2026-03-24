@@ -3,11 +3,11 @@ API Camera Service: phát MJPEG stream video đã qua model phát hiện té ng�
 phục vụ Frontend (Giám sát và phát hiện hành vi) quét tự động và liên tục.
 
 Nguồn video:
-  - Mặc định: webcam máy tính (index 0). Muốn chạy video demo trong repo: set USE_DEMO_VIDEO=1 (sẽ dùng video3/videofall/video2 nếu có).
+  - Mặc định: ưu tiên video demo trong repo (`Frontend/assets/videos/video3.mp4`, fallback `videofall.mp4`, `video2.mp4`), nếu không có thì webcam 0.
   - Biến môi trường VIDEO_SOURCE:
-    + VIDEO_SOURCE rỗng       -> webcam 0 (trừ khi USE_DEMO_VIDEO=1 và có file demo)
-    + VIDEO_SOURCE=0          -> webcam 0 (trừ khi USE_DEMO_VIDEO=1 và có file demo)
-    + USE_DEMO_VIDEO=1        -> ưu tiên file demo trong Frontend/assets/videos (video3, videofall, video2)
+    + VIDEO_SOURCE rỗng       -> dùng file demo nếu có, không thì webcam 0
+    + VIDEO_SOURCE=0          -> dùng file demo nếu có (trừ khi USE_WEBCAM=1)
+    + USE_DEMO_VIDEO=1        -> giữ tương thích ngược (không bắt buộc nữa)
     + USE_WEBCAM=1            -> buộc webcam khi VIDEO_SOURCE=0 (bỏ qua file demo)
     + VIDEO_SOURCE=path.mp4   -> file video (lặp liên tục khi hết)
   - Tăng tốc FPS / đường truyền:
@@ -88,26 +88,26 @@ def _get_default_video_path():
 
 
 def _get_video_source():
-    """Nguồn video: mặc định webcam; file demo chỉ khi USE_DEMO_VIDEO=1 hoặc đường dẫn tường minh.
+    """Nguồn video: mặc định ưu tiên file demo (video3) nếu có, fallback webcam.
 
     - Đường dẫn / URL (không chỉ số): dùng trực tiếp.
-    - USE_DEMO_VIDEO=1 + (VIDEO_SOURCE rỗng hoặc 0): dùng file demo trong Frontend nếu có, không thì webcam 0.
+    - VIDEO_SOURCE rỗng hoặc 0: dùng file demo trong Frontend nếu có, không thì webcam 0.
+    - USE_DEMO_VIDEO=1: tương thích ngược (không bắt buộc nữa).
     - USE_WEBCAM=1 + VIDEO_SOURCE=0: luôn webcam 0 (bỏ qua demo).
     - VIDEO_SOURCE=1,2,...: webcam chỉ số đó.
     """
     raw = os.environ.get("VIDEO_SOURCE", "").strip()
     default_file = _get_default_video_path()
     use_webcam = os.environ.get("USE_WEBCAM", "").lower() in ("1", "true", "yes")
-    use_demo = os.environ.get("USE_DEMO_VIDEO", "").lower() in ("1", "true", "yes")
 
     if raw.isdigit():
         idx = int(raw)
-        if idx == 0 and default_file and use_demo and not use_webcam:
+        if idx == 0 and default_file and not use_webcam:
             return default_file
         return idx
 
     if raw == "":
-        if use_demo and default_file:
+        if default_file:
             return default_file
         return 0
 

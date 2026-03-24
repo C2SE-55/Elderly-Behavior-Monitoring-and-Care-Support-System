@@ -72,7 +72,7 @@ CREATE TABLE safe_zones (
 );
 
 -- 7 FALL EVENTS (té ngã)
-CREATE TABLE fall_events (
+CREATE TABLE  fall_events (
     id INT PRIMARY KEY AUTO_INCREMENT,
     camera_id INT,
     image_url VARCHAR(255),
