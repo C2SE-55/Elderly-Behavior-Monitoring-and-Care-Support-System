@@ -19,6 +19,22 @@ from ..core.falldetector import lying_hint_from_keypoints
 LOG = logging.getLogger(__name__)
 
 
+def _bbox_overlap_ratio(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    a_area = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+    return inter / a_area
+
+
 class AnnotationPainter:
     def __init__(self, *,
                  xy_scale=1.0,
@@ -32,7 +48,7 @@ class AnnotationPainter:
         }
 
     def annotations(self, ax, annotations, ID, fps, *,
-                    color=None, colors=None, texts=None, subtexts=None):
+                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None):
         fallcount = None
         by_classname = defaultdict(list)
         for ann_i, ann in enumerate(annotations):
@@ -43,9 +59,15 @@ class AnnotationPainter:
             this_colors = [colors[i] for i, _ in i_anns] if colors else None
             this_texts = [texts[i] for i, _ in i_anns] if texts else None
             this_subtexts = [subtexts[i] for i, _ in i_anns] if subtexts else None
-            fallcount = self.painters[classname].annotations(
-                ax, anns, ID, fps,
-                color=color, colors=this_colors, texts=this_texts, subtexts=this_subtexts)
+            kwargs = dict(
+                color=color,
+                colors=this_colors,
+                texts=this_texts,
+                subtexts=this_subtexts,
+            )
+            if classname == 'Annotation':
+                kwargs["yolo_boxes"] = yolo_boxes
+            fallcount = self.painters[classname].annotations(ax, anns, ID, fps, **kwargs)
 
         return fallcount
 
@@ -170,6 +192,10 @@ class KeypointPainter:
         self.centroid = -1
         self._last_fallback_fall_frame = -999  # fallback: đếm té trực tiếp từ bbox (khi tracker bỏ lỡ)
         self._FALLBACK_COOLDOWN = pipeline_config.FALL_FALLBACK_COOLDOWN_FRAMES
+        self._confirm_frames = pipeline_config.FALL_CONFIRM_FRAMES
+        self._global_cooldown = pipeline_config.FALL_GLOBAL_COOLDOWN_FRAMES
+        self._fall_streak = defaultdict(int)
+        self._last_global_fall_frame = -999
 
         self.ct = core.CentroidTracker()
         self.falls = core.FallDetector()
@@ -359,10 +385,40 @@ class KeypointPainter:
         ax.text(0, 0.9, "Fall Count: {}".format(fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
         
     def annotations(self, ax, annotations, stream, fps, *,
-                    color=None, colors=None, texts=None, subtexts=None):
+                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None):
         centroids = []
+        filtered_annotations = []
+        filtered_texts = []
+        
+        use_yolo_gate = pipeline_config.POSE_USE_YOLO_GATE and bool(yolo_boxes)
+        min_overlap = max(0.0, pipeline_config.POSE_YOLO_MIN_OVERLAP)
+        min_score = pipeline_config.POSE_MIN_SCORE
+        min_area = pipeline_config.POSE_MIN_BOX_AREA
         
         for i, ann in enumerate(annotations):
+            x_, y_, w_, h_ = ann.bbox()
+            if w_ < 5.0:
+                x_ -= 2.0
+                w_ += 4.0
+            if h_ < 5.0:
+                y_ -= 2.0
+                h_ += 4.0
+
+            score_val = ann.score() if hasattr(ann, "score") and ann.score() is not None else 0.0
+            if score_val < min_score:
+                continue
+            if (w_ * h_) < min_area:
+                continue
+            if use_yolo_gate:
+                pose_xyxy = (x_, y_, x_ + w_, y_ + h_)
+                matched = any(_bbox_overlap_ratio(pose_xyxy, yb) >= min_overlap for yb in yolo_boxes)
+                if not matched:
+                    continue
+
+            filtered_annotations.append(ann)
+            filtered_texts.append(texts[i] if texts is not None and i < len(texts) else None)
+
+        for i, ann in enumerate(filtered_annotations):
             self.centroid = -1
             
             color = i
@@ -373,8 +429,8 @@ class KeypointPainter:
 
             text = None
             text_is_score = False
-            if texts is not None:
-                text = texts[i]
+            if filtered_texts:
+                text = filtered_texts[i]
             elif hasattr(ann, 'id_'):
                 text = '{}'.format(ann.id_)
             elif ann.score():
@@ -407,21 +463,29 @@ class KeypointPainter:
             fps,
             frame_height=frame_height,
             y_inverted=y_inverted,
-            annotations=annotations,
+            annotations=filtered_annotations,
         )
         
         for ID, (x_, y_, w_, h_) in self.fallen.items():
             self._draw_box(ax, x_, y_, w_, h_, color='red')
             
-            if ID not in self.prev_fallen:
+            self._fall_streak[ID] += 1
+            can_emit = (self.framecount - self._last_global_fall_frame) >= self._global_cooldown
+            if self._fall_streak[ID] >= self._confirm_frames and can_emit:
                 self.fallcount += 1
-                LOG.info("FALL COUNT: {}".format(self.fallcount))
+                self._last_global_fall_frame = self.framecount
+                LOG.info("FALL COUNT: %s (ID=%s)", self.fallcount, ID)
+
+        current_fallen_ids = set(self.fallen.keys())
+        for fallen_id in list(self._fall_streak.keys()):
+            if fallen_id not in current_fallen_ids:
+                self._fall_streak[fallen_id] = 0
 
         self.prev_fallen = self.fallen
 
-        # Fallback: khi tracker không bắt được té, nếu có bất kỳ người nào bbox nằm ngang + gần sàn → đếm 1 lần (cooldown)
+        # Fallback 1: từ pose annotation đã lọc
         if len(self.fallen) == 0 and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN:
-            for ann in annotations:
+            for ann in filtered_annotations:
                 x_, y_, w_, h_ = ann.bbox()
                 if w_ < 5:
                     w_ = w_ + 4
@@ -443,6 +507,33 @@ class KeypointPainter:
                     self.fallcount += 1
                     self._last_fallback_fall_frame = self.framecount
                     LOG.info("FALL COUNT (fallback): {}".format(self.fallcount))
+                    break
+        
+        # Fallback 2: nếu pose rớt keypoint khi người nằm, dùng YOLO bbox nằm ngang để vẫn bắt té.
+        if (
+            pipeline_config.FALL_USE_YOLO_FALLBACK
+            and len(self.fallen) == 0
+            and yolo_boxes
+            and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN
+        ):
+            for (x1, y1, x2, y2) in yolo_boxes:
+                w_ = max(0.0, float(x2 - x1))
+                h_ = max(0.0, float(y2 - y1))
+                if h_ <= 1e-6:
+                    continue
+                if w_ < pipeline_config.FALL_YOLO_LYING_ASPECT * h_:
+                    continue
+                on_floor = True
+                if pipeline_config.FALL_REQUIRE_FLOOR and frame_height is not None and frame_height > 0:
+                    center_y = float(y1) + h_ / 2.0
+                    if y_inverted:
+                        on_floor = center_y <= (1.0 - pipeline_config.FALL_FLOOR_Y_RATIO) * frame_height
+                    else:
+                        on_floor = center_y >= pipeline_config.FALL_FLOOR_Y_RATIO * frame_height
+                if on_floor:
+                    self.fallcount += 1
+                    self._last_fallback_fall_frame = self.framecount
+                    LOG.info("FALL COUNT (yolo fallback): %s", self.fallcount)
                     break
 
         self.framecount += 1

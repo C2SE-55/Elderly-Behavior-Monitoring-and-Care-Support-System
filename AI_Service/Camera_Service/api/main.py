@@ -3,15 +3,17 @@ API Camera Service: phát MJPEG stream video đã qua model phát hiện té ng�
 phục vụ Frontend (Giám sát và phát hiện hành vi) quét tự động và liên tục.
 
 Nguồn video:
-  - Mặc định (không set VIDEO_SOURCE): ưu tiên Frontend/assets/videos/videofall.mp4 (demo té ngã), sau đó video3.mp4, video2.mp4; không có file nào thì webcam 0.
-  - Biến môi trường VIDEO_SOURCE (ghi đè mặc định):
-    + (không set VIDEO_SOURCE) -> thứ tự trên; hoặc chạy AI_Service/run_camera_videofall.bat
-    + VIDEO_SOURCE=0          -> nếu có videofall/video3 trong Frontend thì dùng file (tránh nhầm webcam); muốn webcam 0: set USE_WEBCAM=1
-    + USE_WEBCAM=1            -> buộc webcam (kèm VIDEO_SOURCE=0 hoặc 1)
+  - Mặc định: webcam máy tính (index 0). Muốn chạy video demo trong repo: set USE_DEMO_VIDEO=1 (sẽ dùng video3/videofall/video2 nếu có).
+  - Biến môi trường VIDEO_SOURCE:
+    + VIDEO_SOURCE rỗng       -> webcam 0 (trừ khi USE_DEMO_VIDEO=1 và có file demo)
+    + VIDEO_SOURCE=0          -> webcam 0 (trừ khi USE_DEMO_VIDEO=1 và có file demo)
+    + USE_DEMO_VIDEO=1        -> ưu tiên file demo trong Frontend/assets/videos (video3, videofall, video2)
+    + USE_WEBCAM=1            -> buộc webcam khi VIDEO_SOURCE=0 (bỏ qua file demo)
     + VIDEO_SOURCE=path.mp4   -> file video (lặp liên tục khi hết)
   - Tăng tốc FPS / đường truyền:
     + VIDEO_SCALE=0.35        -> co ảnh trước khi chạy model (mặc định trong code ~0.4), nhỏ hơn = nhanh hơn
     + VIDEO_SKIP_FRAMES=3     -> OpenPifPaf mỗi N frame (mặc định 2), tăng N = FPS cao hơn, pose giật hơn
+    + VIDEO_MAX_FPS=10        -> giới hạn FPS xử lý/hiển thị (mặc định 10 để giảm tải)
     + STREAM_JPEG_DPI=40      -> DPI ảnh MJPEG (mặc định 48), thấp hơn = encode nhanh hơn
     + STREAM_JPEG_QUALITY=65  -> chất lượng JPEG stream (mặc định 72), thấp hơn = nhanh hơn
     + YOLO_IMGSZ=320          -> kích thước input YOLO (mặc định 416), nhỏ hơn = nhanh hơn
@@ -39,6 +41,10 @@ Nhận diện khuôn mặt (người cần giám sát từ Quản lý thông tin
 Ghi nhận sự kiện té (bảng fall_events) qua Backend:
   - Khi phát hiện té, Camera Service gửi ảnh JPEG lên Backend POST /api/fall-events.
   - Biến môi trường: BACKEND_URL (Backend API), CAMERA_ID (id camera trong bảng cameras, mặc định 1).
+
+Ghi nhận “không phát hiện người” (bảng left_safe_zone_events):
+  - Khi chuyển từ có người → không có người, chụp frame và POST /api/left-safe-zone-events.
+  - SUPERVISOR_NO_PERSON_SNAPSHOT=1 (mặc định), SUPERVISOR_NO_PERSON_COOLDOWN_SECONDS=45, SAFE_ZONE_ID (tùy chọn).
 """
 
 import os
@@ -52,8 +58,8 @@ from ..video import inference as video_inference, cli as video_cli
 
 
 def _get_default_video_path():
-    """Tìm videofall.mp4 → video3 → video2 trong Frontend/assets/videos (nhiều gốc thư mục)."""
-    names = ("videofall.mp4", "video3.mp4", "video2.mp4")
+    """Tìm video3.mp4 → videofall.mp4 → video2.mp4 trong Frontend/assets/videos (nhiều gốc thư mục)."""
+    names = ("video3.mp4", "videofall.mp4", "video2.mp4")
     api_dir = os.path.dirname(os.path.abspath(__file__))
     roots = []
     pr = os.environ.get("PROJECT_ROOT", "").strip()
@@ -82,26 +88,26 @@ def _get_default_video_path():
 
 
 def _get_video_source():
-    """Nguồn video: ưu tiên file demo trong repo; tránh dùng webcam khi còn VIDEO_SOURCE=0 từ lần chạy cũ.
+    """Nguồn video: mặc định webcam; file demo chỉ khi USE_DEMO_VIDEO=1 hoặc đường dẫn tường minh.
 
-    - Chuỗi đường dẫn / URL: dùng trực tiếp.
-    - VIDEO_SOURCE rỗng: file mặc định nếu có, không thì webcam 0.
-    - VIDEO_SOURCE=0: file mặc định nếu có và USE_WEBCAM không bật; nếu không có file thì webcam 0.
-    - VIDEO_SOURCE=1,2,...: luôn webcam chỉ số đó.
-    - USE_WEBCAM=1: VIDEO_SOURCE=0 thực sự dùng webcam 0 (kể cả khi có videofall.mp4).
+    - Đường dẫn / URL (không chỉ số): dùng trực tiếp.
+    - USE_DEMO_VIDEO=1 + (VIDEO_SOURCE rỗng hoặc 0): dùng file demo trong Frontend nếu có, không thì webcam 0.
+    - USE_WEBCAM=1 + VIDEO_SOURCE=0: luôn webcam 0 (bỏ qua demo).
+    - VIDEO_SOURCE=1,2,...: webcam chỉ số đó.
     """
     raw = os.environ.get("VIDEO_SOURCE", "").strip()
     default_file = _get_default_video_path()
     use_webcam = os.environ.get("USE_WEBCAM", "").lower() in ("1", "true", "yes")
+    use_demo = os.environ.get("USE_DEMO_VIDEO", "").lower() in ("1", "true", "yes")
 
     if raw.isdigit():
         idx = int(raw)
-        if idx == 0 and default_file and not use_webcam:
+        if idx == 0 and default_file and use_demo and not use_webcam:
             return default_file
         return idx
 
     if raw == "":
-        if default_file:
+        if use_demo and default_file:
             return default_file
         return 0
 
@@ -114,14 +120,16 @@ def _parse_stream_args(source=None):
         source = _get_video_source()
     old_argv = sys.argv
     src_str = str(source) if source is not None else "0"
-    scale = os.environ.get("VIDEO_SCALE", "0.4").strip()   # 0.3 = nhẹ, giảm lag (8GB)
-    skip = os.environ.get("VIDEO_SKIP_FRAMES", "2").strip()  # 2 = mỗi 2 frame, bớt lag
+    scale = os.environ.get("VIDEO_SCALE", "0.30").strip()   # preset CPU nhanh: giảm kích thước input
+    skip = os.environ.get("VIDEO_SKIP_FRAMES", "2").strip()  # preset CPU nhanh: giảm tần suất pose
+    max_fps = os.environ.get("VIDEO_MAX_FPS", "10").strip()  # giới hạn FPS để stream ổn định hơn
     sys.argv = [
         "video",
         "--source=" + src_str,
         "--quiet",
         "--scale=" + scale,
         "--skip-frames=" + skip,
+        "--max-fps=" + max_fps,
     ]
     try:
         args = video_cli()
@@ -141,6 +149,9 @@ stream_state = {
     "ready": False,
     "target_visible": False,
     "person_count": 0,
+    "person_in_zone": False,
+    "supervisor_missing": False,
+    "any_person": False,
 }
 
 _inference_thread = None
@@ -223,6 +234,9 @@ def fall_status():
         "source": source_label,
         "target_visible": stream_state.get("target_visible", False),
         "person_count": stream_state.get("person_count", 0),
+        "person_in_zone": stream_state.get("person_in_zone", False),
+        "supervisor_missing": stream_state.get("supervisor_missing", False),
+        "any_person": stream_state.get("any_person", False),
     }
 
 

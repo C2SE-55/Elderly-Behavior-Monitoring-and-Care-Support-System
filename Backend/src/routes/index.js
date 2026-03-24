@@ -2,6 +2,7 @@ const express = require("express");
 const authRoutes = require("./auth");
 const healthMetricsRoutes = require("./healthMetrics");
 const fallEventsRoutes = require("./fallEvents");
+const leftSafeZoneEventsRoutes = require("./leftSafeZoneEvents");
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ const router = express.Router();
 router.use("/api/auth", authRoutes);
 router.use("/api/health-metrics", healthMetricsRoutes);
 router.use("/api/fall-events", fallEventsRoutes);
+router.use("/api/left-safe-zone-events", leftSafeZoneEventsRoutes);
 
 // Kiểm tra trạng thái server
 router.get("/health", (req, res) => {

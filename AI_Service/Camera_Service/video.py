@@ -31,13 +31,32 @@ import torch
 import torch.multiprocessing as mp
 
 import cv2  # pylint: disable=import-error
+import matplotlib.patches as mpatches
+import numpy as np
 from . import decoder, network, show, transforms, visualizer, __version__
 from . import config, core, logger
 from .core import face_recognizer, fall_event_client, pipeline_config, yolo_detector
-from .core.safe_zone import SafeZoneTracker
+from .core.safe_zone import (
+    SafeZoneTracker,
+    default_supervisor_zone,
+    parse_polygon,
+    point_in_polygon,
+)
 
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
 LOG = logging.getLogger(__name__)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        LOG.warning("Invalid %s=%r, fallback to %s", name, raw, default)
+        return default
+
 
 _STREAM_JPEG_KWARGS = dict(
     format="jpeg",
@@ -53,6 +72,98 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
     pass
 
 
+def _any_person_in_supervisor_zone(yolo_boxes, preds, w_img, h_img, poly_norm):
+    """True nếu tâm bbox người (YOLO ưu tiên, không thì pose) nằm trong polygon."""
+    if not poly_norm or len(poly_norm) < 3:
+        return False
+    wf = max(1.0, float(w_img))
+    hf = max(1.0, float(h_img))
+    for (x1, y1, x2, y2) in yolo_boxes:
+        cx = ((x1 + x2) / 2.0) / wf
+        cy = ((y1 + y2) / 2.0) / hf
+        if point_in_polygon(cx, cy, poly_norm):
+            return True
+    if preds:
+        for ann in preds:
+            try:
+                x_, y_, bw, bh = ann.bbox()
+                cx = (x_ + bw / 2.0) / wf
+                cy = (y_ + bh / 2.0) / hf
+                if point_in_polygon(cx, cy, poly_norm):
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _any_person_in_frame(yolo_boxes, preds):
+    """True nếu có ít nhất một người trong cảnh (YOLO bbox hoặc pose)."""
+    if yolo_boxes:
+        return True
+    if preds:
+        for ann in preds:
+            try:
+                ann.bbox()
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def _clip_bbox_xyxy(box, w_img, h_img):
+    """Giới hạn bbox trong khung ảnh."""
+    x1, y1, x2, y2 = box
+    w_img = float(w_img)
+    h_img = float(h_img)
+    x1 = max(0.0, min(w_img - 1.0, x1))
+    x2 = max(0.0, min(w_img - 1.0, x2))
+    y1 = max(0.0, min(h_img - 1.0, y1))
+    y2 = max(0.0, min(h_img - 1.0, y2))
+    if x2 < x1:
+        x1, x2 = x2, x1
+    if y2 < y1:
+        y1, y2 = y2, y1
+    return (x1, y1, x2, y2)
+
+
+def _primary_person_bbox(yolo_boxes, preds, w_img, h_img):
+    """Bbox người cần theo dõi: YOLO — bbox có diện tích lớn nhất; không có thì pose tương tự."""
+    best = None
+    best_area = -1.0
+    for (x1, y1, x2, y2) in yolo_boxes:
+        area = max(0.0, float(x2 - x1)) * max(0.0, float(y2 - y1))
+        if area > best_area:
+            best_area = area
+            best = (float(x1), float(y1), float(x2), float(y2))
+    if best is not None:
+        return _clip_bbox_xyxy(best, w_img, h_img)
+    if preds:
+        for ann in preds:
+            try:
+                x_, y_, bw, bh = ann.bbox()
+                area = max(0.0, float(bw)) * max(0.0, float(bh))
+                if area > best_area:
+                    best_area = area
+                    best = (float(x_), float(y_), float(x_ + bw), float(y_ + bh))
+            except Exception:
+                continue
+    if best is None:
+        return None
+    return _clip_bbox_xyxy(best, w_img, h_img)
+
+
+def _bbox_center_in_polygon(box, poly_norm, w_img, h_img):
+    """True nếu tâm bbox nằm trong polygon chuẩn hóa."""
+    if not poly_norm or len(poly_norm) < 3:
+        return False
+    x1, y1, x2, y2 = box
+    wf = max(1.0, float(w_img))
+    hf = max(1.0, float(h_img))
+    cx = ((x1 + x2) / 2.0) / wf
+    cy = ((y1 + y2) / 2.0) / hf
+    return point_in_polygon(cx, cy, poly_norm)
+
+
 def cli():  # pylint: disable=too-many-statements,too-many-branches
     parser = argparse.ArgumentParser(
         prog='python3 -m openpifpaf.video',
@@ -63,7 +174,15 @@ def cli():  # pylint: disable=too-many-statements,too-many-branches
                         version='OpenPifPaf {version}'.format(version=__version__))
 
     network.cli(parser)
-    decoder.cli(parser, force_complete_pose=False, instance_threshold=0.1, seed_threshold=0.35)
+    # Nới decode pose mạnh hơn để giữ keypoint khi người nằm/nghiêng.
+    pose_instance_threshold = _env_float("POSE_INSTANCE_THRESHOLD", 0.03)
+    pose_seed_threshold = _env_float("POSE_SEED_THRESHOLD", 0.20)
+    decoder.cli(
+        parser,
+        force_complete_pose=True,
+        instance_threshold=pose_instance_threshold,
+        seed_threshold=pose_seed_threshold,
+    )
     show.cli(parser)
     visualizer.cli(parser)
 
@@ -211,6 +330,14 @@ def inference(args, stream, stream_state=None):
     skip_frames = max(1, int(getattr(args, 'skip_frames', 1)))
     max_fps = float(getattr(args, 'max_fps', 0))
 
+    zone_poly = parse_polygon(pipeline_config.SAFE_ZONE_POLYGON)
+    if not zone_poly:
+        zone_poly = default_supervisor_zone()
+
+    # Cạnh “có người → không người” + cooldown để ghi left_safe_zone_events (không spam mỗi frame)
+    prev_any_person_for_snapshot = None
+    last_no_person_snapshot_ts = 0.0
+
     for frame_i, (ax, ax_second) in enumerate(animation.iter()):
         grabbed, image = capture.read()
         input_fps = capture.get(cv2.CAP_PROP_FPS)
@@ -323,7 +450,14 @@ def inference(args, stream, stream_state=None):
                 except Exception as e:
                     LOG.warning("Gửi cảnh báo rời vùng quan sát thất bại: %s", e)
 
-        fallcount = annotation_painter.annotations(ax, preds, ID, input_fps, texts=texts_to_use)
+        fallcount = annotation_painter.annotations(
+            ax,
+            preds,
+            ID,
+            input_fps,
+            texts=texts_to_use,
+            yolo_boxes=last_yolo_boxes,
+        )
         if fallcount is not None:
             if fallcount > old_fallcount and animation.fig is not None:
                 try:
@@ -342,7 +476,75 @@ def inference(args, stream, stream_state=None):
                 except Exception as e:
                     LOG.warning("Gửi ảnh té lên Backend thất bại: %s", e)
             old_fallcount = fallcount
-        
+
+        # Vùng giám sát: khung chữ nhật bám bbox người (kích thước thay đổi theo người); không người → báo ngay
+        h_img, w_img = image.shape[:2]
+        any_person = _any_person_in_frame(last_yolo_boxes, preds)
+        primary_bbox = None
+        person_in_zone = False
+        supervisor_missing = False
+        if pipeline_config.SUPERVISOR_ZONE_ENABLED:
+            supervisor_missing = not any_person
+            if any_person:
+                primary_bbox = _primary_person_bbox(
+                    last_yolo_boxes, preds, w_img, h_img
+                )
+                if primary_bbox is not None and zone_poly:
+                    person_in_zone = _bbox_center_in_polygon(
+                        primary_bbox, zone_poly, w_img, h_img
+                    )
+                elif zone_poly:
+                    person_in_zone = _any_person_in_supervisor_zone(
+                        last_yolo_boxes, preds, w_img, h_img, zone_poly
+                    )
+
+        if getattr(ax, "_supervisor_zone_patch", None) is not None:
+            try:
+                ax._supervisor_zone_patch.remove()
+            except Exception:
+                pass
+            ax._supervisor_zone_patch = None
+        if getattr(ax, "_supervisor_msg", None) is not None:
+            try:
+                ax._supervisor_msg.remove()
+            except Exception:
+                pass
+            ax._supervisor_msg = None
+
+        if pipeline_config.SUPERVISOR_ZONE_ENABLED and primary_bbox is not None:
+            x1, y1, x2, y2 = primary_bbox
+            edge = "#22c55e" if person_in_zone else "#ef4444"
+            patch = mpatches.Rectangle(
+                (x1, y1),
+                x2 - x1,
+                y2 - y1,
+                fill=False,
+                edgecolor=edge,
+                linewidth=2.8,
+                zorder=12,
+            )
+            ax.add_patch(patch)
+            ax._supervisor_zone_patch = patch
+
+        if pipeline_config.SUPERVISOR_ZONE_ENABLED and supervisor_missing:
+            ax._supervisor_msg = ax.text(
+                0.5,
+                0.5,
+                "Không phát hiện người",
+                fontsize=15,
+                color="white",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                bbox={
+                    "facecolor": "#b91c1c",
+                    "alpha": 0.92,
+                    "linewidth": 0,
+                    "pad": 0.45,
+                },
+                zorder=25,
+            )
+
         loop_time = time.time() - last_loop
         if max_fps > 0 and loop_time < 1.0 / max_fps:
             time.sleep(1.0 / max_fps - loop_time)
@@ -360,6 +562,35 @@ def inference(args, stream, stream_state=None):
             old_fallcount = fallcount
         else:
             ax.text(0, 0.9, "Fall Count: {}".format(old_fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
+
+        # Chụp ảnh khi vừa mất người (không phát hiện người) → POST left_safe_zone_events
+        if (
+            pipeline_config.SUPERVISOR_ZONE_ENABLED
+            and pipeline_config.SUPERVISOR_NO_PERSON_SNAPSHOT
+            and supervisor_missing
+            and prev_any_person_for_snapshot is True
+            and animation.fig is not None
+        ):
+            now_ts = time.time()
+            if now_ts - last_no_person_snapshot_ts >= pipeline_config.SUPERVISOR_NO_PERSON_COOLDOWN_SECONDS:
+                try:
+                    buf = io.BytesIO()
+                    animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
+                    buf.seek(0)
+                    ok = fall_event_client.send_left_safe_zone_image_to_backend(
+                        buf.getvalue(),
+                        camera_id=pipeline_config.CAMERA_ID,
+                        zone_id=pipeline_config.SAFE_ZONE_ID,
+                        severity_level="medium",
+                    )
+                    if ok:
+                        last_no_person_snapshot_ts = now_ts
+                        LOG.warning(
+                            "Đã gửi ảnh 'Không phát hiện người' → left_safe_zone_events (camera_id=%s).",
+                            pipeline_config.CAMERA_ID,
+                        )
+                except Exception as e:
+                    LOG.warning("Chụp/gửi ảnh không phát hiện người thất bại: %s", e)
         
         if args.device == torch.device('cpu'):
             LOG.debug(
@@ -377,7 +608,11 @@ def inference(args, stream, stream_state=None):
                 ))
         
         # Chế độ stream cho API: ghi frame JPEG + trạng thái để Frontend hiển thị liên tục
-        if stream_state is not None and animation.fig is not None:
+        if (
+            stream_state is not None
+            and animation.fig is not None
+            and (frame_i % pipeline_config.STREAM_UPDATE_EVERY_N_FRAMES == 0)
+        ):
             buf = io.BytesIO()
             try:
                 animation.fig.savefig(buf, **_STREAM_JPEG_KWARGS)
@@ -388,8 +623,19 @@ def inference(args, stream, stream_state=None):
                 stream_state['ready'] = True
                 stream_state['target_visible'] = target_visible
                 stream_state['person_count'] = len(last_yolo_boxes)
+                stream_state['person_in_zone'] = person_in_zone
+                stream_state['supervisor_missing'] = supervisor_missing
+                stream_state['any_person'] = any_person
             except Exception as e:
                 LOG.debug('stream_state savefig: %s', e)
+
+        if stream_state is not None:
+            stream_state["person_in_zone"] = person_in_zone
+            stream_state["supervisor_missing"] = supervisor_missing
+            stream_state["any_person"] = any_person
+
+        if pipeline_config.SUPERVISOR_ZONE_ENABLED:
+            prev_any_person_for_snapshot = any_person
 
         last_loop = time.time()
 
