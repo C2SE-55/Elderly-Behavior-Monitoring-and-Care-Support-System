@@ -15,14 +15,18 @@ import {
   createSchedules,
   deleteMedication,
   deleteSchedule,
+  getMyRoom,
   getMedications,
   getTodaySchedules,
   markSkipped,
   markTaken,
   MedicationItem,
+  MyRoomInfo,
   TodayScheduleItem,
   updateMedication,
+  logoutUser,
 } from "../../services/api";
+import { useRouter } from "expo-router";
 
 type RepeatType = "once" | "daily";
 
@@ -33,9 +37,15 @@ const nowHHMM = () => {
 };
 
 export default function MedicineReminderScreen() {
+  const router = useRouter();
   const [screenError, setScreenError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [permissionLoading, setPermissionLoading] = useState(true);
+  const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
+  const [canReadRoomData, setCanReadRoomData] = useState(false);
+  const [canManageMedication, setCanManageMedication] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState("");
   const [savingMedication, setSavingMedication] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
 
@@ -71,7 +81,39 @@ export default function MedicineReminderScreen() {
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [todaySchedules]);
 
+  const loadPermissions = useCallback(async () => {
+    try {
+      setPermissionLoading(true);
+      const room = await getMyRoom();
+      setRoomInfo(room);
+      if (!room) {
+        setCanReadRoomData(false);
+        setCanManageMedication(false);
+        setPermissionMessage("Bạn chưa tham gia room. Hãy vào mục Kết nối người thân để join room.");
+        return;
+      }
+      const isHost = room.member_role === "host";
+      const canManage = isHost || !!room.can_manage_medication;
+      setCanReadRoomData(true);
+      setCanManageMedication(canManage);
+      setPermissionMessage(
+        canManage ? "" : "Bạn đang ở chế độ chỉ xem. HOST chưa bật quyền quản lý nhắc thuốc cho bạn."
+      );
+    } catch {
+      setCanReadRoomData(false);
+      setCanManageMedication(false);
+      setPermissionMessage("Không tải được thông tin quyền trong room.");
+    } finally {
+      setPermissionLoading(false);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
+    if (!canReadRoomData) {
+      setMedications([]);
+      setTodaySchedules([]);
+      return;
+    }
     try {
       setLoading(true);
       setScreenError("");
@@ -84,7 +126,11 @@ export default function MedicineReminderScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canReadRoomData]);
+
+  useEffect(() => {
+    loadPermissions();
+  }, [loadPermissions]);
 
   useEffect(() => {
     loadAll();
@@ -129,6 +175,7 @@ export default function MedicineReminderScreen() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
+      if (!canReadRoomData) return;
       try {
         const schedules = await getTodaySchedules();
         setTodaySchedules(schedules);
@@ -149,7 +196,7 @@ export default function MedicineReminderScreen() {
     }, 15000);
 
     return () => clearInterval(timer);
-  }, [showDueNotice]);
+  }, [canReadRoomData, showDueNotice]);
 
   const resetMedicationForm = () => {
     setMedicineName("");
@@ -159,6 +206,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onSaveMedication = async () => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền chỉnh sửa nhắc thuốc.");
+      return;
+    }
     if (!medicineName.trim()) {
       setScreenError("Tên thuốc là bắt buộc.");
       return;
@@ -200,6 +251,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onDeleteMedication = async (id: number) => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền chỉnh sửa nhắc thuốc.");
+      return;
+    }
     try {
       setScreenError("");
       await deleteMedication(id);
@@ -217,6 +272,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onCreateSchedule = async () => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền chỉnh sửa nhắc thuốc.");
+      return;
+    }
     if (!selectedMedicationIds.length) {
       setScreenError("Vui lòng chọn ít nhất 1 thuốc để đặt lịch.");
       return;
@@ -248,6 +307,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onMarkTaken = async (scheduleId: number) => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền cập nhật trạng thái thuốc.");
+      return;
+    }
     try {
       await markTaken(scheduleId);
       await loadAll();
@@ -258,6 +321,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onMarkSkipped = async (scheduleId: number) => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền cập nhật trạng thái thuốc.");
+      return;
+    }
     try {
       await markSkipped(scheduleId);
       await loadAll();
@@ -268,6 +335,10 @@ export default function MedicineReminderScreen() {
   };
 
   const onDeleteSchedule = async (scheduleId: number) => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền xóa lịch thuốc.");
+      return;
+    }
     try {
       await deleteSchedule(scheduleId);
       await loadAll();
@@ -275,6 +346,11 @@ export default function MedicineReminderScreen() {
       const backendMessage = (error as any)?.response?.data?.message;
       setScreenError(backendMessage || "Không thể xóa lịch.");
     }
+  };
+
+  const onLogout = () => {
+    logoutUser();
+    router.replace("/(auths)/login");
   };
 
   const handleNoticeAction = async (scheduleId: number, action: "taken" | "skipped") => {
@@ -334,9 +410,14 @@ export default function MedicineReminderScreen() {
       </Animated.View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.contentWrap}>
-        <Text style={styles.headerTitle}>Nhắc uống thuốc</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerTitle}>Nhắc uống thuốc</Text>
+        </View>
         {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
         {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
+        {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
+        {permissionLoading && <Text style={styles.loadingText}>Đang kiểm tra quyền trong room...</Text>}
+        {!!roomInfo?.room_id && <Text style={styles.loadingText}>Room: {roomInfo.room_id}</Text>}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>1) Nhập thuốc</Text>
@@ -363,7 +444,11 @@ export default function MedicineReminderScreen() {
             multiline
           />
           <View style={styles.rowActions}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={onSaveMedication} disabled={savingMedication}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={onSaveMedication}
+              disabled={savingMedication || !canManageMedication}
+            >
               <Text style={styles.primaryBtnText}>{savingMedication ? "Đang lưu..." : editingMedicationId ? "Cập nhật thuốc" : "Thêm thuốc"}</Text>
             </TouchableOpacity>
             {editingMedicationId && (
@@ -380,10 +465,18 @@ export default function MedicineReminderScreen() {
                 {!!item.dosage && <Text style={styles.medMeta}>Liều: {item.dosage}</Text>}
                 {!!item.note && <Text style={styles.medMeta}>Ghi chú: {item.note}</Text>}
               </View>
-              <TouchableOpacity style={styles.lightBtn} onPress={() => onEditMedication(item)}>
+              <TouchableOpacity
+                style={[styles.lightBtn, !canManageMedication && { opacity: 0.6 }]}
+                onPress={() => onEditMedication(item)}
+                disabled={!canManageMedication}
+              >
                 <Text style={styles.lightBtnText}>Sửa</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => onDeleteMedication(item.id)}>
+              <TouchableOpacity
+                style={[styles.deleteBtn, !canManageMedication && { opacity: 0.6 }]}
+                onPress={() => onDeleteMedication(item.id)}
+                disabled={!canManageMedication}
+              >
                 <Text style={styles.deleteBtnText}>Xóa</Text>
               </TouchableOpacity>
             </View>
@@ -453,7 +546,11 @@ export default function MedicineReminderScreen() {
             );
           })}
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={onCreateSchedule} disabled={savingSchedule}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, !canManageMedication && { opacity: 0.6 }]}
+            onPress={onCreateSchedule}
+            disabled={savingSchedule || !canManageMedication}
+          >
             <Text style={styles.primaryBtnText}>{savingSchedule ? "Đang tạo..." : "Tạo lịch uống"}</Text>
           </TouchableOpacity>
         </View>
@@ -481,15 +578,27 @@ export default function MedicineReminderScreen() {
                     </View>
                     {item.status === "pending" && (
                       <>
-                        <TouchableOpacity style={styles.takenBtn} onPress={() => onMarkTaken(item.id)}>
+                        <TouchableOpacity
+                          style={[styles.takenBtn, !canManageMedication && { opacity: 0.6 }]}
+                          onPress={() => onMarkTaken(item.id)}
+                          disabled={!canManageMedication}
+                        >
                           <Text style={styles.takenBtnText}>✔ Taken</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.skipBtn} onPress={() => onMarkSkipped(item.id)}>
+                        <TouchableOpacity
+                          style={[styles.skipBtn, !canManageMedication && { opacity: 0.6 }]}
+                          onPress={() => onMarkSkipped(item.id)}
+                          disabled={!canManageMedication}
+                        >
                           <Text style={styles.skipBtnText}>Skip</Text>
                         </TouchableOpacity>
                       </>
                     )}
-                    <TouchableOpacity style={styles.deleteBtn} onPress={() => onDeleteSchedule(item.id)}>
+                    <TouchableOpacity
+                      style={[styles.deleteBtn, !canManageMedication && { opacity: 0.6 }]}
+                      onPress={() => onDeleteSchedule(item.id)}
+                      disabled={!canManageMedication}
+                    >
                       <Text style={styles.deleteBtnText}>X</Text>
                     </TouchableOpacity>
                   </View>
@@ -499,6 +608,10 @@ export default function MedicineReminderScreen() {
           )}
         </View>
       </ScrollView>
+
+      <TouchableOpacity style={styles.floatingLogoutBtn} onPress={onLogout} activeOpacity={0.9}>
+        <Text style={styles.floatingLogoutText}>Đăng xuất</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -554,6 +667,31 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F6F7FB" },
   contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
   headerTitle: { fontSize: 24, fontWeight: "700", color: "#111827" },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  floatingLogoutBtn: {
+    position: "absolute",
+    right: 16,
+    bottom: 22,
+    backgroundColor: "#DC2626",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    zIndex: 25,
+  },
+  floatingLogoutText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 14,
@@ -678,6 +816,14 @@ const styles = StyleSheet.create({
   skipBtnText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
   loadingWrap: { paddingVertical: 14, alignItems: "center", gap: 8 },
   loadingText: { color: "#6B7280", fontSize: 12 },
+  warnText: {
+    color: "#92400E",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
   emptyText: { color: "#6B7280", fontSize: 13 },
   errorText: {
     color: "#991B1B",

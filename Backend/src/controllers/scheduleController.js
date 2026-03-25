@@ -1,10 +1,19 @@
 const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const MedicationSystem = require("../models/MedicationSystem");
+const { resolveAccessContext } = require("../services/accessControl");
 
 exports.createSchedules = async (req, res) => {
   try {
-    const data = await MedicationSystem.createSchedules(req.userId, req.body || {});
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
+    const data = await MedicationSystem.createSchedules(context.hostUserId, req.body || {});
     return sendSuccess(res, data, "Tạo lịch uống thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "INVALID_ALARM_TIME") {
@@ -26,7 +35,11 @@ exports.createSchedules = async (req, res) => {
 
 exports.getTodaySchedules = async (req, res) => {
   try {
-    const rows = await MedicationSystem.getTodaySchedules(req.userId);
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canReadRoomData || !context.hostUserId) {
+      return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
+    }
+    const rows = await MedicationSystem.getTodaySchedules(context.hostUserId);
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -58,12 +71,20 @@ exports.getTodaySchedules = async (req, res) => {
 
 exports.updateSchedule = async (req, res) => {
   try {
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
     const scheduleId = Number(req.params.id);
     if (!scheduleId || Number.isNaN(scheduleId)) {
       return sendFail(res, "ID lịch uống không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationSystem.updateSchedule(req.userId, scheduleId, req.body || {});
+    const ok = await MedicationSystem.updateSchedule(context.hostUserId, scheduleId, req.body || {});
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }
@@ -79,12 +100,20 @@ exports.updateSchedule = async (req, res) => {
 
 exports.deleteSchedule = async (req, res) => {
   try {
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
     const scheduleId = Number(req.params.id);
     if (!scheduleId || Number.isNaN(scheduleId)) {
       return sendFail(res, "ID lịch uống không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationSystem.deleteSchedule(req.userId, scheduleId);
+    const ok = await MedicationSystem.deleteSchedule(context.hostUserId, scheduleId);
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }

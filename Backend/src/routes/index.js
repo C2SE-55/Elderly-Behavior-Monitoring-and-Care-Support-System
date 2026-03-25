@@ -7,6 +7,8 @@ const medicationRemindersRoutes = require("./medicationReminders");
 const medicationsRoutes = require("./medications");
 const schedulesRoutes = require("./schedules");
 const logsRoutes = require("./logs");
+const dailySchedulesRoutes = require("./dailySchedules");
+const roomsRoutes = require("./rooms");
 
 const router = express.Router();
 
@@ -19,6 +21,17 @@ router.use("/api/medication-reminders", medicationRemindersRoutes);
 router.use("/api/medications", medicationsRoutes);
 router.use("/api/schedules", schedulesRoutes);
 router.use("/api/logs", logsRoutes);
+router.use("/api/daily-schedules", dailySchedulesRoutes);
+router.use("/api/rooms", roomsRoutes);
+// Alias routes for compatibility across FE baseURL variants.
+router.use("/daily-schedules", dailySchedulesRoutes);
+router.use("/api/api/daily-schedules", dailySchedulesRoutes);
+router.get("/api/server-time", (req, res) => {
+  res.json({
+    status: "success",
+    data: { now: new Date().toISOString() },
+  });
+});
 
 // Kiểm tra trạng thái server
 router.get("/health", (req, res) => {

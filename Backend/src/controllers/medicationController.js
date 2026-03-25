@@ -1,11 +1,15 @@
 const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const MedicationSystem = require("../models/MedicationSystem");
+const { resolveAccessContext } = require("../services/accessControl");
 
 exports.getMedications = async (req, res) => {
   try {
-    const userId = req.userId;
-    const data = await MedicationSystem.getMedications(userId);
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canReadRoomData || !context.hostUserId) {
+      return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
+    }
+    const data = await MedicationSystem.getMedications(context.hostUserId);
     return sendSuccess(res, data, "Lấy danh sách thuốc thành công", HTTP_STATUS.OK);
   } catch (error) {
     console.error("Lỗi lấy danh sách thuốc:", error);
@@ -15,8 +19,15 @@ exports.getMedications = async (req, res) => {
 
 exports.createMedication = async (req, res) => {
   try {
-    const userId = req.userId;
-    const created = await MedicationSystem.createMedication(userId, req.body || {});
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
+    const created = await MedicationSystem.createMedication(context.hostUserId, req.body || {});
     return sendSuccess(res, created, "Tạo thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "MEDICATION_NAME_REQUIRED") {
@@ -29,12 +40,19 @@ exports.createMedication = async (req, res) => {
 
 exports.updateMedication = async (req, res) => {
   try {
-    const userId = req.userId;
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
     const medicationId = Number(req.params.id);
     if (!medicationId || Number.isNaN(medicationId)) {
       return sendFail(res, "ID thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.updateMedication(userId, medicationId, req.body || {});
+    const ok = await MedicationSystem.updateMedication(context.hostUserId, medicationId, req.body || {});
     if (!ok) {
       return sendFail(res, "Không tìm thấy thuốc", HTTP_STATUS.NOT_FOUND);
     }
@@ -50,12 +68,19 @@ exports.updateMedication = async (req, res) => {
 
 exports.deleteMedication = async (req, res) => {
   try {
-    const userId = req.userId;
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
     const medicationId = Number(req.params.id);
     if (!medicationId || Number.isNaN(medicationId)) {
       return sendFail(res, "ID thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.deleteMedication(userId, medicationId);
+    const ok = await MedicationSystem.deleteMedication(context.hostUserId, medicationId);
     if (!ok) {
       return sendFail(res, "Không tìm thấy thuốc", HTTP_STATUS.NOT_FOUND);
     }

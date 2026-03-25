@@ -1,5 +1,6 @@
 # chat.py - Trợ lý ảo chat (Groq)
 import os
+import re
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -7,16 +8,50 @@ from .meal_plan import get_health_profile_by_user_id
 
 load_dotenv()
 
-SYSTEM_PROMPT = """Bạn là Trợ lý ảo DINH DƯỠNG của ứng dụng Chăm sóc sức khỏe người cao tuổi. Quy tắc BẮT BUỘC:
+SYSTEM_PROMPT = """Bạn là Trợ lý ảo DINH DƯỠNG của ứng dụng Chăm sóc sức khỏe người cao tuổi. Quy tắc:
 - Được phép trả lời về: dinh dưỡng, thực đơn, khẩu phần ăn, thực phẩm, nước uống, thói quen ăn uống, sở thích ăn uống, lối sống lành mạnh cho người cao tuổi (vận động nhẹ, ngủ nghỉ, sinh hoạt hằng ngày), và hướng dẫn dùng các tính năng trong ứng dụng.
 - Có thể hướng dẫn cách dùng app (mục Quản lý thông tin sức khỏe, Dị ứng, Thực đơn 7 ngày...).
 - Luôn ưu tiên cá nhân hóa theo hồ sơ người cần chăm sóc trong bảng health_profiles (tuổi, cân nặng, chiều cao, huyết áp, bệnh nền, dị ứng).
-- TUYỆT ĐỐI KHÔNG trả lời các câu hỏi ngoài lề như: chính trị, lịch sử, người nổi tiếng, tin tức thời sự, giải trí thuần túy, lập trình, toán học không liên quan chăm sóc sức khỏe.
-- Nếu người dùng hỏi ngoài phạm vi trên, hãy nói ngắn gọn: "Mình tập trung hỗ trợ về sức khỏe, lối sống, dinh dưỡng và bữa ăn cho người cao tuổi trong ứng dụng này."
+- Ưu tiên nội dung sức khỏe/dinh dưỡng. Với các câu giao tiếp nhẹ (chào hỏi, cảm ơn, hỏi thăm) có thể trả lời tự nhiên, ngắn gọn, thân thiện.
+- Với câu hỏi quá ngoài phạm vi ứng dụng (ví dụ chính trị/tài chính/lập trình chuyên sâu), từ chối lịch sự và chuyển hướng về chăm sóc sức khỏe.
 - Gợi ý dinh dưỡng, thực đơn phù hợp người cao tuổi (có thể nhắc người dùng dùng tính năng "Thực đơn 7 ngày" trong app).
 - Khi người dùng yêu cầu "thực đơn 7 ngày": BẮT BUỘC trả lời ĐỦ 7 NGÀY (Ngày 1, 2, 3, 4, 5, 6, 7). Mỗi ngày ghi rõ Sáng/Trưa/Tối (có thể thêm giữa sáng/chiều nếu muốn). Không được dừng giữa chừng ở ngày 5 hay 6; phải hoàn thành hết Ngày 7. Dùng format gọn để đủ trong một tin nhắn.
 - Không đưa thông tin y tế thay thế bác sĩ; khi cần khuyên đến cơ sở y tế.
 - Nếu người dùng hỏi về dị ứng hoặc bệnh nền, nhắc họ cập nhật trong mục "Quản lý thông tin sức khỏe" và thực đơn sẽ tự tránh dị nguyên."""
+
+
+def _looks_like_meal_plan_intent(user_message: str) -> bool:
+    lower = (user_message or "").lower()
+    meal_keywords = [
+        "thực đơn", "thuc don", "bữa ăn", "bua an", "menu", "meal plan", "khẩu phần", "khau phan"
+    ]
+    if any(k in lower for k in meal_keywords):
+        return True
+    has_date = bool(re.search(r"\d{1,2}[\/\.]\d{1,2}(?:[\/\.]\d{4})?|\d{4}-\d{2}-\d{2}", lower))
+    has_range_words = any(w in lower for w in ["từ", "tu", "đến", "den", "tới", "toi"])
+    return has_date and has_range_words
+
+
+def _looks_clearly_off_topic(user_message: str) -> bool:
+    lower = (user_message or "").lower()
+    # Nới lỏng mạnh: nếu câu có ngữ cảnh dinh dưỡng/sức khỏe thì KHÔNG chặn.
+    health_keywords = [
+        "sức khỏe", "suc khoe", "dinh dưỡng", "dinh duong", "thực đơn", "thuc don",
+        "bữa ăn", "bua an", "khẩu phần", "khau phan", "calo", "calories", "protein",
+        "carb", "fat", "huyết áp", "huyet ap", "tiểu đường", "tieu duong", "tim mạch", "tim mach",
+        "ăn sáng", "an sang", "ăn trưa", "an trua", "ăn tối", "an toi", "breakfast", "lunch", "dinner",
+        "thuốc", "thuoc", "dị ứng", "di ung", "bệnh nền", "benh nen",
+    ]
+    if any(k in lower for k in health_keywords):
+        return False
+
+    # Chỉ chặn các chủ đề ngoài phạm vi rất rõ ràng.
+    off_topic_keywords = [
+        "chính trị", "bầu cử", "chiến tranh",
+        "debug code", "python script", "javascript framework",
+        "coin", "crypto", "forex", "chứng khoán",
+    ]
+    return any(k in lower for k in off_topic_keywords)
 
 
 def build_messages(profile: dict | None, user_message: str, history: list[dict]) -> list[dict]:
@@ -70,29 +105,28 @@ def chat_reply(user_message: str, history: list[dict], user_id: int | None = Non
     if not user_message:
         return "Bạn chưa nhập nội dung. Hãy gửi tin nhắn để mình hỗ trợ."
 
-    # Lọc theo blacklist (không dùng whitelist cứng) để tránh gò bó câu hỏi hợp lệ.
-    # Nếu câu hỏi không rõ ngoài lề thì vẫn cho model xử lý theo ngữ cảnh.
-    lower = user_message.lower()
-    off_topic_keywords = [
-        "tổng thống", "chính trị", "bầu cử", "chiến tranh", "lịch sử",
-        "bóng đá", "bóng rổ", "cricket", "game", "chơi game",
-        "lập trình", "code", "debug", "python", "javascript", "sql",
-        "toán", "giải phương trình", "đạo hàm", "tích phân",
-        "coin", "crypto", "chứng khoán", "forex",
-        "ca sĩ", "diễn viên", "showbiz", "phim", "anime",   
-    ]
-    if any(k in lower for k in off_topic_keywords):
+    # Nới lỏng bộ lọc: ưu tiên cho các câu liên quan thực đơn theo ngày/bữa ăn.
+    if _looks_like_meal_plan_intent(user_message):
+        # Cho phép model xử lý toàn bộ câu hỏi thực đơn, kể cả khi user nhập ngắn kiểu "26/3 tới 29/3".
+        pass
+    elif _looks_clearly_off_topic(user_message):
         return "Mình tập trung hỗ trợ về sức khỏe, lối sống, dinh dưỡng và bữa ăn cho người cao tuổi trong ứng dụng này. Bạn thử hỏi lại theo hướng đó nhé."
+
+    lower = user_message.lower()
+    has_date = bool(re.search(r"\d{1,2}[\/\.]\d{1,2}(?:[\/\.]\d{4})?|\d{4}-\d{2}-\d{2}", lower))
+    has_range_words = any(w in lower for w in ["từ", "tu", "đến", "den", "tới", "toi"])
+    has_meal_words = any(w in lower for w in ["sáng", "sang", "trưa", "trua", "tối", "toi", "breakfast", "lunch", "dinner"])
+    if has_date and has_range_words and not has_meal_words:
+        return (
+            "Mình đã hiểu khoảng ngày bạn muốn tạo thực đơn. "
+            "Bạn cho mình biết thêm muốn áp dụng bữa nào (sáng/trưa/tối hay cả 3 bữa) để mình gợi ý chính xác nhé."
+        )
 
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return "Trợ lý đang bảo trì. Vui lòng thử lại sau."
     profile = get_health_profile_by_user_id(user_id) if user_id else None
-    if user_id and not profile:
-        return (
-            "Mình chưa đọc được hồ sơ người cần chăm sóc trong health_profiles cho tài khoản này. "
-            "Bạn vào mục 'Quản lý thông tin sức khỏe' để cập nhật hồ sơ trước nhé."
-        )
+    # Nới lỏng: nếu chưa có hồ sơ vẫn trả lời ở mức gợi ý chung, không chặn cuộc hội thoại.
     messages = build_messages(profile, user_message, history or [])
     client = Groq(api_key=api_key)
     try:

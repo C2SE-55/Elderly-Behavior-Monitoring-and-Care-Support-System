@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   KeyboardAvoidingView,
   Modal,
@@ -15,17 +16,30 @@ import {
   Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import dayjs from "dayjs";
 import ChatbotLogo from "./ChatbotLogo";
 import {
+  createDailySchedule,
+  deleteDailySchedule,
+  generateMealPlanByDateRange,
   sendChatMessage,
   getCurrentUser,
   getChatSessionMessages,
   getChatSessions,
   deleteChatSession,
+  getDailySchedules,
   getLastChatSessionId,
+  saveMealPlanTemplate,
+  getMealPlanTemplates,
   setLastChatSessionId,
   type ChatSessionSummary,
+  type MealPlanTemplate as ApiMealPlanTemplate,
 } from "@/services/api";
+import { emitScheduleRefresh } from "@/services/scheduleEvents";
+import DateRangePicker from "./DateRangePicker";
+import MealPlanCard from "./MealPlanCard";
+import ApplyMealPlanButton from "./ApplyMealPlanButton";
+import { MealKey, MealPlanDay, MealPlanMeals, MealPlanTemplate } from "./mealPlanTypes";
 
 const { width, height } = Dimensions.get("window");
 
@@ -111,7 +125,94 @@ function MessageContent({ content, style }: { content: string; style: { section:
   return <>{nodes}</>;
 }
 
+/** Chuẩn hóa phản hồi để tránh hiển thị rỗng/truncated khi backend đổi schema */
+function normalizeAssistantReply(rawReply: unknown): string {
+  if (typeof rawReply === "string" && rawReply.trim()) return rawReply.trim();
+  if (rawReply && typeof rawReply === "object") {
+    const obj = rawReply as Record<string, unknown>;
+    const candidates = [obj.reply, obj.message, obj.answer, obj.content];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim()) return c.trim();
+    }
+  }
+  return "Mình chưa nhận được nội dung phản hồi rõ ràng. Bạn thử gửi lại giúp mình nhé.";
+}
+
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+
+type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+const MEAL_TIMES: Record<keyof MealPlanMeals, { label: string; start: string; end: string }> = {
+  breakfast: { label: "Breakfast", start: "07:00", end: "08:00" },
+  lunch: { label: "Lunch", start: "12:00", end: "13:00" },
+  dinner: { label: "Dinner", start: "18:00", end: "19:00" },
+};
+
+const toDayKey = (isoDate: string): DayKey => {
+  const d = dayjs(isoDate).day();
+  if (d === 0) return "sun";
+  if (d === 1) return "mon";
+  if (d === 2) return "tue";
+  if (d === 3) return "wed";
+  if (d === 4) return "thu";
+  if (d === 5) return "fri";
+  return "sat";
+};
+
+const DEFAULT_MEALS: MealKey[] = ["breakfast", "lunch", "dinner"];
+
+const parseDateToken = (raw: string): dayjs.Dayjs | null => {
+  const clean = String(raw || "").trim().replace(/\./g, "/");
+  const currentYear = dayjs().year();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    const d = dayjs(clean);
+    return d.isValid() ? d : null;
+  }
+  const dm = clean.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (dm) {
+    const d = dayjs(`${currentYear}-${dm[2].padStart(2, "0")}-${dm[1].padStart(2, "0")}`);
+    return d.isValid() ? d : null;
+  }
+  const dmy = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const d = dayjs(`${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`);
+    return d.isValid() ? d : null;
+  }
+  return null;
+};
+
+const extractDateRangeFromText = (text: string): { start: string; end: string } | null => {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .replace(/\./g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  const tokens = normalized.match(/\d{1,2}\/\d{1,2}(?:\/\d{4})?|\d{4}-\d{2}-\d{2}/g) || [];
+  if (tokens.length < 2) return null;
+  const start = parseDateToken(tokens[0] || "");
+  const end = parseDateToken(tokens[1] || "");
+  if (!start || !end) return null;
+  return { start: start.format("YYYY-MM-DD"), end: end.format("YYYY-MM-DD") };
+};
+
+const extractMealKeysFromText = (text: string): MealKey[] => {
+  const lower = String(text || "").toLowerCase();
+  const hasBreakfast = /(sang|bua sang|breakfast)/.test(lower);
+  const hasLunch = /(trua|bua trua|lunch)/.test(lower);
+  const hasDinner = /(toi|bua toi|dinner)/.test(lower);
+  const keys: MealKey[] = [];
+  if (hasBreakfast) keys.push("breakfast");
+  if (hasLunch) keys.push("lunch");
+  if (hasDinner) keys.push("dinner");
+  return keys.length ? keys : DEFAULT_MEALS;
+};
+
+const hasDateToken = (text: string) =>
+  /(\d{1,2}\/\d{1,2}(?:\/\d{4})?|\d{4}-\d{2}-\d{2})/i.test(String(text || ""));
+
+const hasRangeKeyword = (text: string) =>
+  /(từ|tu|đến|den|tới|\bto\b|-)/i.test(String(text || ""));
 
 const INITIAL_MESSAGE: ChatMessage = {
   id: "welcome",
@@ -137,6 +238,15 @@ const FloatingAssistant: React.FC = () => {
   const [sessionList, setSessionList] = useState<ChatSessionSummary[]>([]);
   const [initializing, setInitializing] = useState(false);
   const [sessionIdToDelete, setSessionIdToDelete] = useState<number | null>(null);
+  const [mealPlannerOpen, setMealPlannerOpen] = useState(false);
+  const [generatingMealPlan, setGeneratingMealPlan] = useState(false);
+  const [mealPlanDays, setMealPlanDays] = useState<MealPlanDay[]>([]);
+  const [plannerMealKeys, setPlannerMealKeys] = useState<MealKey[]>(DEFAULT_MEALS);
+  const [applyingAll, setApplyingAll] = useState(false);
+  const [applyingByDate, setApplyingByDate] = useState<Record<string, boolean>>({});
+  const [plannerToast, setPlannerToast] = useState("");
+  const [templates, setTemplates] = useState<MealPlanTemplate[]>([]);
+  const mealPlanFade = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
 
@@ -156,6 +266,11 @@ const FloatingAssistant: React.FC = () => {
   const animatedPos = useRef(new Animated.ValueXY(initialPos)).current;
 
   const gestureRef = useRef({ startX: 0, startY: 0, moved: false });
+
+  useEffect(() => {
+    const rows = getMealPlanTemplates() as MealPlanTemplate[];
+    setTemplates(rows.slice(0, 5));
+  }, []);
 
   const panResponder = useMemo(
     () =>
@@ -207,6 +322,11 @@ const FloatingAssistant: React.FC = () => {
     []
   );
 
+  const showPlannerToast = useCallback((text: string) => {
+    setPlannerToast(text);
+    setTimeout(() => setPlannerToast(""), 3500);
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || loading || initializing) return;
@@ -218,6 +338,79 @@ const FloatingAssistant: React.FC = () => {
       content: text,
     };
     setMessages((prev) => [...prev, userMsg]);
+
+    if (mealPlannerOpen) {
+      const parsedRange = extractDateRangeFromText(text);
+      if (parsedRange) {
+        const mealKeys = extractMealKeysFromText(text);
+        setPlannerMealKeys(mealKeys);
+        if (generatingMealPlan) return;
+        setGeneratingMealPlan(true);
+        try {
+          const userId = resolveUserId();
+          const res = await generateMealPlanByDateRange(
+            parsedRange.start,
+            parsedRange.end,
+            mealKeys,
+            {
+              user_id: userId,
+              session_id: sessionId ?? undefined,
+            }
+          );
+          if (res.session_id) {
+            setSessionId(res.session_id);
+            setLastChatSessionId(res.session_id);
+          }
+          if (!res.plan.length) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `a-${Date.now()}`,
+                role: "assistant",
+                content: "Mình chưa tạo được thực đơn hợp lệ từ thông tin này. Bạn thử nhập lại rõ hơn nhé.",
+              },
+            ]);
+            return;
+          }
+          setMealPlanDays(
+            res.plan.map((day) => ({
+              date: day.date,
+              meals: {
+                breakfast: day.meals.breakfast || "",
+                lunch: day.meals.lunch || "",
+                dinner: day.meals.dinner || "",
+              },
+            }))
+          );
+          Animated.timing(mealPlanFade, {
+            toValue: 1,
+            duration: 280,
+            useNativeDriver: true,
+          }).start();
+          showPlannerToast("Da tao thuc don tu thong tin ban vua nhap.");
+        } finally {
+          setGeneratingMealPlan(false);
+        }
+        return;
+      }
+
+      // Chỉ gợi ý lại format khi user đang nhập "khoảng ngày" dở dang.
+      // Không chặn các câu hỏi dinh dưỡng có nhắc 1 ngày cụ thể.
+      const looksLikeIncompleteDateRange = hasDateToken(text) && hasRangeKeyword(text) && !parsedRange;
+      if (looksLikeIncompleteDateRange) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content:
+              "Mình hiểu bạn đang nhập khoảng ngày. Bạn nhập theo mẫu: 26/03 tới 29/03, bữa sáng + trưa (tối đa 7 ngày).",
+          },
+        ]);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const userId = resolveUserId();
@@ -225,13 +418,14 @@ const FloatingAssistant: React.FC = () => {
         user_id: userId,
         session_id: sessionId ?? undefined,
       });
+      const replyText = normalizeAssistantReply(res.reply);
       if (res.session_id) {
         setSessionId(res.session_id);
         setLastChatSessionId(res.session_id);
       }
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: "assistant", content: res.reply },
+        { id: `a-${Date.now()}`, role: "assistant", content: replyText },
       ]);
       if (userId) {
         const sessions = await getChatSessions(userId);
@@ -249,7 +443,9 @@ const FloatingAssistant: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, initializing, sessionId, resolveUserId]);
+  }, [input, loading, initializing, sessionId, resolveUserId, mealPlannerOpen, generatingMealPlan, mealPlanFade, showPlannerToast]);
+
+  const isSendDisabled = loading || initializing || !input.trim();
 
   /** Gửi tin nhắn từ gợi ý (chips) */
   const sendMessage = useCallback(
@@ -270,13 +466,14 @@ const FloatingAssistant: React.FC = () => {
           user_id: userId,
           session_id: sessionId ?? undefined,
         });
+        const replyText = normalizeAssistantReply(res.reply);
         if (res.session_id) {
           setSessionId(res.session_id);
           setLastChatSessionId(res.session_id);
         }
         setMessages((prev) => [
           ...prev,
-          { id: `a-${Date.now()}`, role: "assistant", content: res.reply },
+          { id: `a-${Date.now()}`, role: "assistant", content: replyText },
         ]);
         if (userId) {
           const sessions = await getChatSessions(userId);
@@ -298,11 +495,247 @@ const FloatingAssistant: React.FC = () => {
     [loading, initializing, sessionId, resolveUserId]
   );
 
+  const openMealPlanner = useCallback(() => {
+    setMealPlannerOpen(true);
+    setPlannerMealKeys(DEFAULT_MEALS);
+    Animated.timing(mealPlanFade, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [mealPlanFade]);
+
+  const handleGenerateMealPlan = useCallback(
+    async (startDate: string, endDate: string, mealKeys: MealKey[] = DEFAULT_MEALS) => {
+      if (generatingMealPlan || loading || initializing) return;
+      setPlannerMealKeys(mealKeys);
+      setGeneratingMealPlan(true);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `u-${Date.now()}`,
+          role: "user",
+          content: `Tạo thực đơn từ ${startDate} đến ${endDate} (${mealKeys.join(", ")})`,
+        },
+      ]);
+      try {
+        const userId = resolveUserId();
+        const res = await generateMealPlanByDateRange(
+          startDate,
+          endDate,
+          mealKeys,
+          {
+            user_id: userId,
+            session_id: sessionId ?? undefined,
+          }
+        );
+        if (res.session_id) {
+          setSessionId(res.session_id);
+          setLastChatSessionId(res.session_id);
+        }
+        if (!res.plan.length) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: "assistant",
+              content: "Mình chưa parse được thực đơn JSON. Bạn thử lại hoặc đổi khoảng ngày khác nhé.",
+            },
+          ]);
+          return;
+        }
+        setMealPlanDays(
+          res.plan.map((day) => ({
+            date: day.date,
+            meals: {
+              breakfast: day.meals.breakfast || "",
+              lunch: day.meals.lunch || "",
+              dinner: day.meals.dinner || "",
+            },
+          }))
+        );
+        Animated.timing(mealPlanFade, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }).start();
+        const template: MealPlanTemplate = {
+          id: `tpl-${Date.now()}`,
+          name: `Thuc don ${startDate} - ${endDate}`,
+          created_at: new Date().toISOString(),
+          days: res.plan,
+        };
+        saveMealPlanTemplate(template as ApiMealPlanTemplate);
+        setTemplates((prev) => [template, ...prev].slice(0, 5));
+        showPlannerToast("Da tao thuc don. Ban co the sua roi ap dung.");
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: "Khong the tao thuc don luc nay. Ban thu lai sau it phut.",
+          },
+        ]);
+      } finally {
+        setGeneratingMealPlan(false);
+      }
+    },
+    [generatingMealPlan, loading, initializing, resolveUserId, sessionId, mealPlanFade, showPlannerToast]
+  );
+
+  const handleChangeMeal = useCallback((date: string, mealKey: keyof MealPlanMeals, value: string) => {
+    setMealPlanDays((prev) =>
+      prev.map((item) => (item.date === date ? { ...item, meals: { ...item.meals, [mealKey]: value } } : item))
+    );
+  }, []);
+
+  const askOverwriteDecision = useCallback(async (date: string): Promise<"overwrite" | "skip" | "cancel"> => {
+    const msg = `Ngay ${date} da co lich an. Ban muon ghi de hay bo qua?`;
+    if (Platform.OS === "web") {
+      const raw =
+        typeof window !== "undefined"
+          ? window.prompt(`${msg}\nNhap: overwrite | skip | cancel`, "skip")
+          : "cancel";
+      const decision = String(raw || "cancel").trim().toLowerCase();
+      if (decision === "overwrite") return "overwrite";
+      if (decision === "skip") return "skip";
+      return "cancel";
+    }
+    return new Promise((resolve) => {
+      Alert.alert("Xac nhan ap dung", msg, [
+        { text: "Huy", style: "cancel", onPress: () => resolve("cancel") },
+        { text: "Bo qua", onPress: () => resolve("skip") },
+        { text: "Ghi de", style: "destructive", onPress: () => resolve("overwrite") },
+      ]);
+    });
+  }, []);
+
+  const confirmApply = useCallback(async (message: string): Promise<boolean> => {
+    if (Platform.OS === "web") {
+      return typeof window !== "undefined" ? window.confirm(message) : true;
+    }
+    return new Promise((resolve) => {
+      Alert.alert("Xac nhan", message, [
+        { text: "Huy", style: "cancel", onPress: () => resolve(false) },
+        { text: "Dong y", onPress: () => resolve(true) },
+      ]);
+    });
+  }, []);
+
+  const applyMealsOfDay = useCallback(
+    async (dayItem: MealPlanDay): Promise<"applied" | "skipped" | "cancelled"> => {
+      const dayKey = toDayKey(dayItem.date);
+      const rows = await getDailySchedules();
+      const conflicts = rows.filter(
+        (row) =>
+          row.day_of_week === dayKey &&
+          row.type === "meal" &&
+          ["07:00", "12:00", "18:00"].includes(String(row.start_time || "").slice(0, 5))
+      );
+
+      let action: "overwrite" | "skip" | "cancel" = "overwrite";
+      if (conflicts.length) {
+        action = await askOverwriteDecision(dayItem.date);
+      }
+      if (action === "cancel") return "cancelled";
+      if (action === "skip") return "skipped";
+
+      if (action === "overwrite" && conflicts.length) {
+        for (const item of conflicts) {
+          await deleteDailySchedule(item.id);
+        }
+      }
+
+      const payloads = plannerMealKeys
+        .map((mealKey) => {
+          const mealName = String(dayItem.meals[mealKey] || "").trim();
+          if (!mealName) return null;
+          const map = MEAL_TIMES[mealKey];
+          return {
+            day_of_week: dayKey,
+            title: mealName,
+            description: map.label,
+            start_time: map.start,
+            end_time: map.end,
+            type: "meal" as const,
+          };
+        })
+        .filter(Boolean);
+
+      for (const payload of payloads) {
+        await createDailySchedule(payload as any);
+      }
+      return "applied";
+    },
+    [askOverwriteDecision, plannerMealKeys]
+  );
+
+  const handleApplyDay = useCallback(
+    async (date: string) => {
+      const target = mealPlanDays.find((item) => item.date === date);
+      if (!target) return;
+      const confirmed = await confirmApply(`Ap dung thuc don ngay ${date} vao lich sinh hoat?`);
+      if (!confirmed) return;
+      setApplyingByDate((prev) => ({ ...prev, [date]: true }));
+      try {
+        const result = await applyMealsOfDay(target);
+        if (result === "applied") {
+          showPlannerToast(`Da ap dung thuc don ngay ${date}`);
+          emitScheduleRefresh();
+        } else if (result === "skipped") {
+          showPlannerToast(`Da bo qua ngay ${date}`);
+        }
+      } catch {
+        showPlannerToast("Ap dung that bai. Ban thu lai nhe.");
+      } finally {
+        setApplyingByDate((prev) => ({ ...prev, [date]: false }));
+      }
+    },
+    [mealPlanDays, applyMealsOfDay, showPlannerToast, confirmApply]
+  );
+
+  const handleApplyAll = useCallback(async () => {
+    if (!mealPlanDays.length) return;
+    const confirmed = await confirmApply("Ap dung toan bo thuc don vao lich sinh hoat?");
+    if (!confirmed) return;
+    setApplyingAll(true);
+    let appliedCount = 0;
+    try {
+      for (const dayItem of mealPlanDays) {
+        const result = await applyMealsOfDay(dayItem);
+        if (result === "cancelled") break;
+        if (result === "applied") appliedCount += 1;
+      }
+      emitScheduleRefresh();
+      showPlannerToast(`Hoan tat ap dung ${appliedCount}/${mealPlanDays.length} ngay.`);
+    } catch {
+      showPlannerToast("Ap dung toan bo that bai.");
+    } finally {
+      setApplyingAll(false);
+    }
+  }, [mealPlanDays, applyMealsOfDay, showPlannerToast, confirmApply]);
+
+  const handleUseTemplate = useCallback((template: MealPlanTemplate) => {
+    setMealPlannerOpen(true);
+    setMealPlanDays(template.days);
+    Animated.timing(mealPlanFade, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    showPlannerToast(`Da nap template: ${template.name}`);
+  }, [mealPlanFade, showPlannerToast]);
+
   const handleStartNewSession = useCallback(async () => {
     setSessionId(null);
     setLastChatSessionId(null);
     setMessages([INITIAL_MESSAGE]);
-  }, []);
+    setMealPlannerOpen(false);
+    setPlannerMealKeys(DEFAULT_MEALS);
+    setMealPlanDays([]);
+    mealPlanFade.setValue(0);
+  }, [mealPlanFade]);
 
   const loadLatestSession = useCallback(async () => {
     const userId = resolveUserId();
@@ -490,7 +923,7 @@ const FloatingAssistant: React.FC = () => {
               style={[
                 styles.chatCard,
                 {
-                  width: Math.min(width * 0.8, 440),
+                  width: Math.min(width * 0.92, 520),
                   height: Math.min((height - insets.top - insets.bottom) * 0.8, 760),
                 },
               ]}
@@ -510,6 +943,13 @@ const FloatingAssistant: React.FC = () => {
                   </View>
                 </View>
                 <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    style={styles.headerMealBtn}
+                    onPress={openMealPlanner}
+                    disabled={loading || initializing || generatingMealPlan}
+                  >
+                    <Text style={styles.headerMealBtnText}>Thuc don</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.headerBtn}
                     onPress={handleStartNewSession}
@@ -586,6 +1026,59 @@ const FloatingAssistant: React.FC = () => {
                   keyboardShouldPersistTaps="handled"
                   showsVerticalScrollIndicator={false}
                 >
+                  <View style={styles.quickActionRow}>
+                    <TouchableOpacity
+                      style={styles.quickMealBtn}
+                      onPress={openMealPlanner}
+                      disabled={loading || initializing || generatingMealPlan}
+                    >
+                      <Text style={styles.quickMealBtnText}>🍽️ Goi y thuc don theo ngay</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {mealPlannerOpen && (
+                    <Animated.View style={[styles.mealPlannerWrap, { opacity: mealPlanFade }]}>
+                      <DateRangePicker disabled={generatingMealPlan || applyingAll} onGenerate={handleGenerateMealPlan} />
+
+                      {templates.length > 0 && (
+                        <View style={styles.templateWrap}>
+                          <Text style={styles.templateTitle}>Template da luu</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateList}>
+                            {templates.map((tpl) => (
+                              <TouchableOpacity key={tpl.id} style={styles.templateChip} onPress={() => handleUseTemplate(tpl)}>
+                                <Text style={styles.templateChipText} numberOfLines={1}>
+                                  {tpl.name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+
+                      {generatingMealPlan && (
+                        <View style={styles.generatingWrap}>
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                          <Text style={styles.generatingText}>Dang tao thuc don...</Text>
+                        </View>
+                      )}
+
+                      {mealPlanDays.map((dayItem) => (
+                        <MealPlanCard
+                          key={dayItem.date}
+                          date={dayItem.date}
+                          meals={dayItem.meals}
+                          disabled={applyingAll}
+                          applying={!!applyingByDate[dayItem.date]}
+                          onChangeMeal={(mealKey, value) => handleChangeMeal(dayItem.date, mealKey, value)}
+                          onApplyDay={() => void handleApplyDay(dayItem.date)}
+                        />
+                      ))}
+
+                      {!!mealPlanDays.length && <ApplyMealPlanButton loading={applyingAll} onPress={() => void handleApplyAll()} />}
+                      {!!plannerToast && <Text style={styles.plannerToast}>{plannerToast}</Text>}
+                    </Animated.View>
+                  )}
+
                   {messages.map((msg) =>
                     msg.role === "assistant" ? (
                       <View key={msg.id} style={styles.messageRowLeft}>
@@ -618,7 +1111,13 @@ const FloatingAssistant: React.FC = () => {
                           <TouchableOpacity
                             key={s.id}
                             style={[styles.suggestionChip, { backgroundColor: s.color + "22" }]}
-                            onPress={() => sendMessage(s.prompt)}
+                            onPress={() => {
+                              if (s.id === "1") {
+                                openMealPlanner();
+                                return;
+                              }
+                              void sendMessage(s.prompt);
+                            }}
                             activeOpacity={0.8}
                             disabled={loading}
                           >
@@ -665,11 +1164,25 @@ const FloatingAssistant: React.FC = () => {
                   }}
                   editable={!loading}
                   blurOnSubmit={false}
+                  returnKeyType="send"
+                  onSubmitEditing={() => {
+                    if (!Platform.OS || Platform.OS !== "ios") {
+                      void handleSend();
+                    }
+                  }}
+                  onKeyPress={(e: any) => {
+                    const key = e?.nativeEvent?.key;
+                    const shift = e?.nativeEvent?.shiftKey;
+                    if (key === "Enter" && !shift) {
+                      e?.preventDefault?.();
+                      void handleSend();
+                    }
+                  }}
                 />
                 <TouchableOpacity
-                  style={[styles.sendButton, loading && styles.sendButtonDisabled]}
+                  style={[styles.sendButton, isSendDisabled && styles.sendButtonDisabled]}
                   onPress={handleSend}
-                  disabled={loading}
+                  disabled={isSendDisabled}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.sendIcon}>➤</Text>
@@ -841,6 +1354,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  headerMealBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#10B981",
+  },
+  headerMealBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   headerBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -929,6 +1453,73 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     flexGrow: 1,
   },
+  quickActionRow: {
+    marginBottom: 10,
+  },
+  quickMealBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "#EDE9FE",
+    borderColor: "#C4B5FD",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  quickMealBtnText: {
+    color: "#5B21B6",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  mealPlannerWrap: {
+    marginBottom: 14,
+  },
+  templateWrap: {
+    marginTop: 10,
+  },
+  templateTitle: {
+    color: "#4B5563",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  templateList: {
+    gap: 8,
+  },
+  templateChip: {
+    maxWidth: 220,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    backgroundColor: "#EEF2FF",
+    borderColor: "#C7D2FE",
+    borderWidth: 1,
+  },
+  templateChipText: {
+    color: "#3730A3",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  generatingWrap: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  generatingText: {
+    marginLeft: 8,
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  plannerToast: {
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#DCFCE7",
+    color: "#166534",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   suggestionsBlock: {
     marginTop: 8,
     marginBottom: 16,
@@ -971,8 +1562,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   messageBubbleLeft: {
-    maxWidth: "88%",
-    width: "88%",
+    maxWidth: "92%",
     backgroundColor: COLORS.bubbleAssistant,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -987,8 +1577,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   messageBubbleRight: {
-    maxWidth: "88%",
-    width: "88%",
+    maxWidth: "92%",
     backgroundColor: COLORS.bubbleUser,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -999,11 +1588,13 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 14,
     lineHeight: 22,
+    flexShrink: 1,
   },
   messageTextRight: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 22,
+    flexShrink: 1,
   },
   assistantSectionHeader: {
     fontWeight: "700",

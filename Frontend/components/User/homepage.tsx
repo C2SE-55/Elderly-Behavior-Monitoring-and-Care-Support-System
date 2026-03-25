@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
-import { getCurrentUser } from "../../services/api";
+import { getCurrentUser, logoutUser } from "../../services/api";
 
 const { width } = Dimensions.get("window");
 
@@ -41,6 +41,11 @@ const HomepageUserScreen = () => {
         user?.fullName || user?.username || "A";
     const avatarLetter = (displayName || "A").charAt(0).toUpperCase();
 
+    const handleLogout = () => {
+        logoutUser();
+        router.replace("/(auths)/login");
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             {/* Header */}
@@ -50,8 +55,13 @@ const HomepageUserScreen = () => {
                     <Text style={styles.greeting}>Xin chào {displayName}</Text>
                 </View>
 
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{avatarLetter}</Text>
+                <View style={styles.headerActions}>
+                    <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>{avatarLetter}</Text>
+                    </View>
+                    <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                        <Text style={styles.logoutText}>Đăng xuất</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -70,6 +80,10 @@ const HomepageUserScreen = () => {
                             router.push("/(healths)/health");
                         } else if (item.id === "behavior") {
                             router.push("/(cameras)/camera");
+                        } else if (item.id === "schedule") {
+                            router.push("/(tabs)/weekly-schedule");
+                        } else if (item.id === "family") {
+                            router.push("/(tabs)/room-access");
                         }
                     };
 
@@ -142,6 +156,21 @@ const styles = StyleSheet.create({
     avatarText: {
         color: "#FFF",
         fontSize: scaleFont(16),
+        fontWeight: "700",
+    },
+    headerActions: {
+        alignItems: "center",
+        gap: 6,
+    },
+    logoutBtn: {
+        backgroundColor: "#FEE2E2",
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+    },
+    logoutText: {
+        color: "#991B1B",
+        fontSize: scaleFont(12),
         fontWeight: "700",
     },
 

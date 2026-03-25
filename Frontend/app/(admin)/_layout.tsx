@@ -61,6 +61,7 @@ export default function AdminTabLayout() {
       <Tabs.Screen name="add-account" options={{ href: null }} />
       <Tabs.Screen name="account-detail" options={{ href: null }} />
       <Tabs.Screen name="homepage_admin" options={{ href: null }} />
+      <Tabs.Screen name="room-management" options={{ href: null }} />
     </Tabs>
   );
 }

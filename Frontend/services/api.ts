@@ -22,6 +22,10 @@ const getApiBaseUrl = () => {
 };
 
 export const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL_NORMALIZED = API_BASE_URL.replace(/\/$/, "");
+const API_ROOT = /\/api$/i.test(API_BASE_URL_NORMALIZED)
+  ? API_BASE_URL_NORMALIZED
+  : `${API_BASE_URL_NORMALIZED}/api`;
 
 /** Base URL cho Chatbot Service (Trợ lý ảo, meal plan) - cùng host, port 8000 */
 const getChatbotBaseUrl = () => {
@@ -101,7 +105,7 @@ export const getCameraEventHistory = async (limit = 20): Promise<CameraHistoryEv
 };
 
 export const api = axios.create({
-  baseURL: `${API_BASE_URL}/api`,
+  baseURL: API_ROOT,
   headers: {
     "Content-Type": "application/json",
   },
@@ -109,6 +113,7 @@ export const api = axios.create({
 
 const AUTH_TOKEN_KEY = "ecms_auth_token";
 const AUTH_USER_KEY = "ecms_auth_user";
+const ACTIVE_ROOM_KEY = "ecms_active_room_id";
 
 const canUseLocalStorage = () => typeof window !== "undefined" && !!window.localStorage;
 
@@ -128,9 +133,19 @@ const loadStoredAuth = (): { token: string | null; user: any | null } => {
 
 let currentToken: string | null = loadStoredAuth().token;
 let currentUser: any | null = loadStoredAuth().user;
+let activeRoomId: number | null = (() => {
+  if (!canUseLocalStorage()) return null;
+  const raw = window.localStorage.getItem(ACTIVE_ROOM_KEY);
+  const val = Number(raw || 0);
+  return val > 0 ? val : null;
+})();
 
 if (currentToken) {
   api.defaults.headers.common.Authorization = `Bearer ${currentToken}`;
+}
+
+if (activeRoomId) {
+  api.defaults.headers.common["x-room-id"] = String(activeRoomId);
 }
 
 export const setAuth = (token: string | null, user?: any) => {
@@ -160,7 +175,265 @@ export const setAuth = (token: string | null, user?: any) => {
   }
 };
 
+export const setActiveRoomId = (roomId: number | null) => {
+  activeRoomId = roomId && roomId > 0 ? roomId : null;
+  if (activeRoomId) {
+    api.defaults.headers.common["x-room-id"] = String(activeRoomId);
+    if (canUseLocalStorage()) {
+      window.localStorage.setItem(ACTIVE_ROOM_KEY, String(activeRoomId));
+    }
+  } else {
+    delete api.defaults.headers.common["x-room-id"];
+    if (canUseLocalStorage()) {
+      window.localStorage.removeItem(ACTIVE_ROOM_KEY);
+    }
+  }
+};
+
+export const getActiveRoomId = (): number | null => activeRoomId;
+
+export const logoutUser = () => {
+  setAuth(null, null);
+  setActiveRoomId(null);
+  lastChatSessionId = null;
+};
+
 export const getCurrentUser = () => currentUser;
+
+export type AuthProfile = {
+  id: number;
+  username: string;
+  email: string;
+  fullName?: string;
+  phone?: string;
+  role: string;
+};
+
+export type AdminUserAccount = {
+  id: number;
+  username: string;
+  email: string;
+  phone?: string | null;
+  fullName?: string | null;
+  dateOfBirth?: string | null;
+  createdAt?: string;
+  role?: string | null;
+};
+
+export const getMyProfile = async (): Promise<AuthProfile> => {
+  const res = await api.get("/auth/profile");
+  return res.data?.data;
+};
+
+export const refreshCurrentUserProfile = async (): Promise<AuthProfile | null> => {
+  const token = currentToken;
+  if (!token) return null;
+  const profile = await getMyProfile();
+  const merged = {
+    ...(currentUser || {}),
+    id: profile.id,
+    username: profile.username,
+    email: profile.email,
+    fullName: profile.fullName,
+    phone: profile.phone,
+    role: profile.role,
+  };
+  setAuth(token, merged);
+  return profile;
+};
+
+export const getAdminUsers = async (keyword?: string): Promise<AdminUserAccount[]> => {
+  const endpoint = keyword?.trim() ? "/auth/admin/search" : "/auth/admin/users";
+  const res = await api.get(endpoint, {
+    params: keyword?.trim() ? { name: keyword.trim() } : {},
+  });
+  const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+  return rows.map((row: Record<string, unknown>) => ({
+    id: Number(row?.id || 0),
+    username: String(row?.username || ""),
+    email: String(row?.email || ""),
+    phone: (row?.phone as string) || null,
+    fullName: (row?.fullName as string) || null,
+    dateOfBirth: (row?.dateOfBirth as string) || null,
+    createdAt: (row?.createdAt as string) || undefined,
+    role: (row?.role as string) || null,
+  }));
+};
+
+export const getAdminUserById = async (id: number): Promise<AdminUserAccount | null> => {
+  const res = await api.get(`/auth/admin/users/${id}`);
+  const row = res.data?.data;
+  if (!row) return null;
+  return {
+    id: Number(row?.id || 0),
+    username: String(row?.username || ""),
+    email: String(row?.email || ""),
+    phone: (row?.phone as string) || null,
+    fullName: (row?.full_name as string) || (row?.fullName as string) || null,
+    dateOfBirth: (row?.date_of_birth as string) || (row?.dateOfBirth as string) || null,
+    createdAt: (row?.created_at as string) || (row?.createdAt as string) || undefined,
+    role: (row?.role as string) || null,
+  };
+};
+
+export const adminDeleteUser = async (id: number): Promise<void> => {
+  await api.delete(`/auth/admin/users/${id}`);
+};
+
+export const adminCreateUser = async (payload: {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  fullName?: string;
+  phone?: string;
+  dateOfBirth?: string;
+}): Promise<{ id: number; role: string }> => {
+  const res = await api.post("/auth/register", payload);
+  return res.data?.data;
+};
+
+export type RoomMemberRole = "host" | "caretaker";
+
+export type RoomMember = {
+  user_id: number;
+  username?: string;
+  fullName?: string;
+  email?: string;
+  member_role: RoomMemberRole;
+  can_manage_medication: boolean;
+  can_receive_schedule_notifications: boolean;
+  can_receive_medication_notifications: boolean;
+};
+
+export type MyRoomInfo = {
+  id: number;
+  room_id: string;
+  admin_user_id: number;
+  host_user_id: number | null;
+  host_join_token?: string | null;
+  member_role: RoomMemberRole;
+  can_manage_medication: boolean;
+  can_receive_schedule_notifications: boolean;
+  can_receive_medication_notifications: boolean;
+};
+
+export type MyRoomSummary = {
+  id: number;
+  room_id: string;
+  admin_user_id: number;
+  host_user_id?: number | null;
+  admin_join_token?: string | null;
+  host_join_token?: string | null;
+  member_role: RoomMemberRole;
+  can_manage_medication: boolean;
+  can_receive_schedule_notifications: boolean;
+  can_receive_medication_notifications: boolean;
+  created_at?: string;
+};
+
+export const adminCreateRoom = async (): Promise<{
+  id: number;
+  room_id: string;
+  admin_join_token: string;
+  admin_qr_payload: string;
+}> => {
+  const res = await api.post("/rooms/admin/create");
+  return res.data?.data;
+};
+
+export type AdminRoomRow = {
+  id: number;
+  room_id: string;
+  admin_user_id: number;
+  host_user_id?: number | null;
+  admin_join_token?: string | null;
+  host_join_token?: string | null;
+  admin_qr_payload?: string | null;
+  host_qr_payload?: string | null;
+  total_members?: number;
+  created_at?: string;
+};
+
+export const getAdminRooms = async (): Promise<AdminRoomRow[]> => {
+  const res = await api.get("/rooms/admin/all");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const adminDeleteRoom = async (roomId: number): Promise<void> => {
+  await api.delete(`/rooms/admin/${roomId}`);
+};
+
+export const joinRoomByAdminCode = async (roomId: string): Promise<{
+  room_id: string;
+  role_in_room: "host";
+  host_join_token: string;
+  host_qr_payload: string;
+}> => {
+  const res = await api.post("/rooms/join/admin-room", { room_id: roomId });
+  return res.data?.data;
+};
+
+export const joinRoomByHostQr = async (hostJoinToken: string): Promise<{
+  room_id: string;
+  role_in_room: "caretaker";
+}> => {
+  const res = await api.post("/rooms/join/host-qr", { host_join_token: hostJoinToken });
+  return res.data?.data;
+};
+
+export const getMyRoom = async (): Promise<MyRoomInfo | null> => {
+  const roomId = getActiveRoomId();
+  const res = await api.get("/rooms/me", {
+    params: roomId ? { room_id: roomId } : {},
+  });
+  return res.data?.data ?? null;
+};
+
+export const getMyRooms = async (): Promise<MyRoomSummary[]> => {
+  const res = await api.get("/rooms/my-rooms");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const getRoomMembers = async (): Promise<RoomMember[]> => {
+  const res = await api.get("/rooms/members");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const updateCaretakerPermissions = async (
+  userId: number,
+  payload: Partial<Pick<RoomMember, "can_manage_medication" | "can_receive_schedule_notifications" | "can_receive_medication_notifications">>
+): Promise<void> => {
+  await api.patch(`/rooms/members/${userId}/permissions`, payload);
+};
+
+export const kickCaretaker = async (userId: number): Promise<void> => {
+  await api.delete(`/rooms/members/${userId}`);
+};
+
+export type RoomPatient = {
+  room_id: number;
+  full_name: string;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  note?: string | null;
+  updated_at?: string;
+};
+
+export const getRoomPatient = async (): Promise<RoomPatient | null> => {
+  const res = await api.get("/rooms/patient");
+  return res.data?.data ?? null;
+};
+
+export const updateRoomPatient = async (payload: {
+  full_name: string;
+  gender?: string;
+  date_of_birth?: string;
+  note?: string;
+}): Promise<RoomPatient> => {
+  const res = await api.put("/rooms/patient", payload);
+  return res.data?.data;
+};
 
 /** Header Authorization để gửi request upload (fetch) — không set Content-Type để browser tự thêm boundary */
 export const getAuthHeaders = (): Record<string, string> => {
@@ -261,10 +534,121 @@ export const sendChatMessage = async (
     },
     { timeout: 30000 }
   );
+  const data = res.data ?? {};
+  const replyRaw =
+    data?.reply ??
+    data?.message ??
+    data?.answer ??
+    data?.content ??
+    data?.data?.reply ??
+    data?.data?.message;
   return {
-    reply: res.data?.reply ?? "Trợ lý chưa phản hồi.",
-    session_id: res.data?.session_id ?? null,
+    reply: typeof replyRaw === "string" && replyRaw.trim() ? replyRaw.trim() : "Trợ lý chưa phản hồi.",
+    session_id: Number(data?.session_id ?? data?.data?.session_id ?? 0) || null,
   };
+};
+
+export type GeneratedMealPlanDay = {
+  date: string;
+  meals: {
+    breakfast: string;
+    lunch: string;
+    dinner: string;
+  };
+};
+
+const normalizeMealText = (value: unknown) =>
+  typeof value === "string" && value.trim() ? value.trim() : "";
+
+const parseMealPlanJson = (rawReply: string): GeneratedMealPlanDay[] => {
+  const txt = String(rawReply || "").trim();
+  if (!txt) return [];
+
+  const fencedMatch = txt.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = fencedMatch?.[1]?.trim() || txt;
+
+  const start = source.indexOf("[");
+  const end = source.lastIndexOf("]");
+  const candidate = start >= 0 && end > start ? source.slice(start, end + 1) : source;
+
+  try {
+    const arr = JSON.parse(candidate);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((item: any) => ({
+        date: String(item?.date || ""),
+        meals: {
+          breakfast: normalizeMealText(item?.meals?.breakfast),
+          lunch: normalizeMealText(item?.meals?.lunch),
+          dinner: normalizeMealText(item?.meals?.dinner),
+        },
+      }))
+      .filter(
+        (item) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(item.date) &&
+          (item.meals.breakfast || item.meals.lunch || item.meals.dinner)
+      );
+  } catch {
+    return [];
+  }
+};
+
+export const generateMealPlanByDateRange = async (
+  startDate: string,
+  endDate: string,
+  mealKeys?: Array<"breakfast" | "lunch" | "dinner">,
+  options?: { user_id?: number; session_id?: number }
+): Promise<{ plan: GeneratedMealPlanDay[]; rawReply: string; session_id: number | null }> => {
+  const selectedMeals = Array.isArray(mealKeys) && mealKeys.length ? mealKeys : ["breakfast", "lunch", "dinner"];
+  const selectedMealsText = selectedMeals.join(", ");
+  const prompt =
+    "Hay tao thuc don theo JSON array dung format " +
+    '[{"date":"YYYY-MM-DD","meals":{"breakfast":"...","lunch":"...","dinner":"..."}}] ' +
+    `tu ngay ${startDate} den ${endDate}. ` +
+    `Chi tao chi tiet cho cac bua duoc chon: ${selectedMealsText}. ` +
+    "Cac bua khong duoc chon thi de chuoi rong ''. " +
+    "Chi tra ve JSON, khong them giai thich.";
+
+  const res = await sendChatMessage(prompt, options);
+  const plan = parseMealPlanJson(res.reply);
+  return { plan, rawReply: res.reply, session_id: res.session_id };
+};
+
+export type MealPlanTemplate = {
+  id: string;
+  name: string;
+  created_at: string;
+  days: GeneratedMealPlanDay[];
+};
+
+const MEAL_PLAN_TEMPLATE_KEY = "ecms_meal_plan_templates";
+let memoryMealPlanTemplates: MealPlanTemplate[] = [];
+
+export const getMealPlanTemplates = (): MealPlanTemplate[] => {
+  if (!canUseLocalStorage()) return memoryMealPlanTemplates;
+  try {
+    const raw = window.localStorage.getItem(MEAL_PLAN_TEMPLATE_KEY);
+    const rows = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(rows)) return [];
+    return rows.filter((row) => Array.isArray(row?.days));
+  } catch {
+    return memoryMealPlanTemplates;
+  }
+};
+
+export const saveMealPlanTemplate = (template: MealPlanTemplate): void => {
+  if (!canUseLocalStorage()) {
+    memoryMealPlanTemplates = [template, ...memoryMealPlanTemplates].slice(0, 20);
+    return;
+  }
+  try {
+    const current = getMealPlanTemplates();
+    const next = [template, ...current].slice(0, 20);
+    window.localStorage.setItem(MEAL_PLAN_TEMPLATE_KEY, JSON.stringify(next));
+    memoryMealPlanTemplates = next;
+  } catch {
+    memoryMealPlanTemplates = [template, ...memoryMealPlanTemplates].slice(0, 20);
+  }
 };
 
 export type MedicationReminderStatus = "pending" | "done" | "early";
@@ -415,5 +799,56 @@ export const markTaken = async (scheduleId: number): Promise<void> => {
 
 export const markSkipped = async (scheduleId: number): Promise<void> => {
   await api.patch("/logs/mark-skipped", { schedule_id: scheduleId });
+};
+
+export type DailyScheduleType = "exercise" | "meal" | "rest" | "other";
+export type DayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export type DailyScheduleItem = {
+  id: number;
+  profile_id: number;
+  day_of_week: DayOfWeek;
+  title: string;
+  description?: string | null;
+  start_time: string;
+  end_time: string;
+  type: DailyScheduleType;
+  created_at?: string;
+};
+
+export type DailySchedulePayload = {
+  profile_id?: number;
+  day_of_week: DayOfWeek;
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  type: DailyScheduleType;
+};
+
+export const getDailySchedules = async (profileId?: number): Promise<DailyScheduleItem[]> => {
+  const res = await api.get("/daily-schedules", {
+    params: profileId ? { profile_id: profileId } : {},
+  });
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const createDailySchedule = async (payload: DailySchedulePayload): Promise<number | null> => {
+  const res = await api.post("/daily-schedules", payload);
+  const id = Number(res.data?.data?.id ?? 0);
+  return id > 0 ? id : null;
+};
+
+export const updateDailySchedule = async (id: number, payload: Partial<DailySchedulePayload>): Promise<void> => {
+  await api.put(`/daily-schedules/${id}`, payload);
+};
+
+export const deleteDailySchedule = async (id: number): Promise<void> => {
+  await api.delete(`/daily-schedules/${id}`);
+};
+
+export const getServerTime = async (): Promise<string> => {
+  const res = await api.get("/server-time");
+  return String(res.data?.data?.now || new Date().toISOString());
 };
 

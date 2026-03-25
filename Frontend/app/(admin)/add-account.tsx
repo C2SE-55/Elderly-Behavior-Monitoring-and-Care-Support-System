@@ -1,167 +1,155 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-} from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
-const BLUE = "#2563EB";
+import { adminCreateUser } from "@/services/api";
 
 export default function AdminAddAccountScreen() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
-  const [dob, setDob] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const [dob, setDob] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const formatDate = (text: string) => {
-    const d = text.replace(/\D/g, "").slice(0, 8);
-    if (d.length > 4) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
-    if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
-    return d;
+  const onCreate = async () => {
+    if (!username.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+      setError("Username, email, password, confirmPassword là bắt buộc.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      await adminCreateUser({
+        username: username.trim(),
+        email: email.trim(),
+        password,
+        confirmPassword,
+        fullName: fullName.trim() || undefined,
+        phone: phone.trim() || undefined,
+        dateOfBirth: dob.trim() || undefined,
+      });
+      setSuccess("Tạo tài khoản USER thành công.");
+      setFullName("");
+      setUsername("");
+      setEmail("");
+      setPhone("");
+      setDob("");
+      setPassword("");
+      setConfirmPassword("");
+    } catch (e: any) {
+      setError(e?.response?.data?.message || "Không thể tạo tài khoản.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={24} color="#111" />
+          <Feather name="arrow-left" size={22} color="#111" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Thêm tài khoản</Text>
+        <Text style={styles.headerTitle}>Admin tạo tài khoản USER</Text>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <TouchableOpacity style={styles.sectionRow}>
-          <Text style={styles.sectionLabel}>Thông tin người dùng</Text>
-          <Feather name="chevron-right" size={20} color="#94A3B8" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sectionRow}>
-          <Text style={styles.sectionLabel}>Thân nhân</Text>
-          <Feather name="chevron-right" size={20} color="#94A3B8" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sectionRow}>
-          <Text style={styles.sectionLabel}>Người thân</Text>
-          <Feather name="chevron-right" size={20} color="#94A3B8" />
-        </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {!!error && <Text style={styles.error}>{error}</Text>}
+        {!!success && <Text style={styles.success}>{success}</Text>}
 
-        <View style={styles.avatarSection}>
-          <Text style={styles.avatarLabel}>Ảnh đại diện</Text>
-          <TouchableOpacity style={styles.avatarPlaceholder}>
-            <Feather name="camera" size={32} color="#94A3B8" />
-            <Text style={styles.avatarBtnText}>Chọn ảnh</Text>
-          </TouchableOpacity>
-        </View>
-
+        <TextInput style={styles.input} placeholder="Họ tên" value={fullName} onChangeText={setFullName} />
         <TextInput
           style={styles.input}
-          placeholder="Họ tên"
-          placeholderTextColor="#94A3B8"
-          value={fullName}
-          onChangeText={setFullName}
+          placeholder="Username *"
+          value={username}
+          onChangeText={setUsername}
+          autoCapitalize="none"
         />
         <TextInput
           style={styles.input}
-          placeholder="Ngày sinh (dd/mm/yyyy)"
-          placeholderTextColor="#94A3B8"
-          value={dob}
-          onChangeText={(t) => setDob(formatDate(t))}
-          keyboardType="number-pad"
-          maxLength={10}
+          placeholder="Email *"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput style={styles.input} placeholder="Số điện thoại" value={phone} onChangeText={setPhone} />
+        <TextInput style={styles.input} placeholder="Ngày sinh (YYYY-MM-DD)" value={dob} onChangeText={setDob} />
+        <TextInput
+          style={styles.input}
+          placeholder="Mật khẩu *"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
         />
         <TextInput
           style={styles.input}
-          placeholder="Số điện thoại"
-          placeholderTextColor="#94A3B8"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Địa chỉ"
-          placeholderTextColor="#94A3B8"
-          value={address}
-          onChangeText={setAddress}
+          placeholder="Nhắc lại mật khẩu *"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
         />
 
-        <TouchableOpacity
-          style={styles.nextBtn}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.nextBtnText}>Tiếp theo</Text>
+        <TouchableOpacity style={[styles.nextBtn, loading && { opacity: 0.7 }]} onPress={onCreate} disabled={loading}>
+          {loading ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.nextBtnText}>Tạo tài khoản</Text>}
         </TouchableOpacity>
-        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F4F4" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#FFF",
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
   backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#111" },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 24 },
-  sectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  sectionLabel: { fontSize: 16, color: "#111", fontWeight: "500" },
-  avatarSection: { marginTop: 20, marginBottom: 16 },
-  avatarLabel: { fontSize: 14, color: "#64748B", marginBottom: 8 },
-  avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderStyle: "dashed",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarBtnText: { fontSize: 13, color: "#64748B", marginTop: 6 },
+  headerTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
+  scrollContent: { padding: 16, paddingBottom: 24, gap: 10 },
   input: {
     backgroundColor: "#FFF",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 10,
+    fontSize: 14,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#D1D5DB",
   },
   nextBtn: {
-    backgroundColor: BLUE,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: "#2563EB",
+    paddingVertical: 13,
+    borderRadius: 10,
     alignItems: "center",
-    marginTop: 24,
+    marginTop: 8,
   },
-  nextBtnText: { color: "#FFF", fontSize: 16, fontWeight: "600" },
+  nextBtnText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
+  error: {
+    color: "#991B1B",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
+  success: {
+    color: "#166534",
+    backgroundColor: "#DCFCE7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
 });

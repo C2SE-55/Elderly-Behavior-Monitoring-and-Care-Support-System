@@ -1,138 +1,145 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-
-const BLUE = "#2563EB";
-const GREEN = "#22C55E";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { AdminUserAccount, adminDeleteUser, getAdminUserById } from "@/services/api";
 
 export default function AdminAccountDetailScreen() {
   const router = useRouter();
-  const [active, setActive] = React.useState(true);
+  const params = useLocalSearchParams<{ id?: string }>();
+  const userId = Number(params?.id || 0);
+  const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const [row, setRow] = useState<AdminUserAccount | null>(null);
+
+  const loadDetail = useCallback(async () => {
+    if (!userId) {
+      setError("Thiếu user id.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setError("");
+      const data = await getAdminUserById(userId);
+      setRow(data);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || "Không tải được chi tiết tài khoản.");
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
+
+  const onDelete = () => {
+    if (!row?.id) return;
+    Alert.alert("Xóa tài khoản", `Bạn có chắc muốn xóa @${row.username}?`, [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setDeleting(true);
+            setError("");
+            await adminDeleteUser(row.id);
+            router.replace("/(admin)/accounts");
+          } catch (e: any) {
+            setError(e?.response?.data?.message || "Không thể xóa tài khoản.");
+          } finally {
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={24} color="#111" />
+          <Feather name="arrow-left" size={22} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Chi tiết tài khoản</Text>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.profileRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>L</Text>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Bà Nguyễn Thị Lan</Text>
-            <Text style={styles.profileMeta}>75 tuổi · ID: NL1948</Text>
-          </View>
-          <TouchableOpacity>
-            <Feather name="edit-2" size={20} color={BLUE} />
-          </TouchableOpacity>
+      {loading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="small" color="#2563EB" />
+          <Text style={styles.loadingTxt}>Đang tải dữ liệu...</Text>
         </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {!!error && <Text style={styles.error}>{error}</Text>}
+          {!row ? (
+            <Text style={styles.meta}>Không tìm thấy tài khoản.</Text>
+          ) : (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.name}>{row.fullName || row.username}</Text>
+                <Text style={styles.meta}>@{row.username}</Text>
+                <Text style={styles.meta}>Role hệ thống: {(row.role || "user").toUpperCase()}</Text>
+                <Text style={styles.meta}>Email: {row.email}</Text>
+                <Text style={styles.meta}>SĐT: {row.phone || "-"}</Text>
+                <Text style={styles.meta}>Ngày sinh: {row.dateOfBirth || "-"}</Text>
+                <Text style={styles.meta}>Tạo lúc: {row.createdAt || "-"}</Text>
+              </View>
 
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Trạng thái: Hoạt động</Text>
-          <Switch value={active} onValueChange={setActive} trackColor={{ false: "#E2E8F0", true: GREEN }} thumbColor="#FFF" />
-        </View>
+              <View style={styles.card}>
+                <Text style={styles.title}>Gán room cho user</Text>
+                <Text style={styles.meta}>
+                  Admin tạo room ở màn hình "Tạo room / QR", sau đó gửi room_id cho user này để user nhập và lên FAMILY.
+                </Text>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/(admin)/room-management")}>
+                  <Text style={styles.secondaryTxt}>Đi tới màn hình tạo room</Text>
+                </TouchableOpacity>
+              </View>
 
-        <Text style={styles.sectionTitle}>Thông tin liên hệ</Text>
-        <View style={styles.infoCard}>
-          <Feather name="phone" size={20} color="#64748B" />
-          <Text style={styles.infoText}>Số điện thoại: 0978 xxx xxx</Text>
-        </View>
-        <View style={styles.infoCard}>
-          <Feather name="mail" size={20} color="#64748B" />
-          <Text style={styles.infoText}>Email: ngothilan@gmail.com</Text>
-        </View>
-        <View style={styles.infoCard}>
-          <Feather name="map-pin" size={20} color="#64748B" />
-          <Text style={styles.infoText}>Địa chỉ: HN – Phòng 101, Chung cư ABC</Text>
-        </View>
-
-        <Text style={styles.sectionTitle}>Người thân</Text>
-        <View style={styles.infoCard}>
-          <Feather name="phone" size={20} color="#64748B" />
-          <View>
-            <Text style={styles.infoText}>Nguyễn Vân A (Con trai)</Text>
-            <Text style={styles.infoSub}>0903 xxx xxx</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Thiết bị</Text>
-        <View style={styles.deviceRow}>
-          <Feather name="video" size={22} color="#64748B" />
-          <Text style={styles.deviceName}>Camera phòng 101</Text>
-          <View style={styles.onlineBadge}><Text style={styles.onlineText}>Online</Text></View>
-        </View>
-        <View style={styles.deviceRow}>
-          <Feather name="watch" size={22} color="#64748B" />
-          <Text style={styles.deviceName}>Vòng đeo tay - Đã kết nối, 95%</Text>
-          <TouchableOpacity><Feather name="trash-2" size={18} color="#64748B" /></TouchableOpacity>
-        </View>
-        <View style={styles.deviceRow}>
-          <Feather name="layers" size={22} color="#64748B" />
-          <Text style={styles.deviceName}>Cảm biến cửa</Text>
-        </View>
-
-        <Text style={styles.sectionTitle}>Lịch sử hoạt động</Text>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyDate}>24/04/2024</Text>
-          <Text style={styles.historyText}>Đăng nhập hệ thống</Text>
-        </View>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyDate}>23/04/2024</Text>
-          <Text style={styles.historyText}>Xem camera phòng 101</Text>
-        </View>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyDate}>22/04/2024</Text>
-          <Text style={styles.historyText}>Gửi cảnh báo khẩn cấp</Text>
-        </View>
-        <View style={{ height: 88 }} />
-      </ScrollView>
+              <TouchableOpacity style={[styles.deleteBtn, deleting && { opacity: 0.6 }]} onPress={onDelete} disabled={deleting}>
+                <Text style={styles.deleteTxt}>{deleting ? "Đang xóa..." : "Xóa tài khoản"}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F4F4" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#FFF",
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
   backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#111" },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 24 },
-  profileRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF", padding: 16, borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: "#E5E7EB" },
-  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#E2E8F0", alignItems: "center", justifyContent: "center" },
-  avatarText: { fontSize: 22, fontWeight: "700", color: "#64748B" },
-  profileInfo: { flex: 1, marginLeft: 14 },
-  profileName: { fontSize: 17, fontWeight: "700", color: "#111" },
-  profileMeta: { fontSize: 14, color: "#64748B", marginTop: 2 },
-  statusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#FFF", padding: 16, borderRadius: 14, marginBottom: 16, borderWidth: 1, borderColor: "#E5E7EB" },
-  statusLabel: { fontSize: 15, color: "#111", fontWeight: "500" },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111", marginBottom: 10, marginTop: 8 },
-  infoCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF", padding: 14, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: "#E5E7EB", gap: 12 },
-  infoText: { flex: 1, fontSize: 14, color: "#111" },
-  infoSub: { fontSize: 13, color: "#64748B", marginTop: 2 },
-  deviceRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF", padding: 14, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: "#E5E7EB", gap: 12 },
-  deviceName: { flex: 1, fontSize: 14, color: "#111" },
-  onlineBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "#DCFCE7" },
-  onlineText: { fontSize: 12, fontWeight: "600", color: GREEN },
-  historyItem: { backgroundColor: "#FFF", padding: 14, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: "#E5E7EB" },
-  historyDate: { fontSize: 12, color: "#64748B" },
-  historyText: { fontSize: 14, color: "#111", marginTop: 4 },
+  headerTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
+  scrollContent: { padding: 16, gap: 10, paddingBottom: 24 },
+  card: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12, gap: 6 },
+  name: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  title: { fontSize: 14, fontWeight: "700", color: "#111827" },
+  meta: { fontSize: 12, color: "#6B7280" },
+  loading: { alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 30 },
+  loadingTxt: { color: "#6B7280", fontSize: 12 },
+  secondaryBtn: { backgroundColor: "#EEF2FF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 6 },
+  secondaryTxt: { color: "#1D4ED8", textAlign: "center", fontWeight: "700", fontSize: 13 },
+  deleteBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12 },
+  deleteTxt: { color: "#991B1B", textAlign: "center", fontWeight: "700", fontSize: 13 },
+  error: {
+    color: "#991B1B",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
 });

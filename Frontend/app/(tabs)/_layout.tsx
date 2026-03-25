@@ -80,6 +80,24 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="weekly-schedule"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="room-access"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="room-permissions"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

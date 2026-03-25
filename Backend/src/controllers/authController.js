@@ -65,7 +65,7 @@ exports.register = async (req, res) => {
     // Gán role "user" mặc định cho người dùng mới
     if (result.insertId) {
       try {
-        await Role.assignRole(result.insertId, "user");
+        await Role.setRole(result.insertId, "user");
       } catch (err) {
         console.error("Không thể gán role cho user:", err);
       }
@@ -101,8 +101,7 @@ exports.login = async (req, res) => {
     }
 
     // Tạo JWT token
-    // Lấy role nếu có, mặc định 'family'
-    const userRole = user.role || 'family';
+    const userRole = (await Role.getUserRole(user.id)) || user.role || "user";
     const token = jwt.sign(
       { id: user.id, email: user.email, role: userRole },
       JWT_SECRET,
@@ -137,7 +136,7 @@ exports.getProfile = async (req, res) => {
       return sendError(res, "Người dùng không tồn tại", HTTP_STATUS.NOT_FOUND);
     }
 
-    const role = user.role || 'family';
+    const role = (await Role.getUserRole(user.id)) || user.role || "user";
     return sendSuccess(res, {
       id: user.id,
       username: user.username,

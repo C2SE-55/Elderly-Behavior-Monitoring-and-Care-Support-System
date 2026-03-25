@@ -49,6 +49,35 @@ CREATE TABLE health_profiles (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- 4b ROOMS (phòng chăm sóc, admin tạo)
+CREATE TABLE rooms (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    room_id VARCHAR(40) NOT NULL UNIQUE,
+    admin_user_id INT NOT NULL,
+    host_user_id INT NULL ,
+    admin_join_token VARCHAR(128) NULL UNIQUE,
+    host_join_token VARCHAR(128) NULL UNIQUE,
+    max_members INT NOT NULL DEFAULT 5,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (host_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- 4c ROOM MEMBERS (thành viên trong room)
+CREATE TABLE room_members (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    room_id INT NOT NULL,
+    user_id INT NOT NULL ,
+    member_role ENUM('host','caretaker') NOT NULL,
+    can_manage_medication BOOLEAN NOT NULL DEFAULT FALSE,
+    can_receive_schedule_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    can_receive_medication_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_room_user (room_id, user_id),
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- 5 CAMERAS (camera)
 CREATE TABLE cameras (
     id INT PRIMARY KEY AUTO_INCREMENT,

@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { getCurrentUser, logoutUser } from "@/services/api";
 
 export default function AdminSettingsScreen() {
   const router = useRouter();
+  const me = getCurrentUser() as { username?: string; fullName?: string; role?: string } | null;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -23,18 +25,32 @@ export default function AdminSettingsScreen() {
       >
         <TouchableOpacity style={styles.menuRow}>
           <Feather name="user" size={22} color="#64748B" />
-          <Text style={styles.menuText}>Tài khoản Admin</Text>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.menuText}>Tài khoản Admin</Text>
+            <Text style={styles.menuMeta}>
+              {(me?.fullName || me?.username || "Admin")} · {(me?.role || "admin").toUpperCase()}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/(admin)/room-management")}>
+          <Feather name="home" size={22} color="#64748B" />
+          <Text style={styles.menuText}>Quản lý room và QR</Text>
           <Feather name="chevron-right" size={20} color="#94A3B8" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuRow}>
-          <Feather name="bell" size={22} color="#64748B" />
-          <Text style={styles.menuText}>Thông báo</Text>
+        <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/(admin)/accounts")}>
+          <Feather name="users" size={22} color="#64748B" />
+          <Text style={styles.menuText}>Quản lý tài khoản</Text>
           <Feather name="chevron-right" size={20} color="#94A3B8" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuRow}>
-          <Feather name="shield" size={22} color="#64748B" />
-          <Text style={styles.menuText}>Bảo mật</Text>
-          <Feather name="chevron-right" size={20} color="#94A3B8" />
+        <TouchableOpacity
+          style={[styles.menuRow, { backgroundColor: "#FEE2E2", borderColor: "#FECACA" }]}
+          onPress={() => {
+            logoutUser();
+            router.replace("/(auths)/login");
+          }}
+        >
+          <Feather name="log-out" size={22} color="#991B1B" />
+          <Text style={[styles.menuText, { color: "#991B1B" }]}>Đăng xuất</Text>
         </TouchableOpacity>
         <View style={{ height: 88 }} />
       </ScrollView>
@@ -68,4 +84,5 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
   },
   menuText: { flex: 1, fontSize: 16, color: "#111", marginLeft: 12 },
+  menuMeta: { fontSize: 12, color: "#6B7280", marginTop: 2 },
 });
