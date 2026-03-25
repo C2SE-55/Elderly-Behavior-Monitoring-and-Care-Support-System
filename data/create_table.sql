@@ -72,16 +72,15 @@ CREATE TABLE safe_zones (
 );
 
 -- 7 FALL EVENTS (té ngã)
-CREATE TABLE  fall_events (
+CREATE TABLE fall_events (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    camera_id INT,
+    camera_id INT NOT NULL,
     image_url VARCHAR(255),
     video_url VARCHAR(255),
-    severity_level ENUM('low','medium','high') DEFAULT 'high',
+    severity_level ENUM('low', 'medium', 'high') DEFAULT 'high',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (camera_id) REFERENCES cameras(id)
 );
-
 -- 8 LEFT SAFE ZONE EVENTS (rời khoảng vùng an toàn)
 CREATE TABLE left_safe_zone_events ( 
     id INT PRIMARY KEY AUTO_INCREMENT, 

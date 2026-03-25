@@ -1,370 +1,698 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Swipeable from "react-native-gesture-handler/Swipeable";
-import { api, getCurrentUser } from "../../services/api";
+import {
+  createMedication,
+  createSchedules,
+  deleteMedication,
+  deleteSchedule,
+  getMedications,
+  getTodaySchedules,
+  markSkipped,
+  markTaken,
+  MedicationItem,
+  TodayScheduleItem,
+  updateMedication,
+} from "../../services/api";
 
-type ReminderStatus = "pending" | "done" | "early";
+type RepeatType = "once" | "daily";
 
-type ReminderItem = {
-  id: string;
-  time: string;
-  note: string;
-  dosage?: string;
-  detail?: string;
-  userName?: string;
-  date?: string;
-  status: ReminderStatus;
+const pad2 = (value: number) => String(value).padStart(2, "0");
+const nowHHMM = () => {
+  const now = new Date();
+  return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 };
-
-type DayItem = {
-  id: string;
-  date: string;
-  day: string;
-};
-
-const DAYS: DayItem[] = [
-  { id: "d1", date: "22", day: "CN" },
-  { id: "d2", date: "23", day: "T2" },
-  { id: "d3", date: "24", day: "T3" },
-  { id: "d4", date: "25", day: "T4" },
-  { id: "d5", date: "26", day: "T5" },
-  { id: "d6", date: "27", day: "T6" },
-  { id: "d7", date: "28", day: "T7" },
-  { id: "d8", date: "1", day: "CN" },
-];
-
-const MOCK_REMINDERS: ReminderItem[] = [
-  {
-    id: "mock-1",
-    time: "8:00",
-    note: "Uống thuốc cảm",
-    dosage: "1 viên / ngày",
-    detail: "Uống sau ăn",
-    userName: "Nguyễn Văn A",
-    date: "26/02/2026",
-    status: "done",
-  },
-  {
-    id: "mock-2",
-    time: "13:15",
-    note: "Uống thuốc đau đầu",
-    dosage: "1 viên / ngày",
-    detail: "Uống sau ăn",
-    userName: "Nguyễn Văn A",
-    date: "26/02/2026",
-    status: "done",
-  },
-  {
-    id: "mock-3",
-    time: "13:30",
-    note: "Uống thuốc dạ dày",
-    dosage: "1 viên / ngày",
-    detail: "Uống sau ăn",
-    userName: "Nguyễn Văn A",
-    date: "26/02/2026",
-    status: "done",
-  },
-  {
-    id: "mock-4",
-    time: "14:00",
-    note: "Uống thuốc thận",
-    dosage: "1 viên / ngày",
-    detail: "Uống sau ăn",
-    userName: "Nguyễn Văn A",
-    date: "26/02/2026",
-    status: "done",
-  },
-  {
-    id: "mock-5",
-    time: "16:00",
-    note: "Uống thuốc",
-    dosage: "1 viên / ngày",
-    detail: "Uống sau ăn",
-    userName: "Nguyễn Văn A",
-    date: "26/02/2026",
-    status: "done",
-  },
-];
 
 export default function MedicineReminderScreen() {
-  const [selectedDayId, setSelectedDayId] = useState("d4");
-  const [reminders, setReminders] = useState<ReminderItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [screenError, setScreenError] = useState("");
-  const [useMockData, setUseMockData] = useState(false);
-  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
-  const user = getCurrentUser();
+  const [successMessage, setSuccessMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [savingMedication, setSavingMedication] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
-  const selectedDay = useMemo(
-    () => DAYS.find((day) => day.id === selectedDayId) ?? DAYS[0],
-    [selectedDayId]
-  );
+  const [medications, setMedications] = useState<MedicationItem[]>([]);
+  const [todaySchedules, setTodaySchedules] = useState<TodayScheduleItem[]>([]);
 
-  const closeAllSwipeables = () => {
-    Object.values(swipeableRefs.current).forEach((ref) => ref?.close());
-  };
+  const [medicineName, setMedicineName] = useState("");
+  const [medicineDosage, setMedicineDosage] = useState("");
+  const [medicineNote, setMedicineNote] = useState("");
+  const [editingMedicationId, setEditingMedicationId] = useState<number | null>(null);
 
-  const loadReminders = useCallback(async () => {
-    if (!user?.id) {
-      setReminders(MOCK_REMINDERS);
-      setScreenError("");
-      setUseMockData(true);
-      return;
+  const [hour, setHour] = useState(8);
+  const [minute, setMinute] = useState(0);
+  const [repeatType, setRepeatType] = useState<RepeatType>("daily");
+  const [selectedMedicationIds, setSelectedMedicationIds] = useState<number[]>([]);
+  const [doseOverrides, setDoseOverrides] = useState<Record<number, string>>({});
+
+  const notifiedKeysRef = useRef<Record<string, true>>({});
+  const noticeAnim = useRef(new Animated.Value(0)).current;
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  const [noticeItems, setNoticeItems] = useState<TodayScheduleItem[]>([]);
+  const [noticeTime, setNoticeTime] = useState("");
+  const selectedTime = useMemo(() => `${pad2(hour)}:${pad2(minute)}`, [hour, minute]);
+
+  const groupedSchedules = useMemo(() => {
+    const groups: Record<string, TodayScheduleItem[]> = {};
+    for (const item of todaySchedules) {
+      const key = item.alarm_time;
+      groups[key] = groups[key] || [];
+      groups[key].push(item);
     }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [todaySchedules]);
+
+  const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       setScreenError("");
-      const response = await api.get(`/medication-reminders/profile/${user.id}`);
-      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-      const mapped: ReminderItem[] = rows.map((item: any, idx: number) => ({
-        id: String(item.id ?? `local-${idx}`),
-        time: String(item.time ?? ""),
-        note: String(item.note ?? "Uống thuốc"),
-        dosage: item.dosage ? String(item.dosage) : undefined,
-        detail: item.detail ? String(item.detail) : undefined,
-        userName: user?.full_name ?? "Người dùng",
-        date: item.date ? String(item.date) : undefined,
-        status: item.status === "done" ? "done" : "pending",
-      }));
-      setReminders(mapped);
-      setUseMockData(false);
+      const [meds, schedules] = await Promise.all([getMedications(), getTodaySchedules()]);
+      setMedications(meds);
+      setTodaySchedules(schedules);
     } catch (error) {
-      console.warn("Không thể tải danh sách nhắc thuốc:", error);
-      setScreenError("");
-      setReminders(MOCK_REMINDERS);
-      setUseMockData(true);
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không tải được dữ liệu nhắc thuốc.");
     } finally {
       setLoading(false);
     }
-  }, [user?.full_name, user?.id]);
+  }, []);
 
   useEffect(() => {
-    loadReminders();
-  }, [loadReminders]);
+    loadAll();
+  }, [loadAll]);
 
-  const markDone = async (id: string) => {
-    if (useMockData) {
-      setReminders((prev) => prev.map((item) => (item.id === id ? { ...item, status: "done" } : item)));
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const closeDueNotice = useCallback(() => {
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    setNoticeVisible(false);
+  }, []);
+
+  const showDueNotice = useCallback((items: TodayScheduleItem[], time: string) => {
+    setNoticeItems(items);
+    setNoticeTime(time);
+    setNoticeVisible(true);
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = setTimeout(() => {
+      setNoticeVisible(false);
+    }, 12000);
+  }, []);
+
+  useEffect(() => {
+    Animated.spring(noticeAnim, {
+      toValue: noticeVisible ? 1 : 0,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 70,
+    }).start();
+  }, [noticeAnim, noticeVisible]);
+
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const schedules = await getTodaySchedules();
+        setTodaySchedules(schedules);
+
+        const now = nowHHMM();
+        const dueItems = schedules.filter((item) => item.status === "pending" && item.alarm_time === now);
+        if (dueItems.length) {
+          const idsKey = dueItems.map((item) => item.id).sort((a, b) => a - b).join("-");
+          const key = `${new Date().toISOString().slice(0, 10)}-${now}-${idsKey}`;
+          if (!notifiedKeysRef.current[key]) {
+            notifiedKeysRef.current[key] = true;
+            showDueNotice(dueItems, now);
+          }
+        }
+      } catch {
+        // Polling silently; lỗi đã hiển thị ở lần tải chính.
+      }
+    }, 15000);
+
+    return () => clearInterval(timer);
+  }, [showDueNotice]);
+
+  const resetMedicationForm = () => {
+    setMedicineName("");
+    setMedicineDosage("");
+    setMedicineNote("");
+    setEditingMedicationId(null);
+  };
+
+  const onSaveMedication = async () => {
+    if (!medicineName.trim()) {
+      setScreenError("Tên thuốc là bắt buộc.");
       return;
     }
     try {
-      await api.patch(`/medication-reminders/${id}/mark-done`);
-      await loadReminders();
+      setSavingMedication(true);
+      setScreenError("");
+      setSuccessMessage("");
+      if (editingMedicationId) {
+        await updateMedication(editingMedicationId, {
+          name: medicineName.trim(),
+          dosage: medicineDosage.trim(),
+          note: medicineNote.trim(),
+        });
+        setSuccessMessage("Cập nhật thuốc thành công.");
+      } else {
+        await createMedication({
+          name: medicineName.trim(),
+          dosage: medicineDosage.trim(),
+          note: medicineNote.trim(),
+        });
+        setSuccessMessage("Thêm thuốc thành công.");
+      }
+      resetMedicationForm();
+      await loadAll();
     } catch (error) {
-      console.warn("Không thể cập nhật trạng thái:", error);
-      setScreenError("Không thể đánh dấu đã uống thuốc.");
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không lưu được thuốc.");
+    } finally {
+      setSavingMedication(false);
     }
   };
 
-  const removeReminder = async (id: string) => {
-    swipeableRefs.current[id]?.close();
-    if (useMockData) {
-      setReminders((prev) => prev.filter((item) => item.id !== id));
+  const onEditMedication = (item: MedicationItem) => {
+    setEditingMedicationId(item.id);
+    setMedicineName(item.name || "");
+    setMedicineDosage(item.dosage || "");
+    setMedicineNote(item.note || "");
+  };
+
+  const onDeleteMedication = async (id: number) => {
+    try {
+      setScreenError("");
+      await deleteMedication(id);
+      setSelectedMedicationIds((prev) => prev.filter((x) => x !== id));
+      setSuccessMessage("Xóa thuốc thành công.");
+      await loadAll();
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không xóa được thuốc.");
+    }
+  };
+
+  const toggleSelectMedication = (id: number) => {
+    setSelectedMedicationIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const onCreateSchedule = async () => {
+    if (!selectedMedicationIds.length) {
+      setScreenError("Vui lòng chọn ít nhất 1 thuốc để đặt lịch.");
       return;
     }
     try {
-      await api.delete(`/medication-reminders/${id}`);
-      await loadReminders();
+      setSavingSchedule(true);
+      setScreenError("");
+      setSuccessMessage("");
+
+      await createSchedules({
+        alarm_time: selectedTime,
+        repeat_type: repeatType,
+        medications: selectedMedicationIds.map((id) => ({
+          medication_id: id,
+          dosage: doseOverrides[id] ? doseOverrides[id].trim() : undefined,
+        })),
+      });
+
+      setSelectedMedicationIds([]);
+      setDoseOverrides({});
+      setSuccessMessage("Tạo lịch uống thuốc thành công.");
+      await loadAll();
     } catch (error) {
-      console.warn("Không thể xóa nhắc thuốc:", error);
-      setScreenError("Không thể xóa nhắc thuốc.");
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không tạo được lịch uống thuốc.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const onMarkTaken = async (scheduleId: number) => {
+    try {
+      await markTaken(scheduleId);
+      await loadAll();
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không thể đánh dấu đã uống.");
+    }
+  };
+
+  const onMarkSkipped = async (scheduleId: number) => {
+    try {
+      await markSkipped(scheduleId);
+      await loadAll();
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không thể đánh dấu bỏ qua.");
+    }
+  };
+
+  const onDeleteSchedule = async (scheduleId: number) => {
+    try {
+      await deleteSchedule(scheduleId);
+      await loadAll();
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không thể xóa lịch.");
+    }
+  };
+
+  const handleNoticeAction = async (scheduleId: number, action: "taken" | "skipped") => {
+    if (action === "taken") {
+      await onMarkTaken(scheduleId);
+    } else {
+      await onMarkSkipped(scheduleId);
+    }
+    const remain = noticeItems.filter((item) => item.id !== scheduleId);
+    setNoticeItems(remain);
+    if (!remain.length) {
+      closeDueNotice();
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.monthText}>Thg 2 2026</Text>
-
-        <View style={styles.daysWrap}>
-          {DAYS.map((day) => {
-            const isActive = day.id === selectedDayId;
-            return (
-              <TouchableOpacity
-                key={day.id}
-                style={[styles.dayPill, isActive && styles.dayPillActive]}
-                activeOpacity={0.85}
-                onPress={() => setSelectedDayId(day.id)}
-              >
-                <Text style={[styles.dayDate, isActive && styles.dayDateActive]}>{day.date}</Text>
-                <Text style={[styles.dayLabel, isActive && styles.dayLabelActive]}>{day.day}</Text>
+      <Animated.View
+        style={[
+          styles.noticeContainer,
+          {
+            opacity: noticeAnim,
+            transform: [
+              {
+                translateY: noticeAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-30, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <View style={styles.noticeCard}>
+          <View style={styles.noticeHeader}>
+            <Text style={styles.noticeTitle}>Den gio uong thuoc - {noticeTime}</Text>
+            <TouchableOpacity onPress={closeDueNotice}>
+              <Text style={styles.noticeClose}>x</Text>
+            </TouchableOpacity>
+          </View>
+          {noticeItems.map((item) => (
+            <View key={`notice-${item.id}`} style={styles.noticeItemRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noticeItemName}>
+                  {item.name} {item.dosage ? `(${item.dosage})` : ""}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => handleNoticeAction(item.id, "taken")}>
+                <Text style={styles.noticeTakenText}>Taken</Text>
               </TouchableOpacity>
-            );
-          })}
+              <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => handleNoticeAction(item.id, "skipped")}>
+                <Text style={styles.noticeSkipText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      </Animated.View>
+
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentWrap}>
+        <Text style={styles.headerTitle}>Nhắc uống thuốc</Text>
+        {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
+        {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>1) Nhập thuốc</Text>
+          <TextInput
+            value={medicineName}
+            onChangeText={setMedicineName}
+            placeholder="Tên thuốc (name)"
+            placeholderTextColor="#9CA3AF"
+            style={styles.input}
+          />
+          <TextInput
+            value={medicineDosage}
+            onChangeText={setMedicineDosage}
+            placeholder="Liều lượng mặc định (dosage)"
+            placeholderTextColor="#9CA3AF"
+            style={styles.input}
+          />
+          <TextInput
+            value={medicineNote}
+            onChangeText={setMedicineNote}
+            placeholder="Ghi chú (note)"
+            placeholderTextColor="#9CA3AF"
+            style={[styles.input, styles.textArea]}
+            multiline
+          />
+          <View style={styles.rowActions}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={onSaveMedication} disabled={savingMedication}>
+              <Text style={styles.primaryBtnText}>{savingMedication ? "Đang lưu..." : editingMedicationId ? "Cập nhật thuốc" : "Thêm thuốc"}</Text>
+            </TouchableOpacity>
+            {editingMedicationId && (
+              <TouchableOpacity style={styles.lightBtn} onPress={resetMedicationForm}>
+                <Text style={styles.lightBtnText}>Hủy sửa</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {medications.map((item) => (
+            <View key={item.id} style={styles.medicationRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.medName}>{item.name}</Text>
+                {!!item.dosage && <Text style={styles.medMeta}>Liều: {item.dosage}</Text>}
+                {!!item.note && <Text style={styles.medMeta}>Ghi chú: {item.note}</Text>}
+              </View>
+              <TouchableOpacity style={styles.lightBtn} onPress={() => onEditMedication(item)}>
+                <Text style={styles.lightBtnText}>Sửa</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => onDeleteMedication(item.id)}>
+                <Text style={styles.deleteBtnText}>Xóa</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
         </View>
 
-        {!!screenError && <Text style={styles.formErrorText}>{screenError}</Text>}
-        {loading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="small" color="#16A34A" />
-            <Text style={styles.loadingText}>Đang tải dữ liệu nhắc thuốc...</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>2) Đặt lịch uống thuốc</Text>
+          <Text style={styles.timeText}>{selectedTime}</Text>
+          <View style={styles.timePickerWrap}>
+            <TouchableOpacity style={styles.stepBtn} onPress={() => setHour((v) => (v + 23) % 24)}>
+              <Text style={styles.stepText}>- Giờ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.stepBtn} onPress={() => setHour((v) => (v + 1) % 24)}>
+              <Text style={styles.stepText}>+ Giờ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.stepBtn} onPress={() => setMinute((v) => (v + 59) % 60)}>
+              <Text style={styles.stepText}>- Phút</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.stepBtn} onPress={() => setMinute((v) => (v + 1) % 60)}>
+              <Text style={styles.stepText}>+ Phút</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-        <ScrollView contentContainerStyle={styles.scheduleList} showsVerticalScrollIndicator={false}>
-          {reminders.map((item) => {
-            const isDone = item.status === "done";
-            const doneText = isDone ? "Xong" : "Sẵn";
 
+          <View style={styles.repeatRow}>
+            <TouchableOpacity
+              style={[styles.repeatPill, repeatType === "once" && styles.repeatPillActive]}
+              onPress={() => setRepeatType("once")}
+            >
+              <Text style={[styles.repeatText, repeatType === "once" && styles.repeatTextActive]}>1 lần</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.repeatPill, repeatType === "daily" && styles.repeatPillActive]}
+              onPress={() => setRepeatType("daily")}
+            >
+              <Text style={[styles.repeatText, repeatType === "daily" && styles.repeatTextActive]}>Hàng ngày</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.cardHint}>Chọn nhiều thuốc cho cùng 1 thời điểm và chỉnh liều riêng nếu cần.</Text>
+          {medications.map((item) => {
+            const selected = selectedMedicationIds.includes(item.id);
             return (
-              <View key={item.id} style={styles.block}>
-                <Text style={styles.blockTime}>{item.time}</Text>
-                <Swipeable
-                  ref={(ref) => {
-                    swipeableRefs.current[item.id] = ref;
-                  }}
-                  overshootRight={false}
-                  renderRightActions={() => (
-                    <View style={styles.rightActions}>
-                      <TouchableOpacity
-                        style={[styles.swipeActionBtn, styles.editBtn]}
-                        onPress={closeAllSwipeables}
-                      >
-                        <Text style={styles.swipeActionText}>Sửa</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.swipeActionBtn, styles.deleteBtn]}
-                        onPress={() => removeReminder(item.id)}
-                      >
-                        <Text style={styles.swipeActionText}>Xóa</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+              <View key={`select-${item.id}`} style={styles.selectRow}>
+                <TouchableOpacity
+                  style={[styles.checkbox, selected && styles.checkboxActive]}
+                  onPress={() => toggleSelectMedication(item.id)}
                 >
-                  <View style={styles.card}>
-                    <Text style={styles.dayHint}>
-                      CN T2 T3 {selectedDay.day} T5 T6 T7
-                    </Text>
-                    <View style={styles.cardBody}>
-                      <Text style={styles.noteText}>{item.note}</Text>
-                      <View style={styles.actions}>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, isDone ? styles.doneBtnActive : styles.doneBtn]}
-                          onPress={() => markDone(item.id)}
-                        >
-                          <Text style={styles.doneBtnText}>{doneText}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                </Swipeable>
+                  <Text style={styles.checkboxText}>{selected ? "✓" : ""}</Text>
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.medName}>{item.name}</Text>
+                  <TextInput
+                    value={doseOverrides[item.id] ?? (item.dosage || "")}
+                    onChangeText={(value) =>
+                      setDoseOverrides((prev) => ({
+                        ...prev,
+                        [item.id]: value,
+                      }))
+                    }
+                    placeholder="Liều cho lần uống này"
+                    placeholderTextColor="#9CA3AF"
+                    style={styles.input}
+                  />
+                </View>
               </View>
             );
           })}
-        </ScrollView>
-        )}
 
-        <TouchableOpacity
-          style={styles.addButton}
-          activeOpacity={0.9}
-          onPress={closeAllSwipeables}
-        >
-          <Text style={styles.addButtonIcon}>⊕</Text>
-          <Text style={styles.addButtonText}>Thêm một loại thuốc</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity style={styles.primaryBtn} onPress={onCreateSchedule} disabled={savingSchedule}>
+            <Text style={styles.primaryBtnText}>{savingSchedule ? "Đang tạo..." : "Tạo lịch uống"}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>5) Dashboard hôm nay</Text>
+          {loading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.loadingText}>Đang tải...</Text>
+            </View>
+          ) : groupedSchedules.length === 0 ? (
+            <Text style={styles.emptyText}>Chưa có lịch hôm nay.</Text>
+          ) : (
+            groupedSchedules.map(([time, items]) => (
+              <View key={time} style={styles.groupCard}>
+                <Text style={styles.groupTime}>{time}</Text>
+                {items.map((item) => (
+                  <View key={item.id} style={styles.scheduleRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.medName}>
+                        - {item.name} {item.dosage ? `(${item.dosage})` : ""}
+                      </Text>
+                      <Text style={styles.medMeta}>[{String(item.status).toUpperCase()}]</Text>
+                    </View>
+                    {item.status === "pending" && (
+                      <>
+                        <TouchableOpacity style={styles.takenBtn} onPress={() => onMarkTaken(item.id)}>
+                          <Text style={styles.takenBtnText}>✔ Taken</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.skipBtn} onPress={() => onMarkSkipped(item.id)}>
+                          <Text style={styles.skipBtnText}>Skip</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    <TouchableOpacity style={styles.deleteBtn} onPress={() => onDeleteSchedule(item.id)}>
+                      <Text style={styles.deleteBtnText}>X</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#FFFFFF" },
-  container: { flex: 1, backgroundColor: "#FFFFFF", paddingHorizontal: 14, paddingTop: 8 },
-  monthText: { color: "#4B5563", fontSize: 14, marginBottom: 8 },
-  daysWrap: {
+  safeArea: { flex: 1, backgroundColor: "#F6F7FB" },
+  noticeContainer: {
+    position: "absolute",
+    top: 8,
+    left: 10,
+    right: 10,
+    zIndex: 20,
+  },
+  noticeCard: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  noticeHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  dayPill: {
-    width: 34,
-    borderRadius: 18,
+  noticeTitle: { color: "#F9FAFB", fontWeight: "700", fontSize: 14 },
+  noticeClose: { color: "#D1D5DB", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
+  noticeItemRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 4,
-    backgroundColor: "#16A34A",
-  },
-  dayPillActive: { backgroundColor: "#0EA5E9" },
-  dayDate: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
-  dayDateActive: { color: "#FFFFFF" },
-  dayLabel: { color: "#E5E7EB", fontSize: 10, marginTop: 2 },
-  dayLabelActive: { color: "#E0F2FE" },
-  scheduleList: { paddingBottom: 20 },
-  loadingWrap: {
-    paddingVertical: 20,
-    alignItems: "center",
-    justifyContent: "center",
     gap: 8,
+    marginTop: 6,
   },
-  loadingText: {
-    color: "#6B7280",
-    fontSize: 13,
-  },
-  block: { marginBottom: 12 },
-  blockTime: { color: "#374151", fontSize: 13, marginBottom: 4, marginLeft: 4 },
-  card: {
-    backgroundColor: "#F3F4F6",
+  noticeItemName: { color: "#E5E7EB", fontSize: 13, fontWeight: "600" },
+  noticeTakenBtn: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
-    overflow: "hidden",
+  },
+  noticeTakenText: { color: "#166534", fontSize: 12, fontWeight: "700" },
+  noticeSkipBtn: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  noticeSkipText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
+  container: { flex: 1, backgroundColor: "#F6F7FB" },
+  contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
+  headerTitle: { fontSize: 24, fontWeight: "700", color: "#111827" },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    padding: 12,
+    gap: 10,
   },
-  rightActions: { flexDirection: "row", alignItems: "stretch" },
-  swipeActionBtn: {
-    width: 54,
+  cardTitle: { fontSize: 16, color: "#111827", fontWeight: "700" },
+  cardHint: { fontSize: 12, color: "#6B7280" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    fontSize: 14,
+    color: "#111827",
+  },
+  textArea: { minHeight: 60, textAlignVertical: "top" },
+  rowActions: { flexDirection: "row", gap: 8, alignItems: "center" },
+  primaryBtn: {
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    minWidth: 120,
   },
-  swipeActionText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  dayHint: {
-    color: "#6B7280",
-    fontSize: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: "#E5E7EB",
-  },
-  cardBody: {
+  primaryBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
+  lightBtn: {
+    backgroundColor: "#EEF2FF",
     paddingHorizontal: 10,
     paddingVertical: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
+    borderRadius: 8,
   },
-  noteText: { color: "#111827", fontSize: 13, flex: 1 },
-  actions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  actionBtn: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
-  doneBtn: { backgroundColor: "#D1D5DB" },
-  doneBtnActive: { backgroundColor: "#86EFAC" },
-  doneBtnText: { color: "#111827", fontSize: 11, fontWeight: "600" },
-  editBtn: { backgroundColor: "#FACC15" },
-  deleteBtn: { backgroundColor: "#DC2626" },
-  addButton: {
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-    paddingVertical: 14,
+  lightBtnText: { color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
+  deleteBtn: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  deleteBtnText: { color: "#991B1B", fontSize: 12, fontWeight: "700" },
+  medicationRow: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 8,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  medName: { color: "#111827", fontSize: 14, fontWeight: "700" },
+  medMeta: { color: "#6B7280", fontSize: 12 },
+  timeText: { fontSize: 34, fontWeight: "700", color: "#111827", textAlign: "center" },
+  timePickerWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  stepBtn: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  stepText: { color: "#3730A3", fontSize: 12, fontWeight: "700" },
+  repeatRow: { flexDirection: "row", gap: 8, justifyContent: "center" },
+  repeatPill: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#FFF",
+  },
+  repeatPillActive: { borderColor: "#2563EB", backgroundColor: "#DBEAFE" },
+  repeatText: { color: "#4B5563", fontSize: 12 },
+  repeatTextActive: { color: "#1D4ED8", fontWeight: "700" },
+  selectRow: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 8,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 1,
+    borderColor: "#9CA3AF",
+    borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
+    marginTop: 3,
   },
-  addButtonIcon: { color: "#111827", fontSize: 14 },
-  addButtonText: { color: "#111827", fontSize: 14, fontWeight: "500" },
-  formErrorText: {
-    color: "#FCA5A5",
+  checkboxActive: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
+  checkboxText: { color: "#FFF", fontWeight: "700" },
+  groupCard: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 10,
+    gap: 6,
+  },
+  groupTime: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  scheduleRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  takenBtn: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  takenBtnText: { color: "#166534", fontSize: 12, fontWeight: "700" },
+  skipBtn: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  skipBtnText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
+  loadingWrap: { paddingVertical: 14, alignItems: "center", gap: 8 },
+  loadingText: { color: "#6B7280", fontSize: 12 },
+  emptyText: { color: "#6B7280", fontSize: 13 },
+  errorText: {
+    color: "#991B1B",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     fontSize: 12,
-    marginTop: -4,
+  },
+  successText: {
+    color: "#166534",
+    backgroundColor: "#DCFCE7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
   },
 });

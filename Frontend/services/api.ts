@@ -107,8 +107,31 @@ export const api = axios.create({
   },
 });
 
-let currentToken: string | null = null;
-let currentUser: any | null = null;
+const AUTH_TOKEN_KEY = "ecms_auth_token";
+const AUTH_USER_KEY = "ecms_auth_user";
+
+const canUseLocalStorage = () => typeof window !== "undefined" && !!window.localStorage;
+
+const loadStoredAuth = (): { token: string | null; user: any | null } => {
+  if (!canUseLocalStorage()) {
+    return { token: null, user: null };
+  }
+  try {
+    const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+    const rawUser = window.localStorage.getItem(AUTH_USER_KEY);
+    const user = rawUser ? JSON.parse(rawUser) : null;
+    return { token: token || null, user };
+  } catch {
+    return { token: null, user: null };
+  }
+};
+
+let currentToken: string | null = loadStoredAuth().token;
+let currentUser: any | null = loadStoredAuth().user;
+
+if (currentToken) {
+  api.defaults.headers.common.Authorization = `Bearer ${currentToken}`;
+}
 
 export const setAuth = (token: string | null, user?: any) => {
   currentToken = token;
@@ -118,8 +141,22 @@ export const setAuth = (token: string | null, user?: any) => {
 
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    if (canUseLocalStorage()) {
+      window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    }
   } else {
     delete api.defaults.headers.common.Authorization;
+    if (canUseLocalStorage()) {
+      window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  }
+
+  if (user !== undefined && canUseLocalStorage()) {
+    if (user) {
+      window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    } else {
+      window.localStorage.removeItem(AUTH_USER_KEY);
+    }
   }
 };
 
@@ -232,6 +269,15 @@ export const sendChatMessage = async (
 
 export type MedicationReminderStatus = "pending" | "done" | "early";
 
+export type MedicationItem = {
+  id: number;
+  profile_id: number;
+  name: string;
+  dosage?: string | null;
+  note?: string | null;
+  created_at?: string;
+};
+
 export type MedicationReminder = {
   id: number;
   user_id: number;
@@ -283,5 +329,91 @@ export const updateMedicationReminderStatus = async (
 
 export const deleteMedicationReminder = async (id: number): Promise<void> => {
   await api.delete(`/medication-reminders/${id}`);
+};
+
+export type MedicationCreatePayload = {
+  name: string;
+  dosage?: string;
+  note?: string;
+};
+
+export const getMedications = async (): Promise<MedicationItem[]> => {
+  const res = await api.get("/medications");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const createMedication = async (payload: MedicationCreatePayload): Promise<MedicationItem | null> => {
+  const res = await api.post("/medications", payload);
+  return res.data?.data ?? null;
+};
+
+export const updateMedication = async (
+  id: number,
+  payload: Partial<MedicationCreatePayload>
+): Promise<void> => {
+  await api.put(`/medications/${id}`, payload);
+};
+
+export const deleteMedication = async (id: number): Promise<void> => {
+  await api.delete(`/medications/${id}`);
+};
+
+export type ScheduleMedicationInput = {
+  medication_id?: number;
+  name?: string;
+  dosage?: string;
+  note?: string;
+};
+
+export type CreateSchedulesPayload = {
+  alarm_time: string;
+  repeat_type: "once" | "daily";
+  medications: ScheduleMedicationInput[];
+};
+
+export type TodayScheduleItem = {
+  id: number;
+  alarm_time: string;
+  repeat_type: "once" | "daily";
+  is_active: boolean;
+  medication_id: number;
+  name: string;
+  dosage?: string | null;
+  note?: string | null;
+  status: "pending" | "taken" | "skipped" | "missed";
+};
+
+export const createSchedules = async (payload: CreateSchedulesPayload): Promise<void> => {
+  await api.post("/schedules", payload);
+};
+
+export const getTodaySchedules = async (): Promise<TodayScheduleItem[]> => {
+  const res = await api.get("/schedules/today-schedules");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const updateSchedule = async (
+  id: number,
+  payload: {
+    alarm_time?: string;
+    repeat_type?: "once" | "daily";
+    is_active?: boolean;
+    dosage?: string;
+    note?: string;
+  }
+): Promise<void> => {
+  await api.put(`/schedules/${id}`, payload);
+};
+
+export const deleteSchedule = async (id: number): Promise<void> => {
+  await api.delete(`/schedules/${id}`);
+};
+
+export const markTaken = async (scheduleId: number): Promise<void> => {
+  await api.patch("/logs/mark-taken", { schedule_id: scheduleId });
+};
+
+export const markSkipped = async (scheduleId: number): Promise<void> => {
+  await api.patch("/logs/mark-skipped", { schedule_id: scheduleId });
 };
 

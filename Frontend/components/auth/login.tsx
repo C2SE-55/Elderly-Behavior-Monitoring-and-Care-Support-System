@@ -55,8 +55,11 @@ export default function LoginScreen() {
         setAuth(token, user);
       }
 
-      // Đăng nhập thành công -> chuyển sang nhóm (tabs) để hiện thanh menu
-      router.replace("/(tabs)");
+      // Điều hướng theo role: admin vào khu vực admin, còn lại vào giao diện user
+      const normalizedRole =
+        typeof user?.role === "string" ? user.role.trim().toLowerCase() : "";
+      const destination = normalizedRole === "admin" ? "/(admin)" : "/(tabs)";
+      router.replace(destination);
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
       const networkMessage = err?.message;

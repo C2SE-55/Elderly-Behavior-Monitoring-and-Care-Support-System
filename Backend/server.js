@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const routes = require("./src/routes");
 const errorHandler = require("./src/middleware/errorHandler");
+const { startMedicationReminderJob } = require("./src/jobs/medicationReminderJob");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,4 +37,5 @@ app.listen(PORT, () => {
   console.log(`\n✓ Server đang chạy trên cổng ${PORT}`);
   console.log(`✓ Môi trường: ${process.env.NODE_ENV || "development"}`);
   console.log(`✓ API Health: http://localhost:${PORT}/health\n`);
+  startMedicationReminderJob();
 });
