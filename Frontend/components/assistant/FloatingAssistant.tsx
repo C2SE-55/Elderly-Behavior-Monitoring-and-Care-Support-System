@@ -24,6 +24,8 @@ import {
   generateMealPlanByDateRange,
   sendChatMessage,
   getCurrentUser,
+  getMyRoom,
+  subscribeActiveRoomChange,
   getChatSessionMessages,
   getChatSessions,
   deleteChatSession,
@@ -34,6 +36,7 @@ import {
   setLastChatSessionId,
   type ChatSessionSummary,
   type MealPlanTemplate as ApiMealPlanTemplate,
+  type MyRoomInfo,
 } from "@/services/api";
 import { emitScheduleRefresh } from "@/services/scheduleEvents";
 import DateRangePicker from "./DateRangePicker";
@@ -229,6 +232,8 @@ const MESSAGE_SUGGESTIONS = [
 ];
 
 const FloatingAssistant: React.FC = () => {
+  const [permissionLoading, setPermissionLoading] = useState(true);
+  const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(44);
@@ -266,6 +271,28 @@ const FloatingAssistant: React.FC = () => {
   const animatedPos = useRef(new Animated.ValueXY(initialPos)).current;
 
   const gestureRef = useRef({ startX: 0, startY: 0, moved: false });
+
+  const loadRoomPermission = useCallback(async () => {
+    try {
+      setPermissionLoading(true);
+      const room = await getMyRoom();
+      setRoomInfo(room);
+    } catch {
+      setRoomInfo(null);
+    } finally {
+      setPermissionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRoomPermission();
+    const unsubscribe = subscribeActiveRoomChange(() => {
+      void loadRoomPermission();
+    });
+    return unsubscribe;
+  }, [loadRoomPermission]);
+
+  const canUseChatbot = roomInfo?.member_role === "host";
 
   useEffect(() => {
     const rows = getMealPlanTemplates() as MealPlanTemplate[];
@@ -882,6 +909,10 @@ const FloatingAssistant: React.FC = () => {
       loadLatestSession();
     }
   }, [chatOpen, loadLatestSession]);
+
+  if (permissionLoading || !canUseChatbot) {
+    return null;
+  }
 
   return (
     <>

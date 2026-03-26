@@ -1,45 +1,13 @@
 const pool = require("../config/database");
+const { getOrCreateRoomProfileId } = require("../services/roomProfile");
 
 class MedicationReminder {
-  static async getProfileIdByUserId(userId) {
-    const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        [userId]
-      );
-      return rows[0]?.id || null;
-    } finally {
-      connection.release();
-    }
+  static async getProfileIdByRoom(roomId, hostUserId) {
+    return getOrCreateRoomProfileId(roomId, hostUserId);
   }
 
-  static async getOrCreateProfileIdByUserId(userId) {
-    const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        [userId]
-      );
-      if (rows[0]?.id) {
-        return rows[0].id;
-      }
-
-      const [userRows] = await connection.execute(
-        "SELECT full_name, username FROM users WHERE id = ? LIMIT 1",
-        [userId]
-      );
-      const displayName =
-        userRows[0]?.full_name || userRows[0]?.username || `User ${userId}`;
-
-      const [insertResult] = await connection.execute(
-        "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, ?)",
-        [userId, displayName]
-      );
-      return insertResult.insertId;
-    } finally {
-      connection.release();
-    }
+  static async getOrCreateProfileIdByRoom(roomId, hostUserId) {
+    return getOrCreateRoomProfileId(roomId, hostUserId);
   }
 
   static normalizeTime(timeText) {
@@ -53,10 +21,10 @@ class MedicationReminder {
     return null;
   }
 
-  static async createMedicationForUser(userId, payload) {
+  static async createMedicationForUser(hostUserId, roomId, payload) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId);
       const name = String(payload?.name || "").trim();
       if (!name) {
         const err = new Error("MEDICINE_NAME_REQUIRED");
@@ -82,10 +50,10 @@ class MedicationReminder {
     }
   }
 
-  static async getMedicationsByUser(userId) {
+  static async getMedicationsByUser(hostUserId, roomId) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getProfileIdByUserId(userId);
+      const profileId = await this.getProfileIdByRoom(roomId, hostUserId);
       if (!profileId) return [];
 
       const [rows] = await connection.execute(
@@ -101,10 +69,10 @@ class MedicationReminder {
     }
   }
 
-  static async createForUser(userId, payload) {
+  static async createForUser(hostUserId, roomId, payload) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId);
 
       const medicineName = String(payload.medicine_name || "").trim();
       if (!medicineName) {
@@ -150,10 +118,10 @@ class MedicationReminder {
     }
   }
 
-  static async getAllByUser(userId) {
+  static async getAllByUser(hostUserId, roomId) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getProfileIdByUserId(userId);
+      const profileId = await this.getProfileIdByRoom(roomId, hostUserId);
       if (!profileId) return [];
 
       const query = `
@@ -195,17 +163,17 @@ class MedicationReminder {
     }
   }
 
-  static async markDone(userId, scheduleId) {
+  static async markDone(hostUserId, roomId, scheduleId) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getProfileIdByRoom(roomId, hostUserId);
       const [rows] = await connection.execute(
         `SELECT s.id
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE s.id = ? AND hp.user_id = ?
+         WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [scheduleId, userId]
+        [scheduleId, profileId]
       );
 
       if (!rows[0]) return false;
@@ -221,24 +189,24 @@ class MedicationReminder {
     }
   }
 
-  static async updateStatus(userId, scheduleId, status) {
+  static async updateStatus(hostUserId, roomId, scheduleId, status) {
     if (status !== "done") {
       return false;
     }
-    return this.markDone(userId, scheduleId);
+    return this.markDone(hostUserId, roomId, scheduleId);
   }
 
-  static async deleteById(userId, scheduleId) {
+  static async deleteById(hostUserId, roomId, scheduleId) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getProfileIdByRoom(roomId, hostUserId);
       const [rows] = await connection.execute(
         `SELECT s.id, s.medication_id
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE s.id = ? AND hp.user_id = ?
+         WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [scheduleId, userId]
+        [scheduleId, profileId]
       );
 
       const found = rows[0];

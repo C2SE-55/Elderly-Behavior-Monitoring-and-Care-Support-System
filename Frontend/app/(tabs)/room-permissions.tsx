@@ -55,7 +55,7 @@ export default function RoomPermissionsScreen() {
 
   const onToggle = async (
     member: RoomMember,
-    field: "can_manage_medication" | "can_receive_schedule_notifications" | "can_receive_medication_notifications"
+    field: "can_receive_schedule_notifications" | "can_receive_medication_notifications"
   ) => {
     try {
       setUpdatingId(member.user_id);
@@ -141,14 +141,6 @@ export default function RoomPermissionsScreen() {
 
                   {!isHost && (
                     <>
-                      <View style={styles.toggleRow}>
-                        <Text style={styles.toggleLabel}>Cho phép quản lý nhắc thuốc</Text>
-                        <Switch
-                          value={member.can_manage_medication}
-                          onValueChange={() => onToggle(member, "can_manage_medication")}
-                          disabled={updatingId === member.user_id}
-                        />
-                      </View>
                       <View style={styles.toggleRow}>
                         <Text style={styles.toggleLabel}>Nhận thông báo lịch sinh hoạt</Text>
                         <Switch

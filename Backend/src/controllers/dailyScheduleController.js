@@ -56,19 +56,13 @@ exports.getDailySchedules = async (req, res) => {
     if (!context.canReadRoomData || !context.hostUserId) {
       return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
     }
-    const userId = context.hostUserId;
-    const rawProfileId = req.query.profile_id;
-    let profileId = rawProfileId ? Number(rawProfileId) : null;
-
-    if (!profileId) {
-      profileId = await DailySchedule.getDefaultProfileIdByUserId(userId);
-    }
+    let profileId = await DailySchedule.getDefaultProfileIdByRoom(context.roomId, context.hostUserId);
     if (!profileId || Number.isNaN(profileId)) {
       return sendSuccess(res, [], "Chưa có hồ sơ sức khỏe", HTTP_STATUS.OK);
     }
 
-    const ownsProfile = await DailySchedule.ensureProfileBelongsUser(userId, profileId);
-    if (!ownsProfile) {
+    const profileExists = await DailySchedule.ensureProfileExists(profileId);
+    if (!profileExists) {
       return sendFail(res, "Không có quyền truy cập profile này", HTTP_STATUS.FORBIDDEN);
     }
 
@@ -86,17 +80,7 @@ exports.createDailySchedule = async (req, res) => {
     if (!context.canManageRoomData || !context.hostUserId) {
       return sendFail(res, "Chỉ HOST mới có quyền chỉnh sửa dữ liệu room", HTTP_STATUS.FORBIDDEN);
     }
-    const userId = context.hostUserId;
-    const rawProfileId = req.body?.profile_id;
-    let profileId = rawProfileId ? Number(rawProfileId) : null;
-    if (!profileId || Number.isNaN(profileId)) {
-      profileId = await DailySchedule.getOrCreateDefaultProfileIdByUserId(userId);
-    }
-
-    const ownsProfile = await DailySchedule.ensureProfileBelongsUser(userId, profileId);
-    if (!ownsProfile) {
-      return sendFail(res, "Không có quyền truy cập profile này", HTTP_STATUS.FORBIDDEN);
-    }
+    const profileId = await DailySchedule.getOrCreateDefaultProfileIdByRoom(context.roomId, context.hostUserId);
 
     const { data, error } = validateCommonPayload(req.body || {}, false);
     if (error) {
@@ -117,13 +101,13 @@ exports.updateDailySchedule = async (req, res) => {
     if (!context.canManageRoomData || !context.hostUserId) {
       return sendFail(res, "Chỉ HOST mới có quyền chỉnh sửa dữ liệu room", HTTP_STATUS.FORBIDDEN);
     }
-    const userId = context.hostUserId;
     const id = Number(req.params.id);
     if (!id || Number.isNaN(id)) {
       return sendFail(res, "ID lịch không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const existing = await DailySchedule.findOwnedSchedule(userId, id);
+    const profileId = await DailySchedule.getOrCreateDefaultProfileIdByRoom(context.roomId, context.hostUserId);
+    const existing = await DailySchedule.findOwnedSchedule(profileId, id);
     if (!existing) {
       return sendFail(res, "Không tìm thấy lịch hoặc không có quyền", HTTP_STATUS.NOT_FOUND);
     }
@@ -156,13 +140,13 @@ exports.deleteDailySchedule = async (req, res) => {
     if (!context.canManageRoomData || !context.hostUserId) {
       return sendFail(res, "Chỉ HOST mới có quyền chỉnh sửa dữ liệu room", HTTP_STATUS.FORBIDDEN);
     }
-    const userId = context.hostUserId;
     const id = Number(req.params.id);
     if (!id || Number.isNaN(id)) {
       return sendFail(res, "ID lịch không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const existing = await DailySchedule.findOwnedSchedule(userId, id);
+    const profileId = await DailySchedule.getOrCreateDefaultProfileIdByRoom(context.roomId, context.hostUserId);
+    const existing = await DailySchedule.findOwnedSchedule(profileId, id);
     if (!existing) {
       return sendFail(res, "Không tìm thấy lịch hoặc không có quyền", HTTP_STATUS.NOT_FOUND);
     }

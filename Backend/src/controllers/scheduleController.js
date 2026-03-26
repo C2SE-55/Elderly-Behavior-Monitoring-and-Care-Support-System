@@ -13,7 +13,7 @@ exports.createSchedules = async (req, res) => {
         HTTP_STATUS.FORBIDDEN
       );
     }
-    const data = await MedicationSystem.createSchedules(context.hostUserId, req.body || {});
+    const data = await MedicationSystem.createSchedules(context.hostUserId, context.roomId, req.body || {});
     return sendSuccess(res, data, "Tạo lịch uống thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "INVALID_ALARM_TIME") {
@@ -39,7 +39,7 @@ exports.getTodaySchedules = async (req, res) => {
     if (!context.canReadRoomData || !context.hostUserId) {
       return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
     }
-    const rows = await MedicationSystem.getTodaySchedules(context.hostUserId);
+    const rows = await MedicationSystem.getTodaySchedules(context.hostUserId, context.roomId);
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -84,7 +84,7 @@ exports.updateSchedule = async (req, res) => {
       return sendFail(res, "ID lịch uống không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationSystem.updateSchedule(context.hostUserId, scheduleId, req.body || {});
+    const ok = await MedicationSystem.updateSchedule(context.hostUserId, context.roomId, scheduleId, req.body || {});
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }
@@ -113,7 +113,7 @@ exports.deleteSchedule = async (req, res) => {
       return sendFail(res, "ID lịch uống không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationSystem.deleteSchedule(context.hostUserId, scheduleId);
+    const ok = await MedicationSystem.deleteSchedule(context.hostUserId, context.roomId, scheduleId);
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }

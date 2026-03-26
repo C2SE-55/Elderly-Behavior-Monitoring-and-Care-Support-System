@@ -17,7 +17,7 @@ exports.markTaken = async (req, res) => {
     if (!scheduleId || Number.isNaN(scheduleId)) {
       return sendFail(res, "schedule_id không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.markSchedule(context.hostUserId, scheduleId, "taken");
+    const ok = await MedicationSystem.markSchedule(context.hostUserId, context.roomId, scheduleId, "taken");
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống để đánh dấu", HTTP_STATUS.NOT_FOUND);
     }
@@ -42,7 +42,7 @@ exports.markSkipped = async (req, res) => {
     if (!scheduleId || Number.isNaN(scheduleId)) {
       return sendFail(res, "schedule_id không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.markSchedule(context.hostUserId, scheduleId, "skipped");
+    const ok = await MedicationSystem.markSchedule(context.hostUserId, context.roomId, scheduleId, "skipped");
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống để đánh dấu", HTTP_STATUS.NOT_FOUND);
     }

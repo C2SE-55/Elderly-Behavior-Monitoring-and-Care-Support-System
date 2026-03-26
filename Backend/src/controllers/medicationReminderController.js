@@ -9,7 +9,7 @@ exports.getReminders = async (req, res) => {
     if (!context.canReadRoomData || !context.hostUserId) {
       return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
     }
-    const data = await MedicationReminder.getAllByUser(context.hostUserId);
+    const data = await MedicationReminder.getAllByUser(context.hostUserId, context.roomId);
     return sendSuccess(res, data, "Lấy danh sách nhắc thuốc thành công", HTTP_STATUS.OK);
   } catch (error) {
     console.error("Lỗi lấy danh sách nhắc thuốc:", error);
@@ -27,7 +27,7 @@ exports.createReminder = async (req, res) => {
         HTTP_STATUS.FORBIDDEN
       );
     }
-    const created = await MedicationReminder.createForUser(context.hostUserId, req.body || {});
+    const created = await MedicationReminder.createForUser(context.hostUserId, context.roomId, req.body || {});
     return sendSuccess(res, created, "Tạo lịch nhắc thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "MEDICINE_NAME_REQUIRED") {
@@ -67,7 +67,7 @@ exports.updateStatus = async (req, res) => {
       return sendFail(res, "Trạng thái phải là done, pending hoặc early", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationReminder.updateStatus(context.hostUserId, id, status);
+    const ok = await MedicationReminder.updateStatus(context.hostUserId, context.roomId, id, status);
     if (!ok) {
       return sendFail(res, "Không thể cập nhật trạng thái nhắc thuốc", HTTP_STATUS.BAD_REQUEST);
     }
@@ -92,7 +92,7 @@ exports.markDone = async (req, res) => {
     if (!id || Number.isNaN(id)) {
       return sendFail(res, "ID nhắc thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationReminder.markDone(context.hostUserId, id);
+    const ok = await MedicationReminder.markDone(context.hostUserId, context.roomId, id);
     if (!ok) {
       return sendFail(res, "Không thể đánh dấu đã uống", HTTP_STATUS.BAD_REQUEST);
     }
@@ -118,7 +118,7 @@ exports.deleteReminder = async (req, res) => {
       return sendFail(res, "ID nhắc thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const ok = await MedicationReminder.deleteById(context.hostUserId, id);
+    const ok = await MedicationReminder.deleteById(context.hostUserId, context.roomId, id);
     if (!ok) {
       return sendFail(res, "Không thể xóa nhắc thuốc", HTTP_STATUS.BAD_REQUEST);
     }

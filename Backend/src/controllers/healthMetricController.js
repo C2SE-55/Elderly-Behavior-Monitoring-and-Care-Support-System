@@ -2,12 +2,44 @@ const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const HealthMetric = require("../models/HealthMetric");
 const { isEmptyField } = require("../utils/validators");
+const { resolveAccessContext } = require("../services/accessControl");
+const { getOrCreateRoomProfileId } = require("../services/roomProfile");
+
+const resolveHealthAccess = async (req, res, allowWrite = false) => {
+  const context = await resolveAccessContext(req, req.userId);
+  if (!context.canReadRoomData || !context.hostUserId) {
+    return {
+      ok: false,
+      response: sendFail(
+        res,
+        "Bạn không có quyền xem thông tin sức khỏe trong room",
+        HTTP_STATUS.FORBIDDEN
+      ),
+    };
+  }
+  if (allowWrite && !context.canManageRoomData) {
+    return {
+      ok: false,
+      response: sendFail(
+        res,
+        "Chỉ HOST mới có quyền cập nhật thông tin sức khỏe",
+        HTTP_STATUS.FORBIDDEN
+      ),
+    };
+  }
+  return { ok: true, context };
+};
+
+const resolveRoomProfileId = async (context) =>
+  getOrCreateRoomProfileId(context.roomId, context.hostUserId);
 
 // Tạo / cập nhật chỉ số sức khỏe (ghi vào bảng health_profiles)
 exports.createMetric = async (req, res) => {
   try {
+    const access = await resolveHealthAccess(req, res, true);
+    if (!access.ok) return access.response;
+
     const {
-      profileId,
       metricType: rawMetricType,
       valueNumeric,
       valueText,
@@ -24,9 +56,6 @@ exports.createMetric = async (req, res) => {
         : "";
 
     // 1. Kiểm tra trường bắt buộc
-    if (!profileId) {
-      return sendFail(res, "Profile ID là bắt buộc", HTTP_STATUS.BAD_REQUEST);
-    }
     if (!metricType) {
       return sendFail(res, "Loại chỉ số sức khỏe là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
@@ -104,6 +133,8 @@ exports.createMetric = async (req, res) => {
       }
     }
 
+    const profileId = await resolveRoomProfileId(access.context);
+
     // 4. Chuẩn bị dữ liệu ghi xuống model
     const metricData = {
       profileId,
@@ -141,7 +172,10 @@ exports.createMetric = async (req, res) => {
 // Lấy tất cả chỉ số sức khỏe theo profile ID
 exports.getMetricsByProfile = async (req, res) => {
   try {
-    const { profileId } = req.params;
+    const access = await resolveHealthAccess(req, res, false);
+    if (!access.ok) return access.response;
+
+    const profileId = await resolveRoomProfileId(access.context);
     const { limit = 100, offset = 0 } = req.query;
 
     if (isEmptyField(profileId)) {
@@ -178,7 +212,10 @@ exports.getMetricsByProfile = async (req, res) => {
 // Lấy chỉ số theo loại (metric type)
 exports.getMetricsByType = async (req, res) => {
   try {
-    const { profileId, metricType } = req.params;
+    const access = await resolveHealthAccess(req, res, false);
+    if (!access.ok) return access.response;
+    const profileId = await resolveRoomProfileId(access.context);
+    const { metricType } = req.params;
     const { limit = 50 } = req.query;
 
     if (isEmptyField(profileId) || isEmptyField(metricType)) {
@@ -200,7 +237,10 @@ exports.getMetricsByType = async (req, res) => {
 // Lấy chỉ số gần nhất theo loại
 exports.getLatestMetricByType = async (req, res) => {
   try {
-    const { profileId, metricType } = req.params;
+    const access = await resolveHealthAccess(req, res, false);
+    if (!access.ok) return access.response;
+    const profileId = await resolveRoomProfileId(access.context);
+    const { metricType } = req.params;
 
     if (isEmptyField(profileId) || isEmptyField(metricType)) {
       return sendFail(res, "Profile ID và loại chỉ số là bắt buộc", HTTP_STATUS.BAD_REQUEST);
@@ -249,19 +289,21 @@ exports.getFaceReferences = async (req, res) => {
 // Lấy tất cả chỉ số gần nhất (từ health_profiles)
 exports.getAllLatestMetrics = async (req, res) => {
   try {
-    const { profileId } = req.params; // Thực sự là userId
+    const access = await resolveHealthAccess(req, res, false);
+    if (!access.ok) return access.response;
 
+    const profileId = await resolveRoomProfileId(access.context);
     if (!profileId) {
       return sendFail(res, "Profile ID là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
 
-    // Lấy dữ liệu từ health_profiles table dùng user_id (profileId thực sự là userId)
+    // Lấy dữ liệu từ health_profiles theo profile_id của room hiện tại
     const pool = require("../config/database");
     const connection = await pool.getConnection();
     
     try {
       const [rows] = await connection.execute(
-        "SELECT id, elderly_name, face_image_url, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE user_id = ?",
+        "SELECT id, elderly_name, face_image_url, age, weight, height, blood_type, blood_pressure, chronic_diseases, allergies FROM health_profiles WHERE id = ?",
         [profileId]
       );
 
@@ -298,7 +340,10 @@ exports.getAllLatestMetrics = async (req, res) => {
 // Lấy thống kê chỉ số sức khỏe
 exports.getMetricStatistics = async (req, res) => {
   try {
-    const { profileId, metricType } = req.params;
+    const access = await resolveHealthAccess(req, res, false);
+    if (!access.ok) return access.response;
+    const profileId = await resolveRoomProfileId(access.context);
+    const { metricType } = req.params;
     const { days = 7 } = req.query;
 
     if (isEmptyField(profileId) || isEmptyField(metricType)) {
@@ -324,6 +369,9 @@ exports.getMetricStatistics = async (req, res) => {
 // Cập nhật chỉ số sức khỏe
 exports.updateMetric = async (req, res) => {
   try {
+    const access = await resolveHealthAccess(req, res, true);
+    if (!access.ok) return access.response;
+
     const { id } = req.params;
     const { valueNumeric, valueText, unit, status, notes } = req.body;
 
@@ -365,6 +413,9 @@ exports.updateMetric = async (req, res) => {
 // Xóa chỉ số sức khỏe
 exports.deleteMetric = async (req, res) => {
   try {
+    const access = await resolveHealthAccess(req, res, true);
+    if (!access.ok) return access.response;
+
     const { id } = req.params;
 
     if (isEmptyField(id)) {
@@ -411,16 +462,9 @@ exports.getMetricById = async (req, res) => {
 // Upload ảnh khuôn mặt (đại diện) — lưu vào health_profiles.face_image_url để dùng cho nhận diện người cần giám sát
 exports.uploadFaceImage = async (req, res) => {
   try {
-    const { profileId } = req.params; // Thực chất là user_id từ frontend
-    const userId = req.userId; // Từ JWT
-
-    if (!profileId || Number(profileId) !== Number(userId)) {
-      return sendFail(
-        res,
-        "Chỉ được cập nhật ảnh đại diện của chính mình",
-        HTTP_STATUS.FORBIDDEN
-      );
-    }
+    const access = await resolveHealthAccess(req, res, true);
+    if (!access.ok) return access.response;
+    const profileId = await resolveRoomProfileId(access.context);
 
     if (!req.file || !req.file.filename) {
       return sendFail(
@@ -432,7 +476,7 @@ exports.uploadFaceImage = async (req, res) => {
 
     // URL tương đối để client ghép với API_BASE_URL (vd: /uploads/face/123_xxx.jpg)
     const faceImageUrl = "/uploads/face/" + req.file.filename;
-    await HealthMetric.updateFaceImageByUserId(profileId, faceImageUrl);
+    await HealthMetric.updateFaceImageByProfileId(profileId, faceImageUrl);
 
     return sendSuccess(
       res,

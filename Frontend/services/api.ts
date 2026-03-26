@@ -139,6 +139,7 @@ let activeRoomId: number | null = (() => {
   const val = Number(raw || 0);
   return val > 0 ? val : null;
 })();
+const roomChangeListeners = new Set<(roomId: number | null) => void>();
 
 if (currentToken) {
   api.defaults.headers.common.Authorization = `Bearer ${currentToken}`;
@@ -188,9 +189,22 @@ export const setActiveRoomId = (roomId: number | null) => {
       window.localStorage.removeItem(ACTIVE_ROOM_KEY);
     }
   }
+  roomChangeListeners.forEach((listener) => {
+    try {
+      listener(activeRoomId);
+    } catch {
+      // ignore listener errors to avoid breaking auth flow
+    }
+  });
 };
 
 export const getActiveRoomId = (): number | null => activeRoomId;
+export const subscribeActiveRoomChange = (listener: (roomId: number | null) => void) => {
+  roomChangeListeners.add(listener);
+  return () => {
+    roomChangeListeners.delete(listener);
+  };
+};
 
 export const logoutUser = () => {
   setAuth(null, null);
@@ -438,8 +452,14 @@ export const updateRoomPatient = async (payload: {
 /** Header Authorization để gửi request upload (fetch) — không set Content-Type để browser tự thêm boundary */
 export const getAuthHeaders = (): Record<string, string> => {
   const token = api.defaults.headers.common?.Authorization;
-  if (token && typeof token === "string") return { Authorization: token };
-  return {};
+  const headers: Record<string, string> = {};
+  if (token && typeof token === "string") {
+    headers.Authorization = token;
+  }
+  if (activeRoomId) {
+    headers["x-room-id"] = String(activeRoomId);
+  }
+  return headers;
 };
 let lastChatSessionId: number | null = null;
 export const getLastChatSessionId = () => lastChatSessionId;
@@ -458,7 +478,10 @@ export const createChatSession = async (user_id?: number): Promise<number> => {
   const res = await axios.post(
     `${CHATBOT_BASE_URL}/chat/sessions`,
     { user_id: user_id ?? null },
-    { timeout: 20000 }
+    {
+      timeout: 20000,
+      headers: getAuthHeaders(),
+    }
   );
   return Number(res.data?.session_id);
 };
@@ -475,6 +498,7 @@ export const getChatSessions = async (user_id?: number): Promise<ChatSessionSumm
   const res = await axios.get(`${CHATBOT_BASE_URL}/chat/sessions`, {
     params: { user_id },
     timeout: 20000,
+    headers: getAuthHeaders(),
   });
   const raw = res.data?.sessions ?? [];
   if (!Array.isArray(raw)) return [];
@@ -503,6 +527,7 @@ export const getChatSessionMessages = async (
   const res = await axios.get(`${CHATBOT_BASE_URL}/chat/sessions/${session_id}/messages`, {
     params: user_id ? { user_id } : {},
     timeout: 20000,
+    headers: getAuthHeaders(),
   });
   return (res.data?.messages ?? []).map((m: any) => ({
     id: m.id,
@@ -516,6 +541,7 @@ export const deleteChatSession = async (session_id: number, user_id?: number): P
   const res = await axios.delete(`${CHATBOT_BASE_URL}/chat/sessions/${session_id}`, {
     params: user_id ? { user_id } : {},
     timeout: 20000,
+    headers: getAuthHeaders(),
   });
   return !!res.data?.deleted;
 };
@@ -532,7 +558,10 @@ export const sendChatMessage = async (
       user_id: options?.user_id ?? null,
       session_id: options?.session_id ?? null,
     },
-    { timeout: 30000 }
+    {
+      timeout: 30000,
+      headers: getAuthHeaders(),
+    }
   );
   const data = res.data ?? {};
   const replyRaw =

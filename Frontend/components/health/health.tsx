@@ -16,7 +16,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { api, getCurrentUser, API_BASE_URL, getAuthHeaders } from "../../services/api";
+import {
+  api,
+  getCurrentUser,
+  API_BASE_URL,
+  getAuthHeaders,
+  getMyRoom,
+  subscribeActiveRoomChange,
+  type MyRoomInfo,
+} from "../../services/api";
 const PRIMARY = "#4B2E83";
 
 // HEADER: Thanh tiêu đề trên cùng
@@ -44,15 +52,16 @@ type HealthAvatarProps = {
   faceImageUrl: string | null;
   onUpload: () => void;
   loading?: boolean;
+  disabled?: boolean;
 };
-const HealthAvatar = ({ faceImageUrl, onUpload, loading }: HealthAvatarProps) => {
+const HealthAvatar = ({ faceImageUrl, onUpload, loading, disabled }: HealthAvatarProps) => {
   const imageSource = faceImageUrl
     ? { uri: faceImageUrl }
     : require("../../assets/images/avatar.png");
   return (
     <View style={avatarStyles.container}>
       <Image source={imageSource} style={avatarStyles.avatar} />
-      <TouchableOpacity onPress={onUpload} disabled={loading}>
+      <TouchableOpacity onPress={onUpload} disabled={loading || disabled}>
         {loading ? (
           <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 8 }} />
         ) : (
@@ -72,6 +81,7 @@ type HealthInputProps = {
   numberOfLines?: number;
   keyboardType?: "default" | "numeric";
   onChangeText: (text: string) => void;
+  editable?: boolean;
 };
 
 const HealthInput = ({
@@ -82,6 +92,7 @@ const HealthInput = ({
   numberOfLines,
   keyboardType = "default",
   onChangeText,
+  editable = true,
 }: HealthInputProps) => {
   return (
     <View style={inputStyles.wrapper}>
@@ -96,6 +107,7 @@ const HealthInput = ({
         numberOfLines={multiline ? numberOfLines ?? 3 : 1}
         textAlignVertical={multiline ? "top" : "center"}
         keyboardType={keyboardType}
+        editable={editable}
       />
     </View>
   );
@@ -111,6 +123,7 @@ type HealthTwoColumnProps = {
   unit2?: string;
   onChangeValue1: (text: string) => void;
   onChangeValue2: (text: string) => void;
+  editable?: boolean;
 };
 
 const HealthTwoColumn = ({
@@ -122,6 +135,7 @@ const HealthTwoColumn = ({
   unit2,
   onChangeValue1,
   onChangeValue2,
+  editable = true,
 }: HealthTwoColumnProps) => {
   return (
     <View style={twoColStyles.row}>
@@ -134,6 +148,7 @@ const HealthTwoColumn = ({
             value={value1}
             onChangeText={onChangeValue1}
             keyboardType="numeric"
+            editable={editable}
           />
           {unit1 && <Text style={twoColStyles.unit}>{unit1}</Text>}
         </View>
@@ -148,6 +163,7 @@ const HealthTwoColumn = ({
             value={value2}
             onChangeText={onChangeValue2}
             keyboardType="numeric"
+            editable={editable}
           />
           {unit2 && <Text style={twoColStyles.unit}>{unit2}</Text>}
         </View>
@@ -160,15 +176,16 @@ const HealthTwoColumn = ({
 type HealthButtonProps = {
   onPress: () => void;
   disabled?: boolean;
+  label?: string;
 };
 
-const HealthButton = ({ onPress, disabled }: HealthButtonProps) => (
+const HealthButton = ({ onPress, disabled, label = "Cập Nhật" }: HealthButtonProps) => (
   <TouchableOpacity
     style={[buttonStyles.button, disabled && { opacity: 0.7 }]}
     onPress={onPress}
     disabled={disabled}
   >
-    <Text style={buttonStyles.text}>Cập Nhật</Text>
+    <Text style={buttonStyles.text}>{label}</Text>
   </TouchableOpacity>
 );
 
@@ -189,14 +206,57 @@ export default function HealthScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [faceImageUrl, setFaceImageUrl] = useState<string | null>(null);
   const [loadingAvatar, setLoadingAvatar] = useState(false);
+  const [permissionLoading, setPermissionLoading] = useState(true);
+  const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
+  const [targetProfileId, setTargetProfileId] = useState<number | null>(null);
+  const [canReadHealth, setCanReadHealth] = useState(false);
+  const [canManageHealth, setCanManageHealth] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState("");
 
   const user = getCurrentUser();
 
+  const loadPermissions = async () => {
+    try {
+      setPermissionLoading(true);
+      const room = await getMyRoom();
+      setRoomInfo(room);
+      if (!room) {
+        setCanReadHealth(false);
+        setCanManageHealth(false);
+        setTargetProfileId(null);
+        setPermissionMessage("Bạn chưa tham gia room. Không thể truy cập hồ sơ sức khỏe.");
+        return;
+      }
+
+      const isHost = room.member_role === "host";
+      const hostProfileId = Number(room.host_user_id || (isHost ? user?.id : 0)) || null;
+      if (!hostProfileId) {
+        setCanReadHealth(false);
+        setCanManageHealth(false);
+        setTargetProfileId(null);
+        setPermissionMessage("Không xác định được hồ sơ sức khỏe của room hiện tại.");
+        return;
+      }
+
+      setTargetProfileId(hostProfileId);
+      setCanReadHealth(true);
+      setCanManageHealth(isHost);
+      setPermissionMessage(isHost ? "" : "Chỉ xem");
+    } catch {
+      setCanReadHealth(false);
+      setCanManageHealth(false);
+      setTargetProfileId(null);
+      setPermissionMessage("Không tải được quyền truy cập room.");
+    } finally {
+      setPermissionLoading(false);
+    }
+  };
+
   // Load chỉ số sức khỏe đã lưu khi mở màn hình (hiển thị các trường cũ để chỉnh sửa)
   const loadHealthProfile = async () => {
-    if (!user?.id) return;
+    if (!targetProfileId || !canReadHealth) return;
     try {
-      const response = await api.get(`/health-metrics/profile/${user.id}`);
+      const response = await api.get(`/health-metrics/profile/${targetProfileId}`);
       const payload = response.data?.data;
       const rows = Array.isArray(payload?.data) ? payload.data : [];
       const profile = rows[0];
@@ -221,8 +281,8 @@ export default function HealthScreen() {
   };
 
   const handleChangeAvatar = async () => {
-    if (!user?.id) {
-      setError("Vui lòng đăng nhập để đổi hình đại diện.");
+    if (!targetProfileId || !canManageHealth) {
+      setError("Chỉ HOST mới có quyền cập nhật ảnh đại diện.");
       return;
     }
     try {
@@ -258,7 +318,7 @@ export default function HealthScreen() {
         formData.append("image", { uri, name, type } as any);
       }
 
-      const uploadUrl = `${API_BASE_URL}/api/health-metrics/profile/${user.id}/face-image`;
+      const uploadUrl = `${API_BASE_URL}/api/health-metrics/profile/${targetProfileId}/face-image`;
       const headers: Record<string, string> = getAuthHeaders();
       const response = await fetch(uploadUrl, {
         method: "POST",
@@ -290,8 +350,18 @@ export default function HealthScreen() {
   };
 
   useEffect(() => {
-    loadHealthProfile();
-  }, [user?.id]);
+    loadPermissions();
+    const unsubscribe = subscribeActiveRoomChange(() => {
+      void loadPermissions();
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadHealthProfile();
+  }, [targetProfileId, canReadHealth]);
 
   // Bàn phím cuộn xuống khi nhập vào input
   useEffect(() => {
@@ -350,9 +420,13 @@ export default function HealthScreen() {
     }
 
     // Cần có user/profile để gửi API
-    const profileId = user?.id;
+    const profileId = targetProfileId;
     if (!profileId) {
       setError("Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại.");
+      return;
+    }
+    if (!canManageHealth) {
+      setError("Bạn chỉ có quyền xem thông tin sức khỏe.");
       return;
     }
 
@@ -482,7 +556,20 @@ export default function HealthScreen() {
             faceImageUrl={faceImageUrl}
             onUpload={handleChangeAvatar}
             loading={loadingAvatar}
+            disabled={!canManageHealth}
           />
+
+          {!!permissionMessage && (
+            <Text style={permissionMessage === "Chỉ xem" ? screenStyles.readonlyBadge : screenStyles.warnText}>
+              {permissionMessage}
+            </Text>
+          )}
+          {permissionLoading ? (
+            <Text style={screenStyles.infoText}>Đang kiểm tra quyền trong room...</Text>
+          ) : null}
+          {!!roomInfo?.room_id && (
+            <Text style={screenStyles.infoText}>Room: {roomInfo.room_id}</Text>
+          )}
 
           {/* Các trường thông tin sức khỏe */}
           <HealthInput
@@ -490,6 +577,7 @@ export default function HealthScreen() {
             label="Họ và tên"
             value={fullName}
             onChangeText={setFullName}
+            editable={canManageHealth}
           />
           <HealthInput
             placeholder="Nhập tuổi của bạn"
@@ -497,6 +585,7 @@ export default function HealthScreen() {
             value={age}
             onChangeText={setAge}
             keyboardType="numeric"
+            editable={canManageHealth}
           />
 
           <HealthTwoColumn
@@ -508,6 +597,7 @@ export default function HealthScreen() {
             unit2="kg"
             onChangeValue1={setHeight}
             onChangeValue2={setWeight}
+            editable={canManageHealth}
           />
 
           {/* Nhóm máu (select) + huyết áp */}
@@ -522,8 +612,10 @@ export default function HealthScreen() {
                     style={[
                       bloodStyles.chip,
                       selected && bloodStyles.chipSelected,
+                      !canManageHealth && bloodStyles.chipDisabled,
                     ]}
                     onPress={() => setBloodType(type)}
+                    disabled={!canManageHealth}
                   >
                     <Text
                       style={[
@@ -545,6 +637,7 @@ export default function HealthScreen() {
             value={bloodPressure}
             onChangeText={setBloodPressure}
             keyboardType="numeric"
+            editable={canManageHealth}
           />
 
           <HealthInput
@@ -553,6 +646,7 @@ export default function HealthScreen() {
             multiline
             value={chronicDisease}
             onChangeText={setChronicDisease}
+            editable={canManageHealth}
           />
           <HealthInput
             label="Dị ứng"
@@ -560,6 +654,7 @@ export default function HealthScreen() {
             multiline
             value={allergy}
             onChangeText={setAllergy}
+            editable={canManageHealth}
           />
 
           {/* Thông báo lỗi / thành công */}
@@ -569,7 +664,11 @@ export default function HealthScreen() {
           ) : null}
 
           {/* Nút lưu / cập nhật */}
-          <HealthButton onPress={handleSubmit} disabled={submitting} />
+          <HealthButton
+            onPress={handleSubmit}
+            disabled={submitting || !canManageHealth}
+            label={canManageHealth ? "Cập Nhật" : "Chỉ xem"}
+          />
         </ScrollView>
 
         {/* Khi bàn phím mở, hiện nút để cuộn xuống cuối form */}
@@ -624,6 +723,32 @@ const screenStyles = StyleSheet.create({
     color: "green",
     fontSize: 13,
     textAlign: "center",
+  },
+  warnText: {
+    marginBottom: 10,
+    color: "#92400E",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
+  readonlyBadge: {
+    alignSelf: "flex-start",
+    marginBottom: 10,
+    color: "#92400E",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  infoText: {
+    marginBottom: 8,
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
 
@@ -755,6 +880,9 @@ const bloodStyles = StyleSheet.create({
   chipSelected: {
     backgroundColor: PRIMARY,
     borderColor: PRIMARY,
+  },
+  chipDisabled: {
+    opacity: 0.65,
   },
   chipText: {
     fontSize: 12,

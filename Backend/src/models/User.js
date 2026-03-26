@@ -132,6 +132,11 @@ class User {
         fields.push("date_of_birth = ?");
         values.push(userData.dateOfBirth);
       }
+      if (userData.password !== undefined) {
+        const hashedPassword = await bcrypt.hash(String(userData.password), 10);
+        fields.push("password = ?");
+        values.push(hashedPassword);
+      }
 
       // Nếu không có trường nào cần cập nhật, trả về kết quả rỗng
       if (fields.length === 0) {

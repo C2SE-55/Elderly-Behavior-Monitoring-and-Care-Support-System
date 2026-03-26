@@ -23,29 +23,60 @@ async function getRoomMemberContext(userId, roomId) {
     const hasRoomId = !!roomId;
     const query = hasRoomId
       ? `SELECT
-           rm.room_id,
-           rm.member_role,
-           rm.can_manage_medication,
-           rm.can_receive_schedule_notifications,
-           rm.can_receive_medication_notifications,
+           r.id AS room_id,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_manage_medication, 0)
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_schedule_notifications, 0)
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_medication_notifications, 0)
+           END AS can_receive_medication_notifications,
            r.host_user_id
-         FROM room_members rm
-         INNER JOIN rooms r ON r.id = rm.room_id
-         WHERE rm.user_id = ? AND rm.room_id = ?
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE r.id = ?
+           AND (rm.user_id IS NOT NULL OR r.host_user_id = ?)
          LIMIT 1`
       : `SELECT
-           rm.room_id,
-           rm.member_role,
-           rm.can_manage_medication,
-           rm.can_receive_schedule_notifications,
-           rm.can_receive_medication_notifications,
+           r.id AS room_id,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_manage_medication, 0)
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_schedule_notifications, 0)
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_medication_notifications, 0)
+           END AS can_receive_medication_notifications,
            r.host_user_id
-         FROM room_members rm
-         INNER JOIN rooms r ON r.id = rm.room_id
-         WHERE rm.user_id = ?
-         ORDER BY rm.id DESC
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
+         ORDER BY r.id DESC
          LIMIT 1`;
-    const params = hasRoomId ? [userId, roomId] : [userId];
+    const params = hasRoomId
+      ? [userId, userId, userId, userId, userId, roomId, userId]
+      : [userId, userId, userId, userId, userId, userId];
     const [rows] = await connection.execute(query, params);
     return rows[0] || null;
   } finally {
@@ -61,8 +92,12 @@ async function resolveAccessContext(req, userId) {
   const isAdmin = systemRole === "admin";
   const canReadRoomData = roomRole === ROOM_ROLE.HOST || roomRole === ROOM_ROLE.CARETAKER;
   const canManageRoomData = roomRole === ROOM_ROLE.HOST;
-  const canManageMedication =
-    roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_manage_medication);
+  // Caregiver luôn chỉ xem dữ liệu thuốc/lịch uống; không có quyền write.
+  const canManageMedication = roomRole === ROOM_ROLE.HOST;
+  const canReceiveScheduleNotifications =
+    roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_schedule_notifications);
+  const canReceiveMedicationNotifications =
+    roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_medication_notifications);
 
   return {
     userId,
@@ -76,6 +111,8 @@ async function resolveAccessContext(req, userId) {
     canReadRoomData,
     canManageRoomData,
     canManageMedication,
+    canReceiveScheduleNotifications,
+    canReceiveMedicationNotifications,
   };
 }
 

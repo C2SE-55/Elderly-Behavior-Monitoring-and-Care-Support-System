@@ -9,7 +9,7 @@ exports.getMedications = async (req, res) => {
     if (!context.canReadRoomData || !context.hostUserId) {
       return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
     }
-    const data = await MedicationSystem.getMedications(context.hostUserId);
+    const data = await MedicationSystem.getMedications(context.hostUserId, context.roomId);
     return sendSuccess(res, data, "Lấy danh sách thuốc thành công", HTTP_STATUS.OK);
   } catch (error) {
     console.error("Lỗi lấy danh sách thuốc:", error);
@@ -27,7 +27,7 @@ exports.createMedication = async (req, res) => {
         HTTP_STATUS.FORBIDDEN
       );
     }
-    const created = await MedicationSystem.createMedication(context.hostUserId, req.body || {});
+    const created = await MedicationSystem.createMedication(context.hostUserId, context.roomId, req.body || {});
     return sendSuccess(res, created, "Tạo thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "MEDICATION_NAME_REQUIRED") {
@@ -52,7 +52,12 @@ exports.updateMedication = async (req, res) => {
     if (!medicationId || Number.isNaN(medicationId)) {
       return sendFail(res, "ID thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.updateMedication(context.hostUserId, medicationId, req.body || {});
+    const ok = await MedicationSystem.updateMedication(
+      context.hostUserId,
+      context.roomId,
+      medicationId,
+      req.body || {}
+    );
     if (!ok) {
       return sendFail(res, "Không tìm thấy thuốc", HTTP_STATUS.NOT_FOUND);
     }
@@ -80,7 +85,7 @@ exports.deleteMedication = async (req, res) => {
     if (!medicationId || Number.isNaN(medicationId)) {
       return sendFail(res, "ID thuốc không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const ok = await MedicationSystem.deleteMedication(context.hostUserId, medicationId);
+    const ok = await MedicationSystem.deleteMedication(context.hostUserId, context.roomId, medicationId);
     if (!ok) {
       return sendFail(res, "Không tìm thấy thuốc", HTTP_STATUS.NOT_FOUND);
     }

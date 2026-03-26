@@ -1,29 +1,9 @@
 const pool = require("../config/database");
+const { getOrCreateRoomProfileId } = require("../services/roomProfile");
 
 class MedicationSystem {
-  static async getOrCreateProfileIdByUserId(userId, connection = null) {
-    const ownConnection = !connection;
-    const conn = connection || (await pool.getConnection());
-    try {
-      const [rows] = await conn.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        [userId]
-      );
-      if (rows[0]?.id) return rows[0].id;
-
-      const [userRows] = await conn.execute(
-        "SELECT full_name, username FROM users WHERE id = ? LIMIT 1",
-        [userId]
-      );
-      const displayName = userRows[0]?.full_name || userRows[0]?.username || `User ${userId}`;
-      const [insertResult] = await conn.execute(
-        "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, ?)",
-        [userId, displayName]
-      );
-      return insertResult.insertId;
-    } finally {
-      if (ownConnection) conn.release();
-    }
+  static async getOrCreateProfileIdByRoom(roomId, hostUserId, connection = null) {
+    return getOrCreateRoomProfileId(roomId, hostUserId, connection);
   }
 
   static normalizeAlarmTime(alarmTime) {
@@ -36,10 +16,10 @@ class MedicationSystem {
     return null;
   }
 
-  static async createMedication(userId, payload) {
+  static async createMedication(hostUserId, roomId, payload) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId, connection);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const name = String(payload?.name || "").trim();
       if (!name) {
         const error = new Error("MEDICATION_NAME_REQUIRED");
@@ -65,10 +45,10 @@ class MedicationSystem {
     }
   }
 
-  static async getMedications(userId) {
+  static async getMedications(hostUserId, roomId) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId, connection);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT id, profile_id, name, dosage, note, created_at
          FROM medications
@@ -82,16 +62,16 @@ class MedicationSystem {
     }
   }
 
-  static async updateMedication(userId, medicationId, payload) {
+  static async updateMedication(hostUserId, roomId, medicationId, payload) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT m.id, m.profile_id
          FROM medications m
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE m.id = ? AND hp.user_id = ?
+         WHERE m.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [medicationId, userId]
+        [medicationId, profileId]
       );
       if (!rows[0]) return false;
 
@@ -125,16 +105,16 @@ class MedicationSystem {
     }
   }
 
-  static async deleteMedication(userId, medicationId) {
+  static async deleteMedication(hostUserId, roomId, medicationId) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT m.id
          FROM medications m
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE m.id = ? AND hp.user_id = ?
+         WHERE m.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [medicationId, userId]
+        [medicationId, profileId]
       );
       if (!rows[0]) return false;
 
@@ -153,10 +133,10 @@ class MedicationSystem {
     }
   }
 
-  static async createSchedules(userId, payload) {
+  static async createSchedules(hostUserId, roomId, payload) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId, connection);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const normalizedTime = this.normalizeAlarmTime(payload?.alarm_time);
       if (!normalizedTime) {
         const error = new Error("INVALID_ALARM_TIME");
@@ -246,10 +226,10 @@ class MedicationSystem {
     }
   }
 
-  static async getTodaySchedules(userId) {
+  static async getTodaySchedules(hostUserId, roomId) {
     const connection = await pool.getConnection();
     try {
-      const profileId = await this.getOrCreateProfileIdByUserId(userId, connection);
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const query = `
         SELECT
           s.id,
@@ -279,17 +259,17 @@ class MedicationSystem {
     }
   }
 
-  static async updateSchedule(userId, scheduleId, payload) {
+  static async updateSchedule(hostUserId, roomId, scheduleId, payload) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT s.id, s.medication_id
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE s.id = ? AND hp.user_id = ?
+         WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [scheduleId, userId]
+        [scheduleId, profileId]
       );
       if (!rows[0]) return false;
 
@@ -348,17 +328,17 @@ class MedicationSystem {
     }
   }
 
-  static async deleteSchedule(userId, scheduleId) {
+  static async deleteSchedule(hostUserId, roomId, scheduleId) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT s.id, s.medication_id
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE s.id = ? AND hp.user_id = ?
+         WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [scheduleId, userId]
+        [scheduleId, profileId]
       );
       if (!rows[0]) return false;
 
@@ -378,17 +358,17 @@ class MedicationSystem {
     }
   }
 
-  static async markSchedule(userId, scheduleId, status) {
+  static async markSchedule(hostUserId, roomId, scheduleId, status) {
     const connection = await pool.getConnection();
     try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
         `SELECT s.id, s.repeat_type
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
-         INNER JOIN health_profiles hp ON hp.id = m.profile_id
-         WHERE s.id = ? AND hp.user_id = ?
+         WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
-        [scheduleId, userId]
+        [scheduleId, profileId]
       );
       if (!rows[0]) return false;
 

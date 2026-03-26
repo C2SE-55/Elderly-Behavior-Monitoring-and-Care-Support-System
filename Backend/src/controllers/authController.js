@@ -155,7 +155,7 @@ exports.getProfile = async (req, res) => {
 // Cập nhật thông tin profile người dùng (chỉ có thể update chính mình)
 exports.updateProfile = async (req, res) => {
   try {
-    const { phone, fullName } = req.body;
+    const { phone, fullName, oldPassword, newPassword, confirmNewPassword } = req.body;
 
     // Kiểm tra nếu có cố gắng cập nhật các trường không được phép
     if (req.body.hasOwnProperty('email') || req.body.hasOwnProperty('username') || req.body.hasOwnProperty('dateOfBirth') || req.body.hasOwnProperty('date_of_birth')) {
@@ -177,11 +177,44 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    // Cập nhật chỉ các trường được phép: fullName và phone
-    const result = await User.update(req.userId, { 
-      phone: phone,
-      fullName: fullName
-    });
+    const payload = {
+      phone,
+      fullName,
+    };
+
+    const wantsChangePassword =
+      oldPassword !== undefined ||
+      newPassword !== undefined ||
+      confirmNewPassword !== undefined;
+
+    if (wantsChangePassword) {
+      if (isEmptyField(oldPassword) || isEmptyField(newPassword) || isEmptyField(confirmNewPassword)) {
+        return sendFail(
+          res,
+          "Đổi mật khẩu cần nhập đủ mật khẩu cũ, mật khẩu mới và xác nhận mật khẩu mới",
+          HTTP_STATUS.BAD_REQUEST
+        );
+      }
+      if (!isValidPassword(newPassword)) {
+        return sendFail(res, "Mật khẩu mới phải có ít nhất 6 ký tự", HTTP_STATUS.BAD_REQUEST);
+      }
+      if (newPassword !== confirmNewPassword) {
+        return sendFail(res, "Mật khẩu mới và xác nhận mật khẩu mới không khớp", HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const currentUser = await User.findById(req.userId);
+      if (!currentUser) {
+        return sendError(res, "Người dùng không tồn tại", HTTP_STATUS.NOT_FOUND);
+      }
+      const isOldPasswordValid = await User.comparePassword(String(oldPassword), String(currentUser.password || ""));
+      if (!isOldPasswordValid) {
+        return sendFail(res, "Mật khẩu cũ không đúng", HTTP_STATUS.UNAUTHORIZED);
+      }
+      payload.password = newPassword;
+    }
+
+    // Cập nhật các trường được phép: fullName, phone và (tuỳ chọn) password
+    const result = await User.update(req.userId, payload);
 
     if (result.affectedRows === 0) {
       return sendError(res, "Không thể cập nhật profile hoặc không có thay đổi", HTTP_STATUS.NOT_FOUND);

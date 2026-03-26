@@ -30,22 +30,22 @@ router.get("/face-references", healthMetricController.getFaceReferences);
 router.get("/available-types", healthMetricController.getAvailableMetricTypes);
 
 // Lấy tất cả chỉ số sức khỏe theo profile ID
-router.get("/profile/:profileId", healthMetricController.getMetricsByProfile);
+router.get("/profile/:profileId", protect, healthMetricController.getMetricsByProfile);
 
 // Lấy tất cả chỉ số gần nhất theo profile ID
-router.get("/profile/:profileId/latest-all", healthMetricController.getAllLatestMetrics);
+router.get("/profile/:profileId/latest-all", protect, healthMetricController.getAllLatestMetrics);
 
 // Lấy chỉ số theo loại
-router.get("/profile/:profileId/type/:metricType", healthMetricController.getMetricsByType);
+router.get("/profile/:profileId/type/:metricType", protect, healthMetricController.getMetricsByType);
 
 // Lấy chỉ số gần nhất theo loại
-router.get("/profile/:profileId/type/:metricType/latest", healthMetricController.getLatestMetricByType);
+router.get("/profile/:profileId/type/:metricType/latest", protect, healthMetricController.getLatestMetricByType);
 
 // Lấy thống kê chỉ số sức khỏe
-router.get("/profile/:profileId/type/:metricType/statistics", healthMetricController.getMetricStatistics);
+router.get("/profile/:profileId/type/:metricType/statistics", protect, healthMetricController.getMetricStatistics);
 
 // Lấy chi tiết một chỉ số theo ID
-router.get("/:id", healthMetricController.getMetricById);
+router.get("/:id", protect, healthMetricController.getMetricById);
 
 // Cập nhật chỉ số sức khỏe (Bắt buộc đăng nhập)
 router.put("/:id", protect, healthMetricController.updateMetric);

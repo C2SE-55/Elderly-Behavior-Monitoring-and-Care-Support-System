@@ -14,6 +14,7 @@ import {
   MyRoomInfo,
   getServerTime,
   updateDailySchedule,
+  subscribeActiveRoomChange,
 } from "@/services/api";
 import { subscribeScheduleRefresh } from "@/services/scheduleEvents";
 import ScheduleModal from "./ScheduleModal";
@@ -145,6 +146,7 @@ export default function WeeklyCalendarScreen() {
   const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
   const [canReadRoomData, setCanReadRoomData] = useState(false);
   const [canManageSchedule, setCanManageSchedule] = useState(false);
+  const [canReceiveScheduleNotifications, setCanReceiveScheduleNotifications] = useState(false);
   const [usingMock, setUsingMock] = useState(false);
   const [schedules, setSchedules] = useState<DailyScheduleItem[]>([]);
   const [filterType, setFilterType] = useState<"all" | DailyScheduleType>("all");
@@ -203,16 +205,26 @@ export default function WeeklyCalendarScreen() {
       if (!room) {
         setCanReadRoomData(false);
         setCanManageSchedule(false);
+        setCanReceiveScheduleNotifications(false);
         setPermissionMessage("Bạn chưa tham gia room. Hãy join room trước khi dùng lịch sinh hoạt.");
         return;
       }
       const isHost = room.member_role === "host";
+      const canNotify = isHost || !!room.can_receive_schedule_notifications;
       setCanReadRoomData(true);
       setCanManageSchedule(isHost);
-      setPermissionMessage(isHost ? "" : "Bạn đang ở chế độ chỉ xem lịch (CAREGIVER).");
+      setCanReceiveScheduleNotifications(canNotify);
+      setPermissionMessage(
+        isHost
+          ? ""
+          : canNotify
+            ? "Bạn đang ở chế độ chỉ xem lịch (CAREGIVER)."
+            : "Bạn đang ở chế độ chỉ xem lịch (CAREGIVER) và đã tắt thông báo lịch sinh hoạt."
+      );
     } catch {
       setCanReadRoomData(false);
       setCanManageSchedule(false);
+      setCanReceiveScheduleNotifications(false);
       setPermissionMessage("Không tải được quyền truy cập room.");
     } finally {
       setPermissionLoading(false);
@@ -260,6 +272,15 @@ export default function WeeklyCalendarScreen() {
   useEffect(() => {
     loadPermissions();
   }, [loadPermissions]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeActiveRoomChange(() => {
+      notifiedRef.current = {};
+      void loadPermissions();
+      void loadSchedules();
+    });
+    return unsubscribe;
+  }, [loadPermissions, loadSchedules]);
 
   useEffect(() => {
     loadSchedules();
@@ -369,15 +390,17 @@ export default function WeeklyCalendarScreen() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
+      await loadPermissions();
       await syncServerNow();
       await loadSchedules();
     }, 60 * 1000);
     return () => clearInterval(timer);
-  }, [loadSchedules, syncServerNow]);
+  }, [loadPermissions, loadSchedules, syncServerNow]);
 
   useEffect(() => {
+    if (!canReceiveScheduleNotifications) return;
     checkStartNotifications(now, schedules);
-  }, [checkStartNotifications, now, schedules]);
+  }, [canReceiveScheduleNotifications, checkStartNotifications, now, schedules]);
 
   const handleAdd = (dayKey: DayKey) => {
     if (!canManageSchedule) {
@@ -505,6 +528,7 @@ export default function WeeklyCalendarScreen() {
       </View>
 
       {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
+      {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
       {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
       {!!roomInfo?.room_id && <Text style={styles.roomText}>Room: {roomInfo.room_id}</Text>}
       {usingMock && <Text style={styles.mockText}>Đang dùng dữ liệu mẫu fallback.</Text>}
@@ -645,6 +669,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     fontSize: 12,
+  },
+  readonlyBadge: {
+    alignSelf: "flex-start",
+    color: "#92400E",
+    backgroundColor: "#FEF3C7",
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: "700",
   },
   roomText: {
     color: "#475569",

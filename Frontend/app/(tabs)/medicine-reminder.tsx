@@ -25,6 +25,7 @@ import {
   TodayScheduleItem,
   updateMedication,
   logoutUser,
+  subscribeActiveRoomChange,
 } from "../../services/api";
 import { useRouter } from "expo-router";
 
@@ -45,6 +46,7 @@ export default function MedicineReminderScreen() {
   const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
   const [canReadRoomData, setCanReadRoomData] = useState(false);
   const [canManageMedication, setCanManageMedication] = useState(false);
+  const [canReceiveMedicationNotifications, setCanReceiveMedicationNotifications] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState("");
   const [savingMedication, setSavingMedication] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -89,19 +91,27 @@ export default function MedicineReminderScreen() {
       if (!room) {
         setCanReadRoomData(false);
         setCanManageMedication(false);
+        setCanReceiveMedicationNotifications(false);
         setPermissionMessage("Bạn chưa tham gia room. Hãy vào mục Kết nối người thân để join room.");
         return;
       }
       const isHost = room.member_role === "host";
-      const canManage = isHost || !!room.can_manage_medication;
+      const canManage = isHost;
+      const canNotify = isHost || !!room.can_receive_medication_notifications;
       setCanReadRoomData(true);
       setCanManageMedication(canManage);
+      setCanReceiveMedicationNotifications(canNotify);
       setPermissionMessage(
-        canManage ? "" : "Bạn đang ở chế độ chỉ xem. HOST chưa bật quyền quản lý nhắc thuốc cho bạn."
+        canManage
+          ? ""
+          : canNotify
+            ? "Bạn đang ở chế độ chỉ xem. CAREGIVER không được hẹn giờ/chỉnh sửa nhắc thuốc."
+            : "Bạn đang ở chế độ chỉ xem và đã tắt thông báo nhắc thuốc."
       );
     } catch {
       setCanReadRoomData(false);
       setCanManageMedication(false);
+      setCanReceiveMedicationNotifications(false);
       setPermissionMessage("Không tải được thông tin quyền trong room.");
     } finally {
       setPermissionLoading(false);
@@ -131,6 +141,15 @@ export default function MedicineReminderScreen() {
   useEffect(() => {
     loadPermissions();
   }, [loadPermissions]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeActiveRoomChange(() => {
+      notifiedKeysRef.current = {};
+      void loadPermissions();
+      void loadAll();
+    });
+    return unsubscribe;
+  }, [loadAll, loadPermissions]);
 
   useEffect(() => {
     loadAll();
@@ -175,7 +194,8 @@ export default function MedicineReminderScreen() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
-      if (!canReadRoomData) return;
+      await loadPermissions();
+      if (!canReadRoomData || !canReceiveMedicationNotifications) return;
       try {
         const schedules = await getTodaySchedules();
         setTodaySchedules(schedules);
@@ -196,7 +216,14 @@ export default function MedicineReminderScreen() {
     }, 15000);
 
     return () => clearInterval(timer);
-  }, [canReadRoomData, showDueNotice]);
+  }, [canReadRoomData, canReceiveMedicationNotifications, showDueNotice, loadPermissions]);
+
+  useEffect(() => {
+    if (!canReceiveMedicationNotifications) {
+      closeDueNotice();
+      setNoticeItems([]);
+    }
+  }, [canReceiveMedicationNotifications, closeDueNotice]);
 
   const resetMedicationForm = () => {
     setMedicineName("");
@@ -398,12 +425,18 @@ export default function MedicineReminderScreen() {
                   {item.name} {item.dosage ? `(${item.dosage})` : ""}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => handleNoticeAction(item.id, "taken")}>
-                <Text style={styles.noticeTakenText}>Taken</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => handleNoticeAction(item.id, "skipped")}>
-                <Text style={styles.noticeSkipText}>Skip</Text>
-              </TouchableOpacity>
+              {canManageMedication ? (
+                <>
+                  <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => handleNoticeAction(item.id, "taken")}>
+                    <Text style={styles.noticeTakenText}>Taken</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => handleNoticeAction(item.id, "skipped")}>
+                    <Text style={styles.noticeSkipText}>Skip</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.noticeReadonly}>Chỉ xem</Text>
+              )}
             </View>
           ))}
         </View>
@@ -415,6 +448,7 @@ export default function MedicineReminderScreen() {
         </View>
         {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
         {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
+        {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
         {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
         {permissionLoading && <Text style={styles.loadingText}>Đang kiểm tra quyền trong room...</Text>}
         {!!roomInfo?.room_id && <Text style={styles.loadingText}>Room: {roomInfo.room_id}</Text>}
@@ -427,6 +461,7 @@ export default function MedicineReminderScreen() {
             placeholder="Tên thuốc (name)"
             placeholderTextColor="#9CA3AF"
             style={styles.input}
+            editable={canManageMedication}
           />
           <TextInput
             value={medicineDosage}
@@ -434,6 +469,7 @@ export default function MedicineReminderScreen() {
             placeholder="Liều lượng mặc định (dosage)"
             placeholderTextColor="#9CA3AF"
             style={styles.input}
+            editable={canManageMedication}
           />
           <TextInput
             value={medicineNote}
@@ -442,6 +478,7 @@ export default function MedicineReminderScreen() {
             placeholderTextColor="#9CA3AF"
             style={[styles.input, styles.textArea]}
             multiline
+            editable={canManageMedication}
           />
           <View style={styles.rowActions}>
             <TouchableOpacity
@@ -452,7 +489,11 @@ export default function MedicineReminderScreen() {
               <Text style={styles.primaryBtnText}>{savingMedication ? "Đang lưu..." : editingMedicationId ? "Cập nhật thuốc" : "Thêm thuốc"}</Text>
             </TouchableOpacity>
             {editingMedicationId && (
-              <TouchableOpacity style={styles.lightBtn} onPress={resetMedicationForm}>
+              <TouchableOpacity
+                style={[styles.lightBtn, !canManageMedication && { opacity: 0.6 }]}
+                onPress={resetMedicationForm}
+                disabled={!canManageMedication}
+              >
                 <Text style={styles.lightBtnText}>Hủy sửa</Text>
               </TouchableOpacity>
             )}
@@ -487,30 +528,48 @@ export default function MedicineReminderScreen() {
           <Text style={styles.cardTitle}>2) Đặt lịch uống thuốc</Text>
           <Text style={styles.timeText}>{selectedTime}</Text>
           <View style={styles.timePickerWrap}>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setHour((v) => (v + 23) % 24)}>
+            <TouchableOpacity
+              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={() => setHour((v) => (v + 23) % 24)}
+              disabled={!canManageMedication}
+            >
               <Text style={styles.stepText}>- Giờ</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setHour((v) => (v + 1) % 24)}>
+            <TouchableOpacity
+              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={() => setHour((v) => (v + 1) % 24)}
+              disabled={!canManageMedication}
+            >
               <Text style={styles.stepText}>+ Giờ</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setMinute((v) => (v + 59) % 60)}>
+            <TouchableOpacity
+              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={() => setMinute((v) => (v + 59) % 60)}
+              disabled={!canManageMedication}
+            >
               <Text style={styles.stepText}>- Phút</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setMinute((v) => (v + 1) % 60)}>
+            <TouchableOpacity
+              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={() => setMinute((v) => (v + 1) % 60)}
+              disabled={!canManageMedication}
+            >
               <Text style={styles.stepText}>+ Phút</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.repeatRow}>
             <TouchableOpacity
-              style={[styles.repeatPill, repeatType === "once" && styles.repeatPillActive]}
+              style={[styles.repeatPill, repeatType === "once" && styles.repeatPillActive, !canManageMedication && { opacity: 0.6 }]}
               onPress={() => setRepeatType("once")}
+              disabled={!canManageMedication}
             >
               <Text style={[styles.repeatText, repeatType === "once" && styles.repeatTextActive]}>1 lần</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.repeatPill, repeatType === "daily" && styles.repeatPillActive]}
+              style={[styles.repeatPill, repeatType === "daily" && styles.repeatPillActive, !canManageMedication && { opacity: 0.6 }]}
               onPress={() => setRepeatType("daily")}
+              disabled={!canManageMedication}
             >
               <Text style={[styles.repeatText, repeatType === "daily" && styles.repeatTextActive]}>Hàng ngày</Text>
             </TouchableOpacity>
@@ -524,6 +583,7 @@ export default function MedicineReminderScreen() {
                 <TouchableOpacity
                   style={[styles.checkbox, selected && styles.checkboxActive]}
                   onPress={() => toggleSelectMedication(item.id)}
+                  disabled={!canManageMedication}
                 >
                   <Text style={styles.checkboxText}>{selected ? "✓" : ""}</Text>
                 </TouchableOpacity>
@@ -540,6 +600,7 @@ export default function MedicineReminderScreen() {
                     placeholder="Liều cho lần uống này"
                     placeholderTextColor="#9CA3AF"
                     style={styles.input}
+                    editable={canManageMedication}
                   />
                 </View>
               </View>
@@ -664,6 +725,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   noticeSkipText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
+  noticeReadonly: { color: "#FDE68A", fontSize: 12, fontWeight: "700" },
   container: { flex: 1, backgroundColor: "#F6F7FB" },
   contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
   headerTitle: { fontSize: 24, fontWeight: "700", color: "#111827" },
@@ -823,6 +885,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 12,
+  },
+  readonlyBadge: {
+    alignSelf: "flex-start",
+    color: "#92400E",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: "700",
   },
   emptyText: { color: "#6B7280", fontSize: 13 },
   errorText: {

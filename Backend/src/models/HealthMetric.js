@@ -7,7 +7,7 @@ class HealthMetric {
     const connection = await pool.getConnection();
     try {
       const {
-        profileId, // Thực sự là userId từ frontend
+        profileId, // Thực sự là health_profiles.id theo room
         metricType,
         valueNumeric,
         valueText,
@@ -17,24 +17,7 @@ class HealthMetric {
         allergies,
       } = metricData;
 
-      // Bước 1: Tìm health_profiles.id từ user_id
-      let [profiles] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
-        [profileId]
-      );
-
-      let actualProfileId;
-
-      // Nếu chưa có, tự động tạo health_profiles mới
-      if (!profiles || profiles.length === 0) {
-        const [insertResult] = await connection.execute(
-          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
-          [profileId, profileId]
-        );
-        actualProfileId = insertResult.insertId;
-      } else {
-        actualProfileId = profiles[0].id;
-      }
+      const actualProfileId = Number(profileId);
 
       // Map metricType sang field trong health_profiles (tất cả đều snake_case)
       const metricMap = {
@@ -93,29 +76,11 @@ class HealthMetric {
     }
   }
 
-  // Lấy chỉ số sức khỏe mới nhất theo profile ID (profileId thực sự là userId)
+  // Lấy chỉ số sức khỏe mới nhất theo profile ID (health_profiles.id)
   static async getLatest(profileId, limit = 50, offset = 0) {
-    // Trả về dữ liệu từ health_profiles
     const connection = await pool.getConnection();
     try {
-      // Bước 1: Tìm health_profiles.id từ user_id
-      let [profiles] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
-        [profileId]
-      );
-
-      let actualProfileId;
-
-      // Nếu chưa có, tự động tạo
-      if (!profiles || profiles.length === 0) {
-        const [insertResult] = await connection.execute(
-          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
-          [profileId, profileId]
-        );
-        actualProfileId = insertResult.insertId;
-      } else {
-        actualProfileId = profiles[0].id;
-      }
+      const actualProfileId = Number(profileId);
 
       const limitNum = Number(limit) || 50;
       const offsetNum = Number(offset) || 0;
@@ -129,24 +94,20 @@ class HealthMetric {
     }
   }
 
-  // Cập nhật ảnh khuôn mặt (face_image_url) theo user_id - dùng cho nhận diện người cần giám sát
-  static async updateFaceImageByUserId(userId, faceImageUrl) {
+  // Cập nhật ảnh khuôn mặt (face_image_url) theo health_profiles.id
+  static async updateFaceImageByProfileId(profileId, faceImageUrl) {
     const connection = await pool.getConnection();
     try {
-      let [profiles] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
-        [userId]
+      const [profiles] = await connection.execute(
+        "SELECT id FROM health_profiles WHERE id = ? LIMIT 1",
+        [profileId]
       );
       if (!profiles || profiles.length === 0) {
-        await connection.execute(
-          "INSERT INTO health_profiles (user_id, elderly_name, face_image_url) VALUES (?, CONCAT('User ', ?), ?)",
-          [userId, userId, faceImageUrl]
-        );
-        return { affectedRows: 1 };
+        return { affectedRows: 0 };
       }
       const [result] = await connection.execute(
-        "UPDATE health_profiles SET face_image_url = ? WHERE user_id = ?",
-        [faceImageUrl, userId]
+        "UPDATE health_profiles SET face_image_url = ? WHERE id = ?",
+        [faceImageUrl, profileId]
       );
       return { affectedRows: result.affectedRows };
     } finally {
@@ -196,27 +157,11 @@ class HealthMetric {
     return [];
   }
 
-  // Đếm số lượng chỉ số sức khỏe theo profile (profileId thực sự là userId)
+  // Đếm số lượng chỉ số sức khỏe theo profile (health_profiles.id)
   static async countByProfileId(profileId) {
     const connection = await pool.getConnection();
     try {
-      // Tìm hoặc tạo health_profiles
-      let [profiles] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
-        [profileId]
-      );
-
-      let actualProfileId;
-
-      if (!profiles || profiles.length === 0) {
-        const [insertResult] = await connection.execute(
-          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
-          [profileId, profileId]
-        );
-        actualProfileId = insertResult.insertId;
-      } else {
-        actualProfileId = profiles[0].id;
-      }
+      const actualProfileId = Number(profileId);
 
       const query = "SELECT COUNT(*) as count FROM health_profiles WHERE id = ?";
       const [rows] = await connection.execute(query, [actualProfileId]);
@@ -226,28 +171,11 @@ class HealthMetric {
     }
   }
 
-  // Lấy tất cả chỉ số sức khỏe theo profile ID (profileId thực sự là userId)
+  // Lấy tất cả chỉ số sức khỏe theo profile ID (health_profiles.id)
   static async getByProfileId(profileId, limit = 100, offset = 0) {
     const connection = await pool.getConnection();
     try {
-      // Bước 1: Tìm health_profiles.id từ user_id
-      let [profiles] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? LIMIT 1",
-        [profileId]
-      );
-
-      let actualProfileId;
-
-      // Nếu chưa có, tự động tạo
-      if (!profiles || profiles.length === 0) {
-        const [insertResult] = await connection.execute(
-          "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, CONCAT('User ', ?))",
-          [profileId, profileId]
-        );
-        actualProfileId = insertResult.insertId;
-      } else {
-        actualProfileId = profiles[0].id;
-      }
+      const actualProfileId = Number(profileId);
 
       const limitNum = Number(limit) || 100;
       const offsetNum = Number(offset) || 0;

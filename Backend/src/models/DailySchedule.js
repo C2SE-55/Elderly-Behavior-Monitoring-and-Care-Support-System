@@ -1,4 +1,5 @@
 const pool = require("../config/database");
+const { getOrCreateRoomProfileId } = require("../services/roomProfile");
 
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const VALID_TYPES = ["exercise", "meal", "rest", "other"];
@@ -14,12 +15,12 @@ class DailySchedule {
     return null;
   }
 
-  static async ensureProfileBelongsUser(userId, profileId) {
+  static async ensureProfileExists(profileId) {
     const connection = await pool.getConnection();
     try {
       const [rows] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE id = ? AND user_id = ? LIMIT 1",
-        [profileId, userId]
+        "SELECT id FROM health_profiles WHERE id = ? LIMIT 1",
+        [profileId]
       );
       return !!rows[0];
     } finally {
@@ -27,41 +28,12 @@ class DailySchedule {
     }
   }
 
-  static async getDefaultProfileIdByUserId(userId) {
-    const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        [userId]
-      );
-      return rows[0]?.id || null;
-    } finally {
-      connection.release();
-    }
+  static async getDefaultProfileIdByRoom(roomId, hostUserId) {
+    return getOrCreateRoomProfileId(roomId, hostUserId);
   }
 
-  static async getOrCreateDefaultProfileIdByUserId(userId) {
-    const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        "SELECT id FROM health_profiles WHERE user_id = ? ORDER BY id ASC LIMIT 1",
-        [userId]
-      );
-      if (rows[0]?.id) return rows[0].id;
-
-      const [userRows] = await connection.execute(
-        "SELECT full_name, username FROM users WHERE id = ? LIMIT 1",
-        [userId]
-      );
-      const elderlyName = userRows[0]?.full_name || userRows[0]?.username || `User ${userId}`;
-      const [insertResult] = await connection.execute(
-        "INSERT INTO health_profiles (user_id, elderly_name) VALUES (?, ?)",
-        [userId, elderlyName]
-      );
-      return insertResult.insertId;
-    } finally {
-      connection.release();
-    }
+  static async getOrCreateDefaultProfileIdByRoom(roomId, hostUserId) {
+    return getOrCreateRoomProfileId(roomId, hostUserId);
   }
 
   static async getByProfileId(profileId) {
@@ -137,16 +109,15 @@ class DailySchedule {
     }
   }
 
-  static async findOwnedSchedule(userId, id) {
+  static async findOwnedSchedule(profileId, id) {
     const connection = await pool.getConnection();
     try {
       const [rows] = await connection.execute(
         `SELECT ds.*
          FROM daily_schedules ds
-         INNER JOIN health_profiles hp ON hp.id = ds.profile_id
-         WHERE ds.id = ? AND hp.user_id = ?
+         WHERE ds.id = ? AND ds.profile_id = ?
          LIMIT 1`,
-        [id, userId]
+        [id, profileId]
       );
       return rows[0] || null;
     } finally {
