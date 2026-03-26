@@ -187,6 +187,7 @@ exports.updateProfile = async (req, res) => {
       newPassword !== undefined ||
       confirmNewPassword !== undefined;
 
+    let passwordChanged = false;
     if (wantsChangePassword) {
       if (isEmptyField(oldPassword) || isEmptyField(newPassword) || isEmptyField(confirmNewPassword)) {
         return sendFail(
@@ -211,6 +212,7 @@ exports.updateProfile = async (req, res) => {
         return sendFail(res, "Mật khẩu cũ không đúng", HTTP_STATUS.UNAUTHORIZED);
       }
       payload.password = newPassword;
+      passwordChanged = true;
     }
 
     // Cập nhật các trường được phép: fullName, phone và (tuỳ chọn) password
@@ -220,7 +222,7 @@ exports.updateProfile = async (req, res) => {
       return sendError(res, "Không thể cập nhật profile hoặc không có thay đổi", HTTP_STATUS.NOT_FOUND);
     }
 
-    return sendSuccess(res, null, "Cập nhật profile thành công");
+    return sendSuccess(res, { passwordChanged }, "Cập nhật profile thành công");
   } catch (error) {
     console.error("Lỗi cập nhật profile:", error);
     return sendError(res, "Không thể cập nhật profile", HTTP_STATUS.INTERNAL_ERROR);

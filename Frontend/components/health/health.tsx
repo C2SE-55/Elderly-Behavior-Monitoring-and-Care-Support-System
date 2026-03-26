@@ -34,8 +34,8 @@ const HealthHeader = () => {
   return (
     <View style={headerStyles.container}>
       {/* Nút back về màn trước */}
-      <TouchableOpacity onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="white" />
+      <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+        <Ionicons name="arrow-back" size={22} color="#111827" />
       </TouchableOpacity>
 
       {/* Tiêu đề */}
@@ -754,18 +754,22 @@ const screenStyles = StyleSheet.create({
 
 const headerStyles = StyleSheet.create({
   container: {
-    backgroundColor: PRIMARY,
-    height: 110,
-    paddingTop: 45,
+    backgroundColor: "#FFFFFF",
+    height: 80,
+    paddingTop: 25,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   title: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "700",
+    flex: 1,
+    textAlign: "center",
   },
 });
 

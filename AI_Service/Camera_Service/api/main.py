@@ -120,9 +120,9 @@ def _parse_stream_args(source=None):
         source = _get_video_source()
     old_argv = sys.argv
     src_str = str(source) if source is not None else "0"
-    scale = os.environ.get("VIDEO_SCALE", "0.30").strip()   # preset CPU nhanh: giảm kích thước input
+    scale = os.environ.get("VIDEO_SCALE", "0.35").strip()   # preset CPU nhanh: giảm kích thước input
     skip = os.environ.get("VIDEO_SKIP_FRAMES", "2").strip()  # preset CPU nhanh: giảm tần suất pose
-    max_fps = os.environ.get("VIDEO_MAX_FPS", "10").strip()  # giới hạn FPS để stream ổn định hơn
+    max_fps = os.environ.get("VIDEO_MAX_FPS", "12").strip()  # giới hạn FPS để stream ổn định hơn
     sys.argv = [
         "video",
         "--source=" + src_str,

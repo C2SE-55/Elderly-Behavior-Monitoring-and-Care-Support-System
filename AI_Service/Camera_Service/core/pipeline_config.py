@@ -9,7 +9,7 @@ YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 YOLO_EVERY_N_FRAMES = max(1, int(os.environ.get("YOLO_EVERY_N_FRAMES", "5")))
 YOLO_CONF = float(os.environ.get("YOLO_CONF", "0.35"))
 # imgsz nhỏ hơn 640 → YOLO nhanh hơn (đổi lại độ chính xác xa người có thể giảm)
-YOLO_IMGSZ = max(32, int(os.environ.get("YOLO_IMGSZ", "256")))
+YOLO_IMGSZ = max(32, int(os.environ.get("YOLO_IMGSZ", "320")))
 # FP16 trên GPU: auto | 1 | 0 (trên CPU luôn tắt)
 YOLO_HALF = os.environ.get("YOLO_HALF", "auto").strip().lower()
 # Pose-YOLO gating: giảm khung xương ảo ở nền khi không khớp vùng người YOLO
@@ -19,9 +19,9 @@ POSE_MIN_SCORE = float(os.environ.get("POSE_MIN_SCORE", "0.03"))
 POSE_MIN_BOX_AREA = float(os.environ.get("POSE_MIN_BOX_AREA", "80.0"))
 
 # MJPEG (matplotlib savefig): dpi/quality thấp → encode nhanh, FPS stream cao hơn
-STREAM_JPEG_DPI = max(20, min(120, int(os.environ.get("STREAM_JPEG_DPI", "28"))))
-STREAM_JPEG_QUALITY = max(30, min(95, int(os.environ.get("STREAM_JPEG_QUALITY", "45"))))
-STREAM_UPDATE_EVERY_N_FRAMES = max(1, int(os.environ.get("STREAM_UPDATE_EVERY_N_FRAMES", "2")))
+STREAM_JPEG_DPI = max(20, min(120, int(os.environ.get("STREAM_JPEG_DPI", "40"))))
+STREAM_JPEG_QUALITY = max(30, min(95, int(os.environ.get("STREAM_JPEG_QUALITY", "65"))))
+STREAM_UPDATE_EVERY_N_FRAMES = max(1, int(os.environ.get("STREAM_UPDATE_EVERY_N_FRAMES", "1")))
 
 FACE_RECOGNITION_INTERVAL = max(1, int(os.environ.get("FACE_RECOGNITION_INTERVAL", "20")))
 

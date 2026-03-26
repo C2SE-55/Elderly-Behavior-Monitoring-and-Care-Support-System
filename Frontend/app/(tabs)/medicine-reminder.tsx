@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Animated,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,7 +10,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import {
   createMedication,
   createSchedules,
@@ -24,10 +28,9 @@ import {
   MyRoomInfo,
   TodayScheduleItem,
   updateMedication,
-  logoutUser,
   subscribeActiveRoomChange,
 } from "../../services/api";
-import { useRouter } from "expo-router";
+import { ensureNotificationPermission, rescheduleMedicationNotifications } from "@/services/medicationNotifications";
 
 type RepeatType = "once" | "daily";
 
@@ -39,6 +42,7 @@ const nowHHMM = () => {
 
 export default function MedicineReminderScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [screenError, setScreenError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +65,7 @@ export default function MedicineReminderScreen() {
 
   const [hour, setHour] = useState(8);
   const [minute, setMinute] = useState(0);
+  const [androidPickerOpen, setAndroidPickerOpen] = useState(false);
   const [repeatType, setRepeatType] = useState<RepeatType>("daily");
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<number[]>([]);
   const [doseOverrides, setDoseOverrides] = useState<Record<number, string>>({});
@@ -72,6 +77,23 @@ export default function MedicineReminderScreen() {
   const [noticeItems, setNoticeItems] = useState<TodayScheduleItem[]>([]);
   const [noticeTime, setNoticeTime] = useState("");
   const selectedTime = useMemo(() => `${pad2(hour)}:${pad2(minute)}`, [hour, minute]);
+  const selectedDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(hour, minute, 0, 0);
+    return d;
+  }, [hour, minute]);
+
+  const onChangeTime = useCallback(
+    (_event: any, date?: Date) => {
+      if (Platform.OS === "android") {
+        setAndroidPickerOpen(false);
+      }
+      if (!date) return;
+      setHour(date.getHours());
+      setMinute(date.getMinutes());
+    },
+    []
+  );
 
   const groupedSchedules = useMemo(() => {
     const groups: Record<string, TodayScheduleItem[]> = {};
@@ -143,6 +165,12 @@ export default function MedicineReminderScreen() {
   }, [loadPermissions]);
 
   useEffect(() => {
+    // Ask notification permission early (only on native)
+    if (!canReceiveMedicationNotifications) return;
+    void ensureNotificationPermission();
+  }, [canReceiveMedicationNotifications]);
+
+  useEffect(() => {
     const unsubscribe = subscribeActiveRoomChange(() => {
       notifiedKeysRef.current = {};
       void loadPermissions();
@@ -154,6 +182,16 @@ export default function MedicineReminderScreen() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    // Keep OS-level notifications in sync with today's schedules
+    if (!canReceiveMedicationNotifications) return;
+    void (async () => {
+      const ok = await ensureNotificationPermission();
+      if (!ok) return;
+      await rescheduleMedicationNotifications(todaySchedules);
+    })();
+  }, [todaySchedules, canReceiveMedicationNotifications]);
 
   useEffect(() => {
     return () => {
@@ -375,11 +413,6 @@ export default function MedicineReminderScreen() {
     }
   };
 
-  const onLogout = () => {
-    logoutUser();
-    router.replace("/(auths)/login");
-  };
-
   const handleNoticeAction = async (scheduleId: number, action: "taken" | "skipped") => {
     if (action === "taken") {
       await onMarkTaken(scheduleId);
@@ -394,7 +427,14 @@ export default function MedicineReminderScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
+      <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerBarTitle}>Nhắc uống thuốc</Text>
+        <View style={{ width: 22 }} />
+      </View>
       <Animated.View
         style={[
           styles.noticeContainer,
@@ -443,9 +483,6 @@ export default function MedicineReminderScreen() {
       </Animated.View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.contentWrap}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Nhắc uống thuốc</Text>
-        </View>
         {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
         {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
         {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
@@ -527,36 +564,39 @@ export default function MedicineReminderScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>2) Đặt lịch uống thuốc</Text>
           <Text style={styles.timeText}>{selectedTime}</Text>
-          <View style={styles.timePickerWrap}>
-            <TouchableOpacity
-              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setHour((v) => (v + 23) % 24)}
-              disabled={!canManageMedication}
-            >
-              <Text style={styles.stepText}>- Giờ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setHour((v) => (v + 1) % 24)}
-              disabled={!canManageMedication}
-            >
-              <Text style={styles.stepText}>+ Giờ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setMinute((v) => (v + 59) % 60)}
-              disabled={!canManageMedication}
-            >
-              <Text style={styles.stepText}>- Phút</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.stepBtn, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setMinute((v) => (v + 1) % 60)}
-              disabled={!canManageMedication}
-            >
-              <Text style={styles.stepText}>+ Phút</Text>
-            </TouchableOpacity>
-          </View>
+          {Platform.OS === "ios" ? (
+            <View style={[styles.iosPickerWrap, !canManageMedication && { opacity: 0.6 }]}>
+              <DateTimePicker
+                value={selectedDate}
+                mode="time"
+                display="spinner"
+                onChange={onChangeTime}
+                minuteInterval={1}
+                disabled={!canManageMedication}
+                textColor="#111827"
+                themeVariant="light"
+                style={styles.iosPicker}
+              />
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.primaryBtn, !canManageMedication && { opacity: 0.6 }]}
+                onPress={() => setAndroidPickerOpen(true)}
+                disabled={!canManageMedication}
+              >
+                <Text style={styles.primaryBtnText}>Chọn giờ (Time picker)</Text>
+              </TouchableOpacity>
+              {androidPickerOpen && (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="time"
+                  display="default"
+                  onChange={onChangeTime}
+                />
+              )}
+            </>
+          )}
 
           <View style={styles.repeatRow}>
             <TouchableOpacity
@@ -617,7 +657,7 @@ export default function MedicineReminderScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>5) Dashboard hôm nay</Text>
+          <Text style={styles.cardTitle}>5) Lịch trình hôm nay</Text>
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color="#2563EB" />
@@ -669,10 +709,6 @@ export default function MedicineReminderScreen() {
           )}
         </View>
       </ScrollView>
-
-      <TouchableOpacity style={styles.floatingLogoutBtn} onPress={onLogout} activeOpacity={0.9}>
-        <Text style={styles.floatingLogoutText}>Đăng xuất</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -728,32 +764,18 @@ const styles = StyleSheet.create({
   noticeReadonly: { color: "#FDE68A", fontSize: 12, fontWeight: "700" },
   container: { flex: 1, backgroundColor: "#F6F7FB" },
   contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
-  headerTitle: { fontSize: 24, fontWeight: "700", color: "#111827" },
-  headerRow: {
+  headerBar: {
+    backgroundColor: "#FFFFFF",
+    height: 56,
+    paddingTop: 6,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
-  floatingLogoutBtn: {
-    position: "absolute",
-    right: 16,
-    bottom: 22,
-    backgroundColor: "#DC2626",
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-    zIndex: 25,
-  },
-  floatingLogoutText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
+  headerBarTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 14,
@@ -813,6 +835,23 @@ const styles = StyleSheet.create({
   medMeta: { color: "#6B7280", fontSize: 12 },
   timeText: { fontSize: 34, fontWeight: "700", color: "#111827", textAlign: "center" },
   timePickerWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  iosPickerWrap: {
+    alignSelf: "stretch",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    height: 190,
+    paddingVertical: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  iosPicker: {
+    width: "92%",
+    maxWidth: 320,
+    height: 180,
+  },
   stepBtn: {
     backgroundColor: "#EEF2FF",
     borderRadius: 10,

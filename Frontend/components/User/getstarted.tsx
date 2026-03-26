@@ -40,7 +40,7 @@ const WelcomeScreen = () => {
 
             <TouchableOpacity
                 style={styles.button}
-                onPress={() => router.replace("/(tabs)")}
+                onPress={() => router.navigate("/(tabs)")}
             >
                 <Text style={styles.buttonText}>Bắt đầu</Text>
             </TouchableOpacity>

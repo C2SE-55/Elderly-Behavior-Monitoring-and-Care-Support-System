@@ -13,12 +13,22 @@ export default function AdminTabLayout() {
         tabBarInactiveTintColor: GRAY,
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
         tabBarStyle: {
-          height: 64,
+          position: "absolute",
+          left: 12,
+          right: 12,
+          bottom: 3,
+          height: 70,
           paddingBottom: 8,
           paddingTop: 8,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0.5,
           borderTopColor: "#E5E7EB",
+          borderRadius: 16,
+          shadowColor: "#000",
+          shadowOpacity: 0.12,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 10,
         },
       }}
     >

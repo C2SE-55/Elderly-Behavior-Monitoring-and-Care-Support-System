@@ -92,7 +92,7 @@ export default function AdminAccountDetailScreen() {
               <View style={styles.card}>
                 <Text style={styles.title}>Gán room cho user</Text>
                 <Text style={styles.meta}>
-                  Admin tạo room ở màn hình "Tạo room / QR", sau đó gửi room_id cho user này để user nhập và lên FAMILY.
+                  Admin tạo room ở màn hình &quot;Tạo room / QR&quot;, sau đó gửi room_id cho user này để user nhập và lên FAMILY.
                 </Text>
                 <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/(admin)/room-management")}>
                   <Text style={styles.secondaryTxt}>Đi tới màn hình tạo room</Text>

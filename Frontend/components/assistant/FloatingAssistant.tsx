@@ -566,7 +566,7 @@ const FloatingAssistant: React.FC = () => {
             {
               id: `a-${Date.now()}`,
               role: "assistant",
-              content: "Mình chưa parse được thực đơn JSON. Bạn thử lại hoặc đổi khoảng ngày khác nhé.",
+              content: "Mình chưa parse được thực đơn. Bạn thử lại hoặc đổi khoảng ngày khác nhé.",
             },
           ]);
           return;
@@ -594,14 +594,14 @@ const FloatingAssistant: React.FC = () => {
         };
         saveMealPlanTemplate(template as ApiMealPlanTemplate);
         setTemplates((prev) => [template, ...prev].slice(0, 5));
-        showPlannerToast("Da tao thuc don. Ban co the sua roi ap dung.");
+        showPlannerToast("Đã tạo thực đơn. Bạn có thể sửa rồi áp dụng.");
       } catch {
         setMessages((prev) => [
           ...prev,
           {
             id: `a-${Date.now()}`,
             role: "assistant",
-            content: "Khong the tao thuc don luc nay. Ban thu lai sau it phut.",
+            content: "Không thể tạo thực đơn lúc này. Bạn thử lại sau ít phút.",
           },
         ]);
       } finally {

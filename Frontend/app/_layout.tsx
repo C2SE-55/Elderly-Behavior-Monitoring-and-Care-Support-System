@@ -3,8 +3,10 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useEffect } from "react";
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { hydrateAuthFromStorage } from "@/services/api";
 
 export const unstable_settings = {
   initialRouteName: '(tabs)',
@@ -13,6 +15,10 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
+  useEffect(() => {
+    void hydrateAuthFromStorage();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -20,8 +26,8 @@ export default function RootLayout() {
           screenOptions={{ headerShown: false }}
           initialRouteName="(tabs)"
         >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="(admin)" />
+          <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="(admin)" options={{ gestureEnabled: false }} />
           <Stack.Screen name="(auths)" />
           <Stack.Screen name="(homepages)" />
           <Stack.Screen name="(healths)" />

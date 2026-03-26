@@ -172,7 +172,7 @@ CREATE TABLE daily_schedules (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT NOT NULL,
     day_of_week ENUM('mon','tue','wed','thu','fri','sat','sun') NOT NULL,
-    title VARCHAR(100),
+    title VARCHAR(255),
     description TEXT,
     start_time TIME,
     end_time TIME,

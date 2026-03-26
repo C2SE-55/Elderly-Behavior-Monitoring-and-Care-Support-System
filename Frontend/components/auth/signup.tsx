@@ -76,7 +76,7 @@ export default function SignupScreen() {
         confirmPassword,
       });
 
-      router.push("/(auths)/login");
+      router.replace("/(auths)/login");
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
       const networkMessage = err?.message;
@@ -217,7 +217,7 @@ export default function SignupScreen() {
 
               <View style={styles.linkRow}>
                 <Text style={styles.linkText}>Bạn đã có tài khoản chưa?</Text>
-                <TouchableOpacity onPress={() => router.push("/(auths)/login")}>
+                <TouchableOpacity onPress={() => router.replace("/(auths)/login")}>
                   <Text style={styles.linkHighlight}> Đăng nhập</Text>
                 </TouchableOpacity>
               </View>

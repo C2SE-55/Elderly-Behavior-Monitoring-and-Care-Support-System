@@ -2,16 +2,18 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import {
   getMyRoom,
   getRoomMembers,
@@ -23,6 +25,7 @@ import {
 
 export default function RoomPermissionsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [room, setRoom] = useState<MyRoomInfo | null>(null);
@@ -107,15 +110,24 @@ export default function RoomPermissionsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.wrap}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Quản lý quyền trong room</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backTxt}>Quay lại</Text>
-          </TouchableOpacity>
-        </View>
-
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
+        <TouchableOpacity onPress={() => router.navigate("/(tabs)")} hitSlop={8}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Quản lý quyền trong room</Text>
+        <View style={{ width: 22 }} />
+      </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.wrap}
+          keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
+        >
         {room?.member_role !== "host" ? (
           <View style={styles.card}>
             <Text style={styles.warn}>Chỉ HOST (family) mới được quản lý quyền thành viên.</Text>
@@ -171,18 +183,29 @@ export default function RoomPermissionsScreen() {
             })}
           </>
         )}
-      </ScrollView>
+
+          <View style={{ height: 28 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8FAFC" },
-  wrap: { padding: 16, gap: 12, paddingBottom: 24 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: { fontSize: 20, fontWeight: "700", color: "#111827" },
-  backBtn: { backgroundColor: "#EEF2FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  backTxt: { color: "#1D4ED8", fontWeight: "700", fontSize: 12 },
+  wrap: { padding: 16, gap: 12, paddingBottom: 120 },
+  headerBar: {
+    backgroundColor: "#FFFFFF",
+    height: 56,
+    paddingTop: 6,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  headerTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
   card: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12, gap: 8 },
   warn: { color: "#92400E", fontWeight: "600", fontSize: 13 },
   roomText: { color: "#111827", fontWeight: "700", fontSize: 14 },

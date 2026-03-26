@@ -1,5 +1,7 @@
 import axios from "axios";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const getApiBaseUrl = () => {
   // Nếu cấu hình trong app.json / app.config.ts có extra.apiUrl thì ưu tiên dùng
@@ -116,6 +118,33 @@ const AUTH_USER_KEY = "ecms_auth_user";
 const ACTIVE_ROOM_KEY = "ecms_active_room_id";
 
 const canUseLocalStorage = () => typeof window !== "undefined" && !!window.localStorage;
+const canUseAsyncStorage = () => Platform.OS !== "web";
+
+const storageGetItem = async (key: string): Promise<string | null> => {
+  if (canUseLocalStorage()) return window.localStorage.getItem(key);
+  if (canUseAsyncStorage()) return await AsyncStorage.getItem(key);
+  return null;
+};
+
+const storageSetItem = async (key: string, value: string): Promise<void> => {
+  if (canUseLocalStorage()) {
+    window.localStorage.setItem(key, value);
+    return;
+  }
+  if (canUseAsyncStorage()) {
+    await AsyncStorage.setItem(key, value);
+  }
+};
+
+const storageRemoveItem = async (key: string): Promise<void> => {
+  if (canUseLocalStorage()) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  if (canUseAsyncStorage()) {
+    await AsyncStorage.removeItem(key);
+  }
+};
 
 const loadStoredAuth = (): { token: string | null; user: any | null } => {
   if (!canUseLocalStorage()) {
@@ -157,21 +186,17 @@ export const setAuth = (token: string | null, user?: any) => {
 
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
-    if (canUseLocalStorage()) {
-      window.localStorage.setItem(AUTH_TOKEN_KEY, token);
-    }
+    void storageSetItem(AUTH_TOKEN_KEY, token);
   } else {
     delete api.defaults.headers.common.Authorization;
-    if (canUseLocalStorage()) {
-      window.localStorage.removeItem(AUTH_TOKEN_KEY);
-    }
+    void storageRemoveItem(AUTH_TOKEN_KEY);
   }
 
-  if (user !== undefined && canUseLocalStorage()) {
+  if (user !== undefined) {
     if (user) {
-      window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      void storageSetItem(AUTH_USER_KEY, JSON.stringify(user));
     } else {
-      window.localStorage.removeItem(AUTH_USER_KEY);
+      void storageRemoveItem(AUTH_USER_KEY);
     }
   }
 };
@@ -180,14 +205,10 @@ export const setActiveRoomId = (roomId: number | null) => {
   activeRoomId = roomId && roomId > 0 ? roomId : null;
   if (activeRoomId) {
     api.defaults.headers.common["x-room-id"] = String(activeRoomId);
-    if (canUseLocalStorage()) {
-      window.localStorage.setItem(ACTIVE_ROOM_KEY, String(activeRoomId));
-    }
+    void storageSetItem(ACTIVE_ROOM_KEY, String(activeRoomId));
   } else {
     delete api.defaults.headers.common["x-room-id"];
-    if (canUseLocalStorage()) {
-      window.localStorage.removeItem(ACTIVE_ROOM_KEY);
-    }
+    void storageRemoveItem(ACTIVE_ROOM_KEY);
   }
   roomChangeListeners.forEach((listener) => {
     try {
@@ -196,6 +217,45 @@ export const setActiveRoomId = (roomId: number | null) => {
       // ignore listener errors to avoid breaking auth flow
     }
   });
+};
+
+/**
+ * Hydrate auth + activeRoomId on native (AsyncStorage).
+ * On web, existing localStorage sync init already handles this.
+ */
+export const hydrateAuthFromStorage = async (): Promise<void> => {
+  if (canUseLocalStorage()) return;
+  try {
+    const [token, rawUser, rawRoom] = await Promise.all([
+      storageGetItem(AUTH_TOKEN_KEY),
+      storageGetItem(AUTH_USER_KEY),
+      storageGetItem(ACTIVE_ROOM_KEY),
+    ]);
+    const user = rawUser ? JSON.parse(rawUser) : null;
+    if (token) {
+      setAuth(token, user ?? undefined);
+    } else if (user) {
+      setAuth(null, user);
+    }
+    const roomVal = Number(rawRoom || 0);
+    if (roomVal > 0) {
+      setActiveRoomId(roomVal);
+    } else if (token) {
+      // If user already joined rooms but active room isn't stored yet (common on native),
+      // pick the first room as active so downstream services (chatbot) get x-room-id.
+      try {
+        const rooms = await getMyRooms();
+        const firstId = Number(rooms?.[0]?.id || 0);
+        if (firstId > 0) {
+          setActiveRoomId(firstId);
+        }
+      } catch {
+        // ignore room bootstrap errors
+      }
+    }
+  } catch {
+    // ignore hydration errors
+  }
 };
 
 export const getActiveRoomId = (): number | null => activeRoomId;

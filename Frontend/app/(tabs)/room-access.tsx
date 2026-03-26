@@ -1,7 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import {
   getActiveRoomId,
   getCurrentUser,
@@ -9,7 +20,6 @@ import {
   getMyRooms,
   joinRoomByAdminCode,
   joinRoomByHostQr,
-  logoutUser,
   MyRoomInfo,
   MyRoomSummary,
   refreshCurrentUserProfile,
@@ -18,6 +28,7 @@ import {
 
 export default function RoomAccessScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = getCurrentUser() as { role?: string } | null;
   const normalizedRole = String(user?.role || "user").trim().toLowerCase();
   const [loading, setLoading] = useState(false);
@@ -111,21 +122,25 @@ export default function RoomAccessScreen() {
     }
   };
 
-  const onLogout = () => {
-    logoutUser();
-    router.replace("/(auths)/login");
-  };
-
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.wrap}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Phân quyền trong Room</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backTxt}>Quay lại</Text>
-          </TouchableOpacity>
-        </View>
-
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Phân quyền trong Room</Text>
+        <View style={{ width: 22 }} />
+      </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.wrap}
+          keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
+        >
         <View style={styles.card}>
           <Text style={styles.label}>Vai trò hệ thống hiện tại</Text>
           <Text style={styles.badge}>{roleBadge}</Text>
@@ -220,21 +235,28 @@ export default function RoomAccessScreen() {
           </>
         )}
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <Text style={styles.logoutTxt}>Đăng xuất</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <View style={{ height: 28 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8FAFC" },
-  wrap: { padding: 16, gap: 12, paddingBottom: 24 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: { fontSize: 20, fontWeight: "700", color: "#111827" },
-  backBtn: { backgroundColor: "#EEF2FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  backTxt: { color: "#1D4ED8", fontWeight: "700", fontSize: 12 },
+  wrap: { padding: 16, gap: 12, paddingBottom: 120 },
+  headerBar: {
+    backgroundColor: "#FFFFFF",
+    height: 56,
+    paddingTop: 6,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  headerTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
   card: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12, gap: 8 },
   label: { fontSize: 12, color: "#6B7280", fontWeight: "600" },
   badge: { fontSize: 15, fontWeight: "700", color: "#111827" },
@@ -288,6 +310,4 @@ const styles = StyleSheet.create({
   },
   loadingWrap: { alignItems: "center", gap: 8, paddingVertical: 10 },
   loadingTxt: { color: "#6B7280", fontSize: 12 },
-  logoutBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  logoutTxt: { color: "#991B1B", textAlign: "center", fontWeight: "700", fontSize: 13 },
 });

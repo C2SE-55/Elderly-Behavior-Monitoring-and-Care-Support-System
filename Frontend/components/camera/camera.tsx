@@ -212,7 +212,7 @@ export default function CameraLiveScreen() {
     [selectedEvent]
   );
 
-  const goToHome = () => router.replace("/(tabs)");
+  const goToHome = () => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"));
   const goToStats = () => router.replace("/(tabs)/stats");
   const goToNotifications = () => router.replace("/(tabs)/notifications");
   const goToSettings = () => router.replace("/(tabs)/settings");
@@ -224,7 +224,7 @@ export default function CameraLiveScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: 15 + insets.top }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+        <TouchableOpacity onPress={() => goToHome()} hitSlop={8}>
           <Ionicons name="arrow-back" size={22} />
         </TouchableOpacity>
         <Text style={styles.title}>Camera Live</Text>

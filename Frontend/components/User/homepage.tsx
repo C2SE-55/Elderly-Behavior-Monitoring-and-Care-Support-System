@@ -73,7 +73,7 @@ const HomepageUserScreen = () => {
                 {OPTIONS.map((item) => {
                     const handlePress = () => {
                         if (item.id === "medicine-reminder") {
-                            router.push("/(tabs)/medicine-reminder");
+                            router.push("/(screens)/medicine-reminder");
                         } else if (item.id === "personal-info") {
                             router.push("/(profiles)/profile");
                         } else if (item.id === "health") {
@@ -81,9 +81,9 @@ const HomepageUserScreen = () => {
                         } else if (item.id === "behavior") {
                             router.push("/(cameras)/camera");
                         } else if (item.id === "schedule") {
-                            router.push("/(tabs)/weekly-schedule");
+                            router.push("/(screens)/weekly-schedule");
                         } else if (item.id === "family") {
-                            router.push("/(tabs)/room-access");
+                            router.push("/(screens)/room-access");
                         }
                     };
 

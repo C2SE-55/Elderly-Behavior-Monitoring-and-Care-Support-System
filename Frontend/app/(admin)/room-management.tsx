@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import {
   adminCreateRoom,
   adminDeleteRoom,
@@ -84,6 +85,31 @@ export default function AdminRoomManagementScreen() {
 
   const getQrImageUrl = (payload: string) =>
     `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}`;
+
+  const copyToClipboard = async (label: string, value?: string | null) => {
+    const txt = String(value || "").trim();
+    if (!txt || txt === "-") return;
+    try {
+      await Clipboard.setStringAsync(txt);
+      if (Platform.OS === "web") {
+        alert(`Đã copy ${label}`);
+      } else {
+        Alert.alert("Đã copy", `${label} đã được copy vào clipboard.`);
+      }
+    } catch {
+      if (Platform.OS === "web") {
+        alert("Không thể copy. Vui lòng thử lại.");
+      } else {
+        Alert.alert("Lỗi", "Không thể copy. Vui lòng thử lại.");
+      }
+    }
+  };
+
+  const copyAssignedRoomId = async (roomId?: string | null) => {
+    const value = String(roomId || "").trim();
+    if (!value) return;
+    await copyToClipboard("room_id", value);
+  };
 
   const onDeleteRoom = (room: AdminRoomRow) => {
     const doDelete = async () => {
@@ -158,9 +184,20 @@ export default function AdminRoomManagementScreen() {
           {!!selectedUserId && !!rooms[0]?.room_id && (
             <View style={styles.assignBox}>
               <Text style={styles.meta}>User đã chọn: #{selectedUserId}</Text>
-              <Text style={styles.meta}>Room gán: {rooms[0].room_id}</Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onLongPress={() => void copyAssignedRoomId(rooms[0].room_id)}
+              >
+                <View style={styles.assignRow}>
+                  <Text style={styles.meta}>Room gán: </Text>
+                  <Text selectable style={styles.assignValue}>
+                    {rooms[0].room_id}
+                  </Text>
+                </View>
+                <Text style={styles.assignHint}>Nhấn giữ để copy</Text>
+              </TouchableOpacity>
               <Text style={styles.assignNote}>
-                Hướng dẫn: gửi room_id này cho user để họ nhập ở màn hình "Room Access", sau đó user sẽ lên FAMILY (HOST).
+                Hướng dẫn: gửi room_id này cho user để họ nhập ở màn hình &quot;Room Access&quot;, sau đó user sẽ lên FAMILY (HOST).
               </Text>
             </View>
           )}
@@ -187,9 +224,25 @@ export default function AdminRoomManagementScreen() {
             <Text style={styles.roomText}>room_id: {room.room_id}</Text>
             <Text style={styles.meta}>Thành viên hiện tại: {Number(room.total_members || 0)}</Text>
             <Text style={styles.meta}>admin_join_token:</Text>
-            <Text style={styles.token}>{room.admin_join_token || "-"}</Text>
+            <View style={styles.copyRow}>
+              <Text style={[styles.token, styles.copyValue]}>{room.admin_join_token || "-"}</Text>
+              <TouchableOpacity
+                style={styles.copyBtn}
+                onPress={() => void copyToClipboard("admin_join_token", room.admin_join_token)}
+              >
+                <Text style={styles.copyTxt}>Copy</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.meta}>QR payload:</Text>
-            <Text style={styles.token}>{room.admin_qr_payload || "-"}</Text>
+            <View style={styles.copyRow}>
+              <Text style={[styles.token, styles.copyValue]}>{room.admin_qr_payload || "-"}</Text>
+              <TouchableOpacity
+                style={styles.copyBtn}
+                onPress={() => void copyToClipboard("QR payload", room.admin_qr_payload)}
+              >
+                <Text style={styles.copyTxt}>Copy</Text>
+              </TouchableOpacity>
+            </View>
             {!!room.admin_qr_payload && (
               <View style={styles.qrWrap}>
                 <Text style={styles.meta}>QR Admin (scan để join FAMILY):</Text>
@@ -249,6 +302,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   assignNote: { color: "#334155", fontSize: 12, lineHeight: 18 },
+  assignValue: { color: "#0F172A", fontWeight: "600" },
+  assignHint: { color: "#64748B", fontSize: 11, fontWeight: "500" },
+  assignRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
   primaryBtn: { backgroundColor: "#2563EB", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   primaryTxt: { color: "#FFF", textAlign: "center", fontWeight: "700", fontSize: 13 },
   refreshBtn: { backgroundColor: "#EEF2FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
@@ -257,6 +313,16 @@ const styles = StyleSheet.create({
   roomText: { color: "#111827", fontWeight: "700", fontSize: 14 },
   meta: { color: "#6B7280", fontSize: 12 },
   token: { color: "#0F172A", backgroundColor: "#F1F5F9", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, fontSize: 12 },
+  copyRow: { flexDirection: "row", alignItems: "stretch", gap: 8 },
+  copyValue: { flex: 1 },
+  copyBtn: {
+    alignSelf: "stretch",
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+  },
+  copyTxt: { color: "#1D4ED8", fontWeight: "800", fontSize: 12 },
   qrWrap: { marginTop: 4, gap: 6 },
   qrImage: { width: 220, height: 220, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFF" },
   deleteBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 4 },

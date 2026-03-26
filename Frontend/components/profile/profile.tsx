@@ -11,10 +11,10 @@ import {
   Platform,
   Keyboard,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { router, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Avatar from "../../assets/images/avatar.png";
-import { api } from "../../services/api";
+import { api, logoutUser } from "../../services/api";
 const PRIMARY = "#4B2E83";
 
 // HEADER: giống trang Quản lý thông tin sức khỏe
@@ -23,8 +23,8 @@ const ProfileHeader = () => {
 
   return (
     <View style={headerStyles.container}>
-      <TouchableOpacity onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="white" />
+      <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+        <Ionicons name="arrow-back" size={22} color="#111827" />
       </TouchableOpacity>
       <Text style={headerStyles.title}>Thông tin cá nhân</Text>
       <View style={{ width: 22 }} />
@@ -197,6 +197,7 @@ export default function ProfileScreen() {
 
       const status = response.data?.status;
       const message = response.data?.message;
+      const passwordChanged = !!response.data?.data?.passwordChanged;
 
       if (status && status !== "success") {
         setError(
@@ -210,6 +211,13 @@ export default function ProfileScreen() {
         setOldPassword("");
         setNewPassword("");
         setConfirmNewPassword("");
+      }
+
+      // Nếu đổi mật khẩu thành công, đưa user về màn login để đăng nhập lại bằng mật khẩu mới
+      // (tránh hiểu nhầm “đổi mật khẩu không vào DB” và đảm bảo token cũ không tiếp tục dùng)
+      if (passwordChanged) {
+        logoutUser();
+        router.replace("/(auths)/login");
       }
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
@@ -369,18 +377,22 @@ const screenStyles = StyleSheet.create({
 
 const headerStyles = StyleSheet.create({
   container: {
-    backgroundColor: PRIMARY,
-    height: 110,
-    paddingTop: 45,
+    backgroundColor: "#FFFFFF",
+    height: 80,
+    paddingTop: 25,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   title: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "700",
+    flex: 1,
+    textAlign: "center",
   },
 });
 

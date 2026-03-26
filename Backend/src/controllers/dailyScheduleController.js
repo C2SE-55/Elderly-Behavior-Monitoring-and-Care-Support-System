@@ -5,6 +5,8 @@ const { resolveAccessContext } = require("../services/accessControl");
 
 const normalizeType = (value) => String(value || "").trim().toLowerCase();
 
+const MAX_TITLE_LENGTH = 255;
+
 const validateCommonPayload = (payload, partial = false) => {
   const output = {};
 
@@ -16,6 +18,9 @@ const validateCommonPayload = (payload, partial = false) => {
   if (!partial || payload.title !== undefined) {
     const title = String(payload.title || "").trim();
     if (!title) return { error: "title là bắt buộc" };
+    if (title.length > MAX_TITLE_LENGTH) {
+      return { error: `title tối đa ${MAX_TITLE_LENGTH} ký tự` };
+    }
     output.title = title;
   }
   if (payload.description !== undefined) {

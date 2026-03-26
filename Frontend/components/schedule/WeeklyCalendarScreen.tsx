@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
+import { Ionicons } from "@expo/vector-icons";
 import {
   createDailySchedule,
   DailyScheduleItem,
@@ -137,6 +138,7 @@ const isSameWeekAs = (dateIso: string | undefined, weekStart: dayjs.Dayjs) => {
 
 export default function WeeklyCalendarScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showMealToast, toast } = useMealToast();
 
   const [loading, setLoading] = useState(false);
@@ -501,94 +503,101 @@ export default function WeeklyCalendarScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       {toast}
-      <View style={styles.header}>
-        <Text style={styles.title}>Quản lý lịch sinh hoạt theo tuần</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backText}>Quay lại</Text>
+      <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
         </TouchableOpacity>
+        <Text style={styles.headerBarTitle}>Quản lý lịch sinh hoạt theo tuần</Text>
+        <View style={{ width: 22 }} />
       </View>
-
-      <View style={styles.weekNavRow}>
-        <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)}>
-          <Text style={styles.weekBtnText}>Tuần trước</Text>
-        </TouchableOpacity>
-        <Text style={styles.weekText}>
-          {weekStart.format("DD/MM")} - {weekEnd.format("DD/MM")}
-        </Text>
-        <View style={styles.weekActionsRight}>
-          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset(0)}>
-            <Text style={styles.weekBtnText}>Hôm nay</Text>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.pageWrap}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+      >
+        <View style={styles.weekNavRow}>
+          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)}>
+            <Text style={styles.weekBtnText}>Tuần trước</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)}>
-            <Text style={styles.weekBtnText}>Tuần sau</Text>
-          </TouchableOpacity>
+          <Text style={styles.weekText}>
+            {weekStart.format("DD/MM")} - {weekEnd.format("DD/MM")}
+          </Text>
+          <View style={styles.weekActionsRight}>
+            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset(0)}>
+              <Text style={styles.weekBtnText}>Hôm nay</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)}>
+              <Text style={styles.weekBtnText}>Tuần sau</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
-      {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
-      {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
-      {!!roomInfo?.room_id && <Text style={styles.roomText}>Room: {roomInfo.room_id}</Text>}
-      {usingMock && <Text style={styles.mockText}>Đang dùng dữ liệu mẫu fallback.</Text>}
-      {permissionLoading && <Text style={styles.mockText}>Đang kiểm tra quyền trong room...</Text>}
+        {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
+        {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
+        {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
+        {!!roomInfo?.room_id && <Text style={styles.roomText}>Room: {roomInfo.room_id}</Text>}
+        {usingMock && <Text style={styles.mockText}>Đang dùng dữ liệu mẫu fallback.</Text>}
+        {permissionLoading && <Text style={styles.mockText}>Đang kiểm tra quyền trong room...</Text>}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterWrap}>
-        {TYPE_FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterChip, filterType === f.key && styles.filterChipActive]}
-            onPress={() => setFilterType(f.key)}
-          >
-            <Text style={[styles.filterText, filterType === f.key && styles.filterTextActive]}>{f.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterWrap} nestedScrollEnabled>
+          {TYPE_FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterChip, filterType === f.key && styles.filterChipActive]}
+              onPress={() => setFilterType(f.key)}
+            >
+              <Text style={[styles.filterText, filterType === f.key && styles.filterTextActive]}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-      {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color="#2563EB" />
-          <Text style={styles.loadingText}>Đang tải lịch...</Text>
-        </View>
-      ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-          <View style={styles.grid}>
-            <View style={styles.headerRow}>
-              <View style={styles.slotHeader}>
-                <Text style={styles.slotHeaderText}>Khung giờ</Text>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="small" color="#2563EB" />
+            <Text style={styles.loadingText}>Đang tải lịch...</Text>
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
+            <View style={styles.grid}>
+              <View style={styles.headerRow}>
+                <View style={styles.slotHeader}>
+                  <Text style={styles.slotHeaderText}>Khung giờ</Text>
+                </View>
+                {DAYS.map((d) => (
+                  <View key={d.key} style={styles.dayHeader}>
+                    <Text style={styles.dayHeaderText}>{d.label}</Text>
+                    <Text style={styles.dayDateText}>{getDateForDay(d.key).format("DD/MM")}</Text>
+                  </View>
+                ))}
               </View>
-              {DAYS.map((d) => (
-                <View key={d.key} style={styles.dayHeader}>
-                  <Text style={styles.dayHeaderText}>{d.label}</Text>
-                  <Text style={styles.dayDateText}>{getDateForDay(d.key).format("DD/MM")}</Text>
+
+              {SLOT_CONFIG.map((slot) => (
+                <View key={slot.key} style={styles.bodyRow}>
+                  <View style={styles.slotLabelCell}>
+                    <Text style={styles.slotLabel}>{slot.label}</Text>
+                  </View>
+                  {DAYS.map((d) => (
+                    <TimeSlotCell
+                      key={`${slot.key}-${d.key}`}
+                      dayKey={d.key}
+                      slotLabel={slot.label}
+                      schedules={getCellSchedules(d.key, slot.key)}
+                      isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
+                      disabled={!canManageSchedule || isPastSlot(d.key, slot.key)}
+                      onAdd={handleAdd}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))}
                 </View>
               ))}
             </View>
-
-            {SLOT_CONFIG.map((slot) => (
-              <View key={slot.key} style={styles.bodyRow}>
-                <View style={styles.slotLabelCell}>
-                  <Text style={styles.slotLabel}>{slot.label}</Text>
-                </View>
-                {DAYS.map((d) => (
-                  <TimeSlotCell
-                    key={`${slot.key}-${d.key}`}
-                    dayKey={d.key}
-                    slotLabel={slot.label}
-                    schedules={getCellSchedules(d.key, slot.key)}
-                    isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
-                    disabled={!canManageSchedule || isPastSlot(d.key, slot.key)}
-                    onAdd={handleAdd}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      )}
+          </ScrollView>
+        )}
+      </ScrollView>
 
       <ScheduleModal
         visible={modalVisible}
@@ -606,22 +615,22 @@ export default function WeeklyCalendarScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
-  header: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 6,
+  headerBar: {
+    backgroundColor: "#FFFFFF",
+    height: 56,
+    paddingTop: 6,
+    paddingHorizontal: 16,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
-  title: { fontSize: 18, fontWeight: "700", color: "#0F172A", flex: 1, paddingRight: 8 },
-  backBtn: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  headerBarTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
+  pageWrap: {
+    paddingBottom: 16,
   },
-  backText: { color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
+  title: { fontSize: 18, fontWeight: "700", color: "#0F172A", flex: 1, textAlign: "center" },
   weekNavRow: {
     marginHorizontal: 12,
     marginBottom: 6,
@@ -699,15 +708,18 @@ const styles = StyleSheet.create({
     borderColor: "#D1D5DB",
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     backgroundColor: "#FFF",
+    minHeight: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterChipActive: {
     borderColor: "#2563EB",
     backgroundColor: "#DBEAFE",
   },
-  filterText: { color: "#4B5563", fontSize: 12, fontWeight: "600" },
-  filterTextActive: { color: "#1D4ED8", fontWeight: "700" },
+  filterText: { color: "#4B5563", fontSize: 12, fontWeight: "600", lineHeight: 16 },
+  filterTextActive: { color: "#1D4ED8", fontWeight: "800" },
   loadingWrap: { paddingVertical: 30, alignItems: "center", gap: 8 },
   loadingText: { color: "#6B7280", fontSize: 12 },
   grid: {

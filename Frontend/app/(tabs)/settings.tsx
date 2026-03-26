@@ -10,7 +10,7 @@ export default function SettingsScreen() {
     <View style={styles.container}>
       <Text style={styles.text}>Cài đặt</Text>
       <Text style={styles.meta}>Role: {String(user?.role || "user").toUpperCase()}</Text>
-      <TouchableOpacity style={styles.btn} onPress={() => router.push("/(tabs)/room-access")}>
+      <TouchableOpacity style={styles.btn} onPress={() => router.push("/(screens)/room-access")}>
         <Text style={styles.btnTxt}>Quản lý room & phân quyền</Text>
       </TouchableOpacity>
     </View>
