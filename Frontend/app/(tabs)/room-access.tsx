@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import {
   getActiveRoomId,
   getCurrentUser,
@@ -122,6 +124,32 @@ export default function RoomAccessScreen() {
     }
   };
 
+  const copyHostJoinToken = async () => {
+    const txt = String(room?.host_join_token || "").trim();
+    if (!txt) {
+      if (Platform.OS === "web") {
+        alert("Chưa có token để copy.");
+      } else {
+        Alert.alert("Thông báo", "Chưa có token để copy.");
+      }
+      return;
+    }
+    try {
+      await Clipboard.setStringAsync(txt);
+      if (Platform.OS === "web") {
+        alert("Đã copy host_join_token.");
+      } else {
+        Alert.alert("Đã copy", "host_join_token đã được copy vào clipboard.");
+      }
+    } catch {
+      if (Platform.OS === "web") {
+        alert("Không thể copy. Vui lòng thử lại.");
+      } else {
+        Alert.alert("Lỗi", "Không thể copy. Vui lòng thử lại.");
+      }
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
@@ -219,7 +247,21 @@ export default function RoomAccessScreen() {
               <View style={styles.card}>
                 <Text style={styles.sectionTitle}>3) HOST chia sẻ QR token</Text>
                 <Text style={styles.meta}>host_join_token:</Text>
-                <Text style={styles.token}>{room.host_join_token || "Chưa có token"}</Text>
+                <View style={styles.tokenRow}>
+                  <Text style={styles.tokenText} selectable>
+                    {room.host_join_token || "Chưa có token"}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.copyBtn}
+                    onPress={() => void copyHostJoinToken()}
+                    disabled={!String(room.host_join_token || "").trim()}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sao chép host_join_token"
+                  >
+                    <Ionicons name="copy-outline" size={18} color="#1D4ED8" />
+                    <Text style={styles.copyBtnTxt}>Sao chép</Text>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/(tabs)/room-permissions")}>
                   <Text style={styles.secondaryTxt}>Quản lý quyền thành viên trong room</Text>
                 </TouchableOpacity>
@@ -284,14 +326,35 @@ const styles = StyleSheet.create({
   primaryTxt: { color: "#FFF", fontWeight: "700", fontSize: 13, textAlign: "center" },
   secondaryBtn: { backgroundColor: "#EEF2FF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   secondaryTxt: { color: "#1D4ED8", fontWeight: "700", fontSize: 13, textAlign: "center" },
-  token: {
-    fontSize: 12,
-    color: "#0F172A",
+  tokenRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     backgroundColor: "#F1F5F9",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
+  tokenText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#0F172A",
+    minWidth: 0,
+  },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#E0E7FF",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  copyBtnTxt: { color: "#1D4ED8", fontWeight: "700", fontSize: 12 },
   error: {
     color: "#991B1B",
     backgroundColor: "#FEE2E2",

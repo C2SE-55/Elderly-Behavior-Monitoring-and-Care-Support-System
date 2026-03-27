@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -23,6 +24,73 @@ import {
   updateCaretakerPermissions,
 } from "@/services/api";
 
+const TOGGLE_TRACK_W = 52;
+const TOGGLE_TRACK_H = 30;
+const TOGGLE_THUMB = 26;
+const TOGGLE_PAD = 2;
+const TOGGLE_TRAVEL = TOGGLE_TRACK_W - TOGGLE_THUMB - TOGGLE_PAD * 2;
+
+/** Toggle tự vẽ: tránh ScrollView “cướp” cử chỉ ngang của Switch RN; chạm = trượt có spring. */
+function PermissionToggle({
+  value,
+  onValueChange,
+  disabled,
+}: {
+  value: boolean;
+  onValueChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(anim, {
+      toValue: value ? 1 : 0,
+      friction: 9,
+      tension: 80,
+      useNativeDriver: true,
+    }).start();
+  }, [value, anim]);
+
+  const thumbX = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [TOGGLE_PAD, TOGGLE_PAD + TOGGLE_TRAVEL],
+  });
+
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={() => !disabled && onValueChange(!value)}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled: !!disabled }}
+    >
+      <View
+        style={[
+          styles.permissionToggleTrack,
+          {
+            width: TOGGLE_TRACK_W,
+            height: TOGGLE_TRACK_H,
+            backgroundColor: value ? "#93C5FD" : "#E5E7EB",
+            opacity: disabled ? 0.5 : 1,
+          },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.permissionToggleThumb,
+            {
+              width: TOGGLE_THUMB,
+              height: TOGGLE_THUMB,
+              top: (TOGGLE_TRACK_H - TOGGLE_THUMB) / 2,
+              transform: [{ translateX: thumbX }],
+            },
+          ]}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function RoomPermissionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -32,11 +100,15 @@ export default function RoomPermissionsScreen() {
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const togglePendingRef = useRef<Set<number>>(new Set());
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     try {
-      setLoading(true);
-      setError("");
+      if (!silent) {
+        setLoading(true);
+        setError("");
+      }
       const roomData = await getMyRoom();
       setRoom(roomData);
       if (roomData?.member_role === "host") {
@@ -46,9 +118,13 @@ export default function RoomPermissionsScreen() {
         setMembers([]);
       }
     } catch (e: any) {
-      setError(e?.response?.data?.message || "Không tải được danh sách thành viên.");
+      if (!silent) {
+        setError(e?.response?.data?.message || "Không tải được danh sách thành viên.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -58,18 +134,32 @@ export default function RoomPermissionsScreen() {
 
   const onToggle = async (
     member: RoomMember,
-    field: "can_receive_schedule_notifications" | "can_receive_medication_notifications"
+    field: "can_receive_schedule_notifications" | "can_receive_medication_notifications",
+    nextValue: boolean
   ) => {
+    if (togglePendingRef.current.has(member.user_id)) return;
+    const prevValue = member[field];
+    if (nextValue === prevValue) return;
+
+    togglePendingRef.current.add(member.user_id);
+    setMembers((prev) =>
+      prev.map((m) => (m.user_id === member.user_id ? { ...m, [field]: nextValue } : m))
+    );
+    setError("");
+    setSuccess("");
+
     try {
       setUpdatingId(member.user_id);
-      setError("");
-      setSuccess("");
-      await updateCaretakerPermissions(member.user_id, { [field]: !member[field] });
+      await updateCaretakerPermissions(member.user_id, { [field]: nextValue });
       setSuccess("Cập nhật quyền thành công.");
-      await loadAll();
+      await loadAll({ silent: true });
     } catch (e: any) {
+      setMembers((prev) =>
+        prev.map((m) => (m.user_id === member.user_id ? { ...m, [field]: prevValue } : m))
+      );
       setError(e?.response?.data?.message || "Không thể cập nhật quyền.");
     } finally {
+      togglePendingRef.current.delete(member.user_id);
       setUpdatingId(null);
     }
   };
@@ -87,7 +177,7 @@ export default function RoomPermissionsScreen() {
             setSuccess("");
             await kickCaretaker(userId);
             setSuccess("Kick thành viên thành công.");
-            await loadAll();
+            await loadAll({ silent: true });
           } catch (e: any) {
             setError(e?.response?.data?.message || "Không thể kick thành viên.");
           } finally {
@@ -125,7 +215,7 @@ export default function RoomPermissionsScreen() {
       >
         <ScrollView
           contentContainerStyle={styles.wrap}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           contentInsetAdjustmentBehavior="automatic"
         >
         {room?.member_role !== "host" ? (
@@ -155,18 +245,18 @@ export default function RoomPermissionsScreen() {
                     <>
                       <View style={styles.toggleRow}>
                         <Text style={styles.toggleLabel}>Nhận thông báo lịch sinh hoạt</Text>
-                        <Switch
+                        <PermissionToggle
                           value={member.can_receive_schedule_notifications}
-                          onValueChange={() => onToggle(member, "can_receive_schedule_notifications")}
                           disabled={updatingId === member.user_id}
+                          onValueChange={(v) => void onToggle(member, "can_receive_schedule_notifications", v)}
                         />
                       </View>
                       <View style={styles.toggleRow}>
                         <Text style={styles.toggleLabel}>Nhận thông báo nhắc thuốc</Text>
-                        <Switch
+                        <PermissionToggle
                           value={member.can_receive_medication_notifications}
-                          onValueChange={() => onToggle(member, "can_receive_medication_notifications")}
                           disabled={updatingId === member.user_id}
+                          onValueChange={(v) => void onToggle(member, "can_receive_medication_notifications", v)}
                         />
                       </View>
                       <TouchableOpacity
@@ -242,4 +332,20 @@ const styles = StyleSheet.create({
   },
   loadingWrap: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8 },
   loadingTxt: { color: "#6B7280", fontSize: 12 },
+  permissionToggleTrack: {
+    borderRadius: 999,
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  permissionToggleThumb: {
+    position: "absolute",
+    left: 0,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2,
+    elevation: 3,
+  },
 });

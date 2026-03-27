@@ -94,8 +94,415 @@ function isSectionHeader(line: string): boolean {
   return t.length < 55 && (/\(\d+[\s–-]*\d*\s*h\)/.test(t) || /^[A-ZÀ-Ỹ\s\d()–-]+$/.test(t));
 }
 
+/** Payload thực đơn / dinh dưỡng chatbot trả về dạng JSON */
+type AssistantMealDayPayload = {
+  date?: string;
+  meals?: Partial<Record<MealKey, string>>;
+  nutrition?: Partial<Record<"kcal" | "protein" | "fat" | "carbs" | "fiber" | "sodium", number>>;
+};
+
+const MEAL_LABEL_VI: Record<MealKey, string> = {
+  breakfast: "Bữa sáng",
+  lunch: "Bữa trưa",
+  dinner: "Bữa tối",
+};
+
+const NUTRITION_ORDER = ["kcal", "protein", "fat", "carbs", "fiber", "sodium"] as const;
+
+const NUTRITION_LABEL_VI: Record<(typeof NUTRITION_ORDER)[number], string> = {
+  kcal: "Năng lượng",
+  protein: "Đạm",
+  fat: "Chất béo",
+  carbs: "Tinh bột",
+  fiber: "Chất xơ",
+  sodium: "Natri",
+};
+
+function stripAssistantMarkdownFence(text: string): string {
+  let t = text.trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+  if (fenced) return fenced[1].trim();
+  if (t.startsWith("```")) {
+    const firstNl = t.indexOf("\n");
+    if (firstNl !== -1) t = t.slice(firstNl + 1);
+    if (t.endsWith("```")) t = t.slice(0, -3);
+    t = t.trim();
+  }
+  return t;
+}
+
+function isMealDayShape(o: unknown): o is AssistantMealDayPayload {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  const r = o as Record<string, unknown>;
+  if (r.meals != null && typeof r.meals === "object" && !Array.isArray(r.meals)) return true;
+  if (r.nutrition != null && typeof r.nutrition === "object" && !Array.isArray(r.nutrition)) return true;
+  return false;
+}
+
+/** Bắt chuỗi JSON thực đơn (có thể bọc ```json ... ```) */
+function tryParseAssistantMealJson(content: string): AssistantMealDayPayload[] | null {
+  let raw = stripAssistantMarkdownFence(content);
+  if (!raw.startsWith("[") && !raw.startsWith("{")) {
+    const i = raw.indexOf("[");
+    if (i >= 0) raw = raw.slice(i);
+  }
+  if (!raw.startsWith("[") && !raw.startsWith("{")) return null;
+  try {
+    const data = JSON.parse(raw) as unknown;
+    const arr = Array.isArray(data) ? data : [data];
+    if (!arr.length || !arr.every(isMealDayShape)) return null;
+    return arr;
+  } catch {
+    return null;
+  }
+}
+
+const assistantStructuredStyles = StyleSheet.create({
+  dayBlock: { marginBottom: 14 },
+  mealParagraph: { marginTop: 6 },
+  mealLabel: { fontWeight: "700" as const, color: COLORS.textPrimary },
+  nutritionBlock: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  nutritionLine: { marginTop: 4 },
+});
+
+function formatNutrientValue(key: (typeof NUTRITION_ORDER)[number], v: number): string {
+  if (key === "kcal") return `${v} kcal`;
+  if (key === "sodium") return `${v} mg`;
+  return `${v} g`;
+}
+
+/** Hiển thị thực đơn / dinh dưỡng từ JSON — thay cho chuỗi JSON thô */
+function FormattedAssistantMealDays({
+  days,
+  textStyle,
+  sectionStyle,
+}: {
+  days: AssistantMealDayPayload[];
+  textStyle: object;
+  sectionStyle: object;
+}) {
+  return (
+    <View style={markdownBlocksWrapStyle}>
+      {days.map((day, idx) => (
+        <View key={`${day.date ?? "d"}-${idx}`} style={assistantStructuredStyles.dayBlock}>
+          {!!day.date?.trim() && (
+            <Text
+              style={[
+                textStyle,
+                sectionStyle,
+                idx === 0 && { marginTop: 0 },
+              ]}
+            >
+              {dayjs(day.date).isValid() ? dayjs(day.date).format("DD/MM/YYYY") : day.date}
+            </Text>
+          )}
+          {(["breakfast", "lunch", "dinner"] as MealKey[]).map((key) => {
+            const line = String(day.meals?.[key] ?? "").trim();
+            if (!line) return null;
+            return (
+              <Text key={key} style={[textStyle, assistantStructuredStyles.mealParagraph]}>
+                <Text style={assistantStructuredStyles.mealLabel}>{MEAL_LABEL_VI[key]}: </Text>
+                {line}
+              </Text>
+            );
+          })}
+          {day.nutrition &&
+            NUTRITION_ORDER.some((k) => {
+              const v = day.nutrition?.[k];
+              return v != null && !Number.isNaN(Number(v));
+            }) && (
+              <View style={assistantStructuredStyles.nutritionBlock}>
+                <Text style={[textStyle, sectionStyle, { marginTop: 0, marginBottom: 2 }]}>Dinh dưỡng (ước tính)</Text>
+                {NUTRITION_ORDER.map((key) => {
+                  const raw = day.nutrition?.[key];
+                  if (raw == null || Number.isNaN(Number(raw))) return null;
+                  const num = Number(raw);
+                  return (
+                    <Text key={key} style={[textStyle, assistantStructuredStyles.nutritionLine]}>
+                      <Text style={assistantStructuredStyles.mealLabel}>{NUTRITION_LABEL_VI[key]}: </Text>
+                      {formatNutrientValue(key, Math.round(num * 10) / 10)}
+                    </Text>
+                  );
+                })}
+              </View>
+            )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const inlineBoldStyle = { fontWeight: "700" as const };
+
+/** Parse **đậm** trong một dòng → nội dung hợp lệ làm con của <Text> */
+function renderTextWithBoldSegments(line: string, baseStyle: object): React.ReactNode {
+  const segments = line.split(/(\*\*[^*]+\*\*)/g);
+  if (segments.length === 1) {
+    return line;
+  }
+  return segments.map((seg, i) => {
+    if (!seg) return null;
+    const bm = seg.match(/^\*\*([^*]+)\*\*$/);
+    if (bm) {
+      return (
+        <Text key={i} style={[baseStyle, inlineBoldStyle]}>
+          {bm[1]}
+        </Text>
+      );
+    }
+    return seg;
+  });
+}
+
+function looksLikeMarkdownAssistantText(text: string): boolean {
+  return (
+    /\*\*[^*]+\*\*/.test(text) ||
+    /^\s*[-*•·\u2013\u2014]\s+\S/m.test(text) ||
+    /^\s*•\s*\S/m.test(text) ||
+    /^\s*\d+\.\s+\S/m.test(text)
+  );
+}
+
+const markdownBlocksWrapStyle = { width: "100%" as const };
+
+const USER_MEAL_KEY_VI: Record<string, string> = {
+  breakfast: "Sáng",
+  lunch: "Trưa",
+  dinner: "Tối",
+};
+
+const userPromptBubbleStyles = StyleSheet.create({
+  plainText: { color: "#FFFFFF", fontSize: 14, lineHeight: 22, flexShrink: 1 },
+  promptTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "800", marginBottom: 8 },
+  promptLine: { color: "rgba(255,255,255,0.96)", fontSize: 14, lineHeight: 22, marginBottom: 4 },
+  promptHint: { color: "rgba(255,255,255,0.85)", fontSize: 12, lineHeight: 18, marginBottom: 6 },
+  promptExplain: {
+    color: "rgba(255,255,255,0.93)",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  mdSection: {
+    fontWeight: "700",
+    fontSize: 13,
+    color: "#EDE9FE",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  mdParagraph: { marginBottom: 6 },
+  mdText: { color: "#FFFFFF", fontSize: 14, lineHeight: 22 },
+});
+
+function isStoredMealPlanJsonPrompt(content: string): boolean {
+  return (
+    /JSON array/i.test(content) && /"meals"\s*:/.test(content) && /YYYY-MM-DD/.test(content)
+  );
+}
+
+function parseMealPlanPromptDisplay(
+  content: string
+): { start: string; end: string; mealsStr?: string } | null {
+  const between =
+    content.match(/tu ngay\s+(\d{4}-\d{2}-\d{2})\s+den\s+(\d{4}-\d{2}-\d{2})/i) ||
+    content.match(/Khoảng ngày:\s*(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})/i) ||
+    content.match(/Khoang ngay:\s*(\d{4}-\d{2}-\d{2})\s*->\s*(\d{4}-\d{2}-\d{2})/i);
+  if (!between) return null;
+  const start = between[1];
+  const end = between[2];
+  const mealsMatch =
+    content.match(/Chỉ tạo chi tiết cho các bữa:\s*([^\n]+)/i) ||
+    content.match(/Chi tao chi tiet cho cac bua duoc chon:\s*([^\n]+)/i) ||
+    content.match(/chi tiet cho cac bua[^:]*:\s*([^\n]+)/i);
+  let mealsStr = mealsMatch?.[1]?.trim();
+  if (mealsStr) {
+    mealsStr = mealsStr
+      .replace(/\.\s*$/, "")
+      .replace(/\s*Các bữa kh.*$/i, "")
+      .replace(/\s*Cac bua kh.*$/i, "")
+      .trim();
+  }
+  return { start, end, mealsStr };
+}
+
+/** Tin user là prompt nội bộ gửi chatbot — hiển thị gọn, không dải một dòng */
+function MealPlanUserPromptBubble({ content }: { content: string }) {
+  const meta = parseMealPlanPromptDisplay(content);
+  const mealsReadable =
+    meta?.mealsStr
+      ?.split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map((k) => USER_MEAL_KEY_VI[k.toLowerCase()] || k)
+      .join(", ") ?? "";
+
+  return (
+    <View style={markdownBlocksWrapStyle}>
+      <Text style={userPromptBubbleStyles.promptTitle}>Tạo thực đơn</Text>
+      {meta ? (
+        <>
+          <Text style={userPromptBubbleStyles.promptLine}>
+            {dayjs(meta.start).format("DD/MM/YYYY")} → {dayjs(meta.end).format("DD/MM/YYYY")}
+          </Text>
+          {mealsReadable.length > 0 ? (
+            <Text style={userPromptBubbleStyles.promptLine}>Bữa có món: {mealsReadable}</Text>
+          ) : null}
+        </>
+      ) : (
+        <Text style={userPromptBubbleStyles.promptHint}>
+          Ứng dụng đang gửi yêu cầu tạo thực đơn tới trợ lý; kết quả gợi ý sẽ hiện ở tin nhắn hoặc khung «Thực đơn» phía trên.
+        </Text>
+      )}
+      <Text style={userPromptBubbleStyles.promptExplain}>
+        Trợ lý sẽ gợi ý món cụ thể cho từng bữa (sáng, trưa, tối) trong khoảng ngày bạn chọn. Bạn chỉ cần đọc gợi ý bên dưới, chỉnh sửa nếu muốn rồi áp dụng vào lịch ăn — không cần xem định dạng kỹ thuật.
+      </Text>
+      {!meta ? (
+        <Text style={[userPromptBubbleStyles.plainText, { marginTop: 10 }]} selectable>
+          {content}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function UserMessageBubbleBody({ content }: { content: string }) {
+  if (isStoredMealPlanJsonPrompt(content)) {
+    return <MealPlanUserPromptBubble content={content} />;
+  }
+  if (looksLikeMarkdownAssistantText(content)) {
+    return (
+      <MarkdownishAssistantContent
+        content={content}
+        style={{
+          section: userPromptBubbleStyles.mdSection,
+          paragraph: userPromptBubbleStyles.mdParagraph,
+          text: userPromptBubbleStyles.mdText,
+        }}
+      />
+    );
+  }
+  return <Text style={userPromptBubbleStyles.plainText}>{content}</Text>;
+}
+
+/** Công thức / hướng dẫn dạng markdown nhẹ từ LLM — **tiêu đề**, bullet, khoảng cách */
+function MarkdownishAssistantContent({
+  content,
+  style,
+}: {
+  content: string;
+  style: { section: object; paragraph: object; text: object };
+}) {
+  const lines = content.split(/\n/);
+  const blocks: React.ReactNode[] = [];
+  let k = 0;
+
+  const wrapParagraph = (trimmed: string, withParagraphSpacing: boolean) => (
+    <View
+      key={`p-${k++}`}
+      style={[withParagraphSpacing ? { marginBottom: 12 } : undefined, { width: "100%" }]}
+    >
+      <Text style={[style.text, style.paragraph]}>
+        {renderTextWithBoldSegments(trimmed, [style.text, style.paragraph])}
+      </Text>
+    </View>
+  );
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trimEnd();
+    const t = trimmed.trim();
+
+    if (!t) {
+      blocks.push(<View key={`sp-${k++}`} style={{ height: 6 }} />);
+      continue;
+    }
+
+    const bullet = t.match(/^[-*•·\u2013\u2014]\s+(.+)$/) || t.match(/^•\s*(.+)$/);
+    if (bullet) {
+      blocks.push(
+        <View
+          key={`li-${k++}`}
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            marginBottom: 8,
+            paddingRight: 4,
+            width: "100%",
+          }}
+        >
+          <Text style={[style.text, { width: 16, lineHeight: 22, marginTop: 1 }]}>•</Text>
+          <Text style={[style.text, { flex: 1, minWidth: 0, lineHeight: 22 }]}>
+            {renderTextWithBoldSegments(bullet[1], style.text)}
+          </Text>
+        </View>
+      );
+      continue;
+    }
+
+    const numbered = t.match(/^(\d+)\.\s+(.+)$/);
+    if (numbered) {
+      blocks.push(
+        <View
+          key={`ln-${k++}`}
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            marginBottom: 8,
+            paddingRight: 4,
+            width: "100%",
+          }}
+        >
+          <Text style={[style.text, { minWidth: 22, lineHeight: 22, marginTop: 1, fontWeight: "600" }]}>
+            {numbered[1]}.
+          </Text>
+          <Text style={[style.text, { flex: 1, minWidth: 0, lineHeight: 22 }]}>
+            {renderTextWithBoldSegments(numbered[2], style.text)}
+          </Text>
+        </View>
+      );
+      continue;
+    }
+
+    const loneHeading = t.match(/^\*\*([^*]+)\*\*\s*:?\s*$/);
+    if (loneHeading) {
+      blocks.push(
+        <Text
+          key={`hd-${k++}`}
+          style={[
+            style.text,
+            style.section,
+            blocks.length ? { marginTop: 6 } : { marginTop: 0 },
+            { marginBottom: 4 },
+          ]}
+        >
+          {loneHeading[1].trim()}
+        </Text>
+      );
+      continue;
+    }
+
+    blocks.push(wrapParagraph(t, true));
+  }
+
+  return <View style={markdownBlocksWrapStyle}>{blocks}</View>;
+}
+
 /** Render nội dung tin nhắn — tách section để dễ đọc (meal plan, v.v.) */
 function MessageContent({ content, style }: { content: string; style: { section: object; paragraph: object; text: object } }) {
+  const structured = tryParseAssistantMealJson(content);
+  if (structured && structured.length) {
+    return (
+      <FormattedAssistantMealDays
+        days={structured}
+        textStyle={style.text}
+        sectionStyle={style.section}
+      />
+    );
+  }
+
+  if (looksLikeMarkdownAssistantText(content)) {
+    return <MarkdownishAssistantContent content={content} style={style} />;
+  }
+
   const lines = content.split(/\n/);
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -131,11 +538,23 @@ function MessageContent({ content, style }: { content: string; style: { section:
 /** Chuẩn hóa phản hồi để tránh hiển thị rỗng/truncated khi backend đổi schema */
 function normalizeAssistantReply(rawReply: unknown): string {
   if (typeof rawReply === "string" && rawReply.trim()) return rawReply.trim();
+  if (Array.isArray(rawReply) && rawReply.length && rawReply.every(isMealDayShape)) {
+    return JSON.stringify(rawReply);
+  }
   if (rawReply && typeof rawReply === "object") {
     const obj = rawReply as Record<string, unknown>;
+    for (const key of ["plan", "days", "meal_plan", "meals"] as const) {
+      const v = obj[key];
+      if (Array.isArray(v) && v.length && v.every(isMealDayShape)) {
+        return JSON.stringify(v);
+      }
+    }
     const candidates = [obj.reply, obj.message, obj.answer, obj.content];
     for (const c of candidates) {
       if (typeof c === "string" && c.trim()) return c.trim();
+      if (Array.isArray(c) && c.length && c.every(isMealDayShape)) {
+        return JSON.stringify(c);
+      }
     }
   }
   return "Mình chưa nhận được nội dung phản hồi rõ ràng. Bạn thử gửi lại giúp mình nhé.";
@@ -216,6 +635,12 @@ const hasDateToken = (text: string) =>
 
 const hasRangeKeyword = (text: string) =>
   /(từ|tu|đến|den|tới|\bto\b|-)/i.test(String(text || ""));
+
+/** Có 2 ngày + user nói rõ tạo thực đơn (không cần bật nút Thực đơn trước) */
+const textImpliesMealPlanRequest = (text: string) =>
+  /(thực\s*đơn|thuc\s*don|gợi\s*ý\s*thực|goi\s*y\s*thuc|tạo\s+thực|tao\s+thuc|meal\s*plan|menu\s+theo\s+ngày)/i.test(
+    String(text || "")
+  );
 
 const INITIAL_MESSAGE: ChatMessage = {
   id: "welcome",
@@ -366,63 +791,101 @@ const FloatingAssistant: React.FC = () => {
     };
     setMessages((prev) => [...prev, userMsg]);
 
-    if (mealPlannerOpen) {
-      const parsedRange = extractDateRangeFromText(text);
-      if (parsedRange) {
-        const mealKeys = extractMealKeysFromText(text);
-        setPlannerMealKeys(mealKeys);
-        if (generatingMealPlan) return;
-        setGeneratingMealPlan(true);
-        try {
-          const userId = resolveUserId();
-          const res = await generateMealPlanByDateRange(
-            parsedRange.start,
-            parsedRange.end,
-            mealKeys,
-            {
-              user_id: userId,
-              session_id: sessionId ?? undefined,
-            }
-          );
-          if (res.session_id) {
-            setSessionId(res.session_id);
-            setLastChatSessionId(res.session_id);
-          }
-          if (!res.plan.length) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `a-${Date.now()}`,
-                role: "assistant",
-                content: "Mình chưa tạo được thực đơn hợp lệ từ thông tin này. Bạn thử nhập lại rõ hơn nhé.",
-              },
-            ]);
-            return;
-          }
-          setMealPlanDays(
-            res.plan.map((day) => ({
-              date: day.date,
-              meals: {
-                breakfast: day.meals.breakfast || "",
-                lunch: day.meals.lunch || "",
-                dinner: day.meals.dinner || "",
-              },
-            }))
-          );
-          Animated.timing(mealPlanFade, {
-            toValue: 1,
-            duration: 280,
-            useNativeDriver: true,
-          }).start();
-          showPlannerToast("Da tao thuc don tu thong tin ban vua nhap.");
-        } finally {
-          setGeneratingMealPlan(false);
-        }
+    const parsedRange = extractDateRangeFromText(text);
+    const mealIntent = textImpliesMealPlanRequest(text);
+    const shouldRunMealPlan = !!parsedRange && (mealIntent || mealPlannerOpen);
+
+    if (shouldRunMealPlan) {
+      if (generatingMealPlan) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: "Mình đang tạo thực đơn, bạn đợi vài giây rồi thử lại nhé.",
+          },
+        ]);
         return;
       }
 
-      // Chỉ gợi ý lại format khi user đang nhập "khoảng ngày" dở dang.
-      // Không chặn các câu hỏi dinh dưỡng có nhắc 1 ngày cụ thể.
+      if (!mealPlannerOpen && mealIntent) {
+        setMealPlannerOpen(true);
+        Animated.timing(mealPlanFade, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+
+      const mealKeys = extractMealKeysFromText(text);
+      setPlannerMealKeys(mealKeys);
+      setGeneratingMealPlan(true);
+      try {
+        const userId = resolveUserId();
+        const res = await generateMealPlanByDateRange(
+          parsedRange!.start,
+          parsedRange!.end,
+          mealKeys,
+          {
+            user_id: userId,
+            session_id: sessionId ?? undefined,
+          }
+        );
+        if (res.session_id) {
+          setSessionId(res.session_id);
+          setLastChatSessionId(res.session_id);
+        }
+        if (!res.plan.length) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              role: "assistant",
+              content: "Mình chưa tạo được thực đơn hợp lệ từ thông tin này. Bạn thử nhập lại rõ hơn nhé.",
+            },
+          ]);
+          return;
+        }
+        setMealPlanDays(
+          res.plan.map((day) => ({
+            date: day.date,
+            meals: {
+              breakfast: day.meals.breakfast || "",
+              lunch: day.meals.lunch || "",
+              dinner: day.meals.dinner || "",
+            },
+          }))
+        );
+        Animated.timing(mealPlanFade, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }).start();
+        showPlannerToast("Đã tạo thực đơn từ nội dung bạn vừa nhập.");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: `Đã gợi ý thực đơn từ ${parsedRange!.start} đến ${parsedRange!.end}. Bạn xem khung «Thực đơn» phía trên, chỉnh sửa rồi bấm áp dụng.`,
+          },
+        ]);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: "Không thể tạo thực đơn lúc này. Bạn kiểm tra mạng / Chatbot rồi thử lại.",
+          },
+        ]);
+      } finally {
+        setGeneratingMealPlan(false);
+      }
+      return;
+    }
+
+    if (mealPlannerOpen) {
       const looksLikeIncompleteDateRange = hasDateToken(text) && hasRangeKeyword(text) && !parsedRange;
       if (looksLikeIncompleteDateRange) {
         setMessages((prev) => [
@@ -1127,7 +1590,7 @@ const FloatingAssistant: React.FC = () => {
                     ) : (
                       <View key={msg.id} style={styles.messageRowRight}>
                         <View style={styles.messageBubbleRight}>
-                          <Text style={styles.messageTextRight}>{msg.content}</Text>
+                          <UserMessageBubbleBody content={msg.content} />
                         </View>
                       </View>
                     )
@@ -1483,6 +1946,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingBottom: 20,
     flexGrow: 1,
+    width: "100%",
   },
   quickActionRow: {
     marginBottom: 10,
@@ -1587,13 +2051,17 @@ const styles = StyleSheet.create({
   messageRowLeft: {
     alignItems: "flex-start",
     marginBottom: 12,
+    width: "100%",
   },
   messageRowRight: {
     alignItems: "flex-end",
     marginBottom: 12,
+    width: "100%",
   },
   messageBubbleLeft: {
+    alignSelf: "flex-start",
     maxWidth: "92%",
+    width: "92%",
     backgroundColor: COLORS.bubbleAssistant,
     paddingHorizontal: 14,
     paddingVertical: 12,

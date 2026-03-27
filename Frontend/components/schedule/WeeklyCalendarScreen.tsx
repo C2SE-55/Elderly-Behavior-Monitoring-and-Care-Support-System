@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Notifications from "expo-notifications";
 import { Ionicons } from "@expo/vector-icons";
 import {
   createDailySchedule,
@@ -18,9 +17,9 @@ import {
   subscribeActiveRoomChange,
 } from "@/services/api";
 import { subscribeScheduleRefresh } from "@/services/scheduleEvents";
+import { resetScheduleActivityReminderKeys } from "@/services/scheduleActivityReminders";
 import ScheduleModal from "./ScheduleModal";
 import TimeSlotCell from "./TimeSlotCell";
-import { useMealToast } from "./NotificationService";
 
 type DayKey = DailyScheduleItem["day_of_week"];
 type SlotKey = "morning" | "noon" | "afternoon" | "evening";
@@ -139,8 +138,6 @@ const isSameWeekAs = (dateIso: string | undefined, weekStart: dayjs.Dayjs) => {
 export default function WeeklyCalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { showMealToast, toast } = useMealToast();
-
   const [loading, setLoading] = useState(false);
   const [permissionLoading, setPermissionLoading] = useState(true);
   const [screenError, setScreenError] = useState("");
@@ -157,47 +154,6 @@ export default function WeeklyCalendarScreen() {
   const [editingItem, setEditingItem] = useState<DailyScheduleItem | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [now, setNow] = useState(dayjs());
-  const notifiedRef = useRef<Record<string, true>>({});
-
-  useEffect(() => {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
-  }, []);
-
-  useEffect(() => {
-    const setupNotifications = async () => {
-      if (Platform.OS === "web") return;
-      try {
-        const perms = await Notifications.getPermissionsAsync();
-        let status = perms.status;
-        if (status !== "granted") {
-          const req = await Notifications.requestPermissionsAsync();
-          status = req.status;
-        }
-        if (status !== "granted") {
-          setScreenError("Chưa cấp quyền thông báo nên không thể push notification.");
-          return;
-        }
-        if (Platform.OS === "android") {
-          await Notifications.setNotificationChannelAsync("weekly-schedule", {
-            name: "Weekly Schedule",
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 250, 250, 250],
-          });
-        }
-      } catch {
-        // keep silent; toast in-app still works
-      }
-    };
-    setupNotifications();
-  }, []);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -277,7 +233,7 @@ export default function WeeklyCalendarScreen() {
 
   useEffect(() => {
     const unsubscribe = subscribeActiveRoomChange(() => {
-      notifiedRef.current = {};
+      resetScheduleActivityReminderKeys();
       void loadPermissions();
       void loadSchedules();
     });
@@ -357,39 +313,6 @@ export default function WeeklyCalendarScreen() {
   const getCellSchedules = (dayKey: DayKey, slotKey: SlotKey) =>
     filteredSchedules.filter((item) => item.day_of_week === dayKey && getSlotByTime(item.start_time) === slotKey);
 
-  const checkStartNotifications = useCallback(
-    (refNow: dayjs.Dayjs, source: DailyScheduleItem[]) => {
-      const currentDayKey = getCurrentDayKey(refNow);
-      const hhmm = refNow.format("HH:mm");
-      const dateKey = refNow.format("YYYY-MM-DD");
-
-      source.forEach((item) => {
-        if (item.day_of_week !== currentDayKey) return;
-        if (normalizeHHMM(item.start_time) !== hhmm) return;
-        const key = `${dateKey}-${item.id}`;
-        if (notifiedRef.current[key]) return;
-        notifiedRef.current[key] = true;
-        const heading = item.type === "meal" ? "Đã tới giờ ăn!" : "Đến giờ sinh hoạt";
-        showMealToast({
-          heading,
-          title: item.title,
-          description: item.description,
-        });
-        if (Platform.OS !== "web") {
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: heading,
-              body: item.description ? `${item.title} - ${item.description}` : item.title,
-              sound: true,
-            },
-            trigger: null,
-          }).catch(() => {});
-        }
-      });
-    },
-    [showMealToast]
-  );
-
   useEffect(() => {
     const timer = setInterval(async () => {
       await loadPermissions();
@@ -398,11 +321,6 @@ export default function WeeklyCalendarScreen() {
     }, 60 * 1000);
     return () => clearInterval(timer);
   }, [loadPermissions, loadSchedules, syncServerNow]);
-
-  useEffect(() => {
-    if (!canReceiveScheduleNotifications) return;
-    checkStartNotifications(now, schedules);
-  }, [canReceiveScheduleNotifications, checkStartNotifications, now, schedules]);
 
   const handleAdd = (dayKey: DayKey) => {
     if (!canManageSchedule) {
@@ -504,7 +422,6 @@ export default function WeeklyCalendarScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
-      {toast}
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
         <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
           <Ionicons name="arrow-back" size={22} color="#111827" />

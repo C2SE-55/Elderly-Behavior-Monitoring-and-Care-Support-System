@@ -690,13 +690,17 @@ export const generateMealPlanByDateRange = async (
 ): Promise<{ plan: GeneratedMealPlanDay[]; rawReply: string; session_id: number | null }> => {
   const selectedMeals = Array.isArray(mealKeys) && mealKeys.length ? mealKeys : ["breakfast", "lunch", "dinner"];
   const selectedMealsText = selectedMeals.join(", ");
-  const prompt =
-    "Hay tao thuc don theo JSON array dung format " +
-    '[{"date":"YYYY-MM-DD","meals":{"breakfast":"...","lunch":"...","dinner":"..."}}] ' +
-    `tu ngay ${startDate} den ${endDate}. ` +
-    `Chi tao chi tiet cho cac bua duoc chon: ${selectedMealsText}. ` +
-    "Cac bua khong duoc chon thi de chuoi rong ''. " +
-    "Chi tra ve JSON, khong them giai thich.";
+  const prompt = [
+    "Hãy tạo thực đơn theo JSON array, đúng format sau (giữ nguyên key tiếng Anh):",
+    "",
+    '[{"date":"YYYY-MM-DD","meals":{"breakfast":"...","lunch":"...","dinner":"..."}}]',
+    "",
+    `Khoảng ngày: ${startDate} → ${endDate}.`,
+    `Chỉ tạo chi tiết cho các bữa: ${selectedMealsText}.`,
+    'Các bữa không chọn để chuỗi rỗng "".',
+    "",
+    "Chỉ trả về JSON, không thêm giải thích.",
+  ].join("\n");
 
   const res = await sendChatMessage(prompt, options);
   const plan = parseMealPlanJson(res.reply);

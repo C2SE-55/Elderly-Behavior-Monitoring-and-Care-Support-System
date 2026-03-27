@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DailyScheduleItem, DailyScheduleType, DayOfWeek } from "@/services/api";
 
 type FormValue = {
@@ -50,6 +54,7 @@ export default function ScheduleModal({
   onClose,
   onSubmit,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const defaultValue = useMemo<FormValue>(
     () => ({
       day_of_week: initialDay,
@@ -100,90 +105,110 @@ export default function ScheduleModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>{editingItem ? "Sửa lịch sinh hoạt" : "Thêm lịch sinh hoạt"}</Text>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingTop: Math.max(insets.top, 12),
+                paddingBottom: insets.bottom + 24,
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.card}>
+              <Text style={styles.title}>{editingItem ? "Sửa lịch sinh hoạt" : "Thêm lịch sinh hoạt"}</Text>
 
-          <Text style={styles.label}>Ngày</Text>
-          <View style={styles.rowOptions}>
-            {DAY_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.pill, value.day_of_week === opt.key && styles.pillActive]}
-                onPress={() => setValue((prev) => ({ ...prev, day_of_week: opt.key }))}
-              >
-                <Text style={[styles.pillText, value.day_of_week === opt.key && styles.pillTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+              <Text style={styles.label}>Ngày</Text>
+              <View style={styles.rowOptions}>
+                {DAY_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.pill, value.day_of_week === opt.key && styles.pillActive]}
+                    onPress={() => setValue((prev) => ({ ...prev, day_of_week: opt.key }))}
+                  >
+                    <Text style={[styles.pillText, value.day_of_week === opt.key && styles.pillTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          <Text style={styles.label}>Tiêu đề</Text>
-          <TextInput
-            value={value.title}
-            onChangeText={(t) => setValue((prev) => ({ ...prev, title: t }))}
-            style={styles.input}
-            placeholder="Ví dụ: Đi bộ"
-          />
-
-          <Text style={styles.label}>Mô tả</Text>
-          <TextInput
-            value={value.description}
-            onChangeText={(t) => setValue((prev) => ({ ...prev, description: t }))}
-            style={[styles.input, styles.textArea]}
-            placeholder="Mô tả chi tiết"
-            multiline
-          />
-
-          <View style={styles.timeRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Bắt đầu</Text>
+              <Text style={styles.label}>Tiêu đề</Text>
               <TextInput
-                value={value.start_time}
-                onChangeText={(t) => setValue((prev) => ({ ...prev, start_time: t }))}
+                value={value.title}
+                onChangeText={(t) => setValue((prev) => ({ ...prev, title: t }))}
                 style={styles.input}
-                placeholder="HH:mm"
+                placeholder="Ví dụ: Đi bộ"
               />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Kết thúc</Text>
+
+              <Text style={styles.label}>Mô tả</Text>
               <TextInput
-                value={value.end_time}
-                onChangeText={(t) => setValue((prev) => ({ ...prev, end_time: t }))}
-                style={styles.input}
-                placeholder="HH:mm"
+                value={value.description}
+                onChangeText={(t) => setValue((prev) => ({ ...prev, description: t }))}
+                style={[styles.input, styles.textArea]}
+                placeholder="Mô tả chi tiết"
+                multiline
+                scrollEnabled={false}
               />
+
+              <View style={styles.timeRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Bắt đầu</Text>
+                  <TextInput
+                    value={value.start_time}
+                    onChangeText={(t) => setValue((prev) => ({ ...prev, start_time: t }))}
+                    style={styles.input}
+                    placeholder="HH:mm"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Kết thúc</Text>
+                  <TextInput
+                    value={value.end_time}
+                    onChangeText={(t) => setValue((prev) => ({ ...prev, end_time: t }))}
+                    style={styles.input}
+                    placeholder="HH:mm"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.label}>Loại</Text>
+              <View style={styles.rowOptions}>
+                {TYPE_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.pill, value.type === opt.key && styles.pillActive]}
+                    onPress={() => setValue((prev) => ({ ...prev, type: opt.key }))}
+                  >
+                    <Text style={[styles.pillText, value.type === opt.key && styles.pillTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {!!error && <Text style={styles.error}>{error}</Text>}
+
+              <View style={styles.actions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+                  <Text style={styles.cancelText}>Hủy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit}>
+                  <Text style={styles.saveText}>{editingItem ? "Lưu sửa" : "Thêm mới"}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-
-          <Text style={styles.label}>Loại</Text>
-          <View style={styles.rowOptions}>
-            {TYPE_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.pill, value.type === opt.key && styles.pillActive]}
-                onPress={() => setValue((prev) => ({ ...prev, type: opt.key }))}
-              >
-                <Text style={[styles.pillText, value.type === opt.key && styles.pillTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {!!error && <Text style={styles.error}>{error}</Text>}
-
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-              <Text style={styles.cancelText}>Hủy</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit}>
-              <Text style={styles.saveText}>{editingItem ? "Lưu sửa" : "Thêm mới"}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -193,14 +218,23 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    padding: 16,
+    paddingHorizontal: 16,
   },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 14,
     padding: 14,
     gap: 8,
+    maxWidth: 520,
+    width: "100%",
+    alignSelf: "center",
   },
   title: { fontSize: 18, fontWeight: "700", color: "#111827" },
   label: { fontSize: 12, color: "#4B5563", fontWeight: "700", marginTop: 2 },
