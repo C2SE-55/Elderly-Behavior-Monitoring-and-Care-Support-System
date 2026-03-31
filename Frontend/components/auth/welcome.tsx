@@ -13,7 +13,7 @@ export default function WelcomeScreen() {
       {/* TOP CONTENT */}
       <View style={styles.topContainer}>
         <Text style={styles.welcomeText}>Welcome to</Text>
-        <Text style={styles.title}>ECMS</Text>
+        <Text style={styles.title}>EBMS</Text>
 
         <Image
           source={Logo}
@@ -28,14 +28,14 @@ export default function WelcomeScreen() {
           style={styles.primaryButton}
           onPress={() => router.replace('/(auths)/signup')}
         >
-          <Text style={styles.primaryText}>Sign Up</Text>
+          <Text style={styles.primaryText}>Đăng Ký</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => router.replace('/(auths)/login')}
         >
-          <Text style={styles.secondaryText}>Login</Text>
+          <Text style={styles.secondaryText}>Đăng Nhập</Text>
         </TouchableOpacity>
       </View>
     </View>

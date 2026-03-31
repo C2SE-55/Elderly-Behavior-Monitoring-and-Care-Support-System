@@ -22,6 +22,12 @@ type FormValue = {
   type: DailyScheduleType;
 };
 
+const formatTimeInput = (raw: string) => {
+  const digits = String(raw || "").replace(/[^\d]/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
+
 type Props = {
   visible: boolean;
   initialDay: DayOfWeek;
@@ -112,91 +118,98 @@ export default function ScheduleModal({
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
         >
-          <ScrollView
-            contentContainerStyle={[
-              styles.scrollContent,
+          <View
+            style={[
+              styles.modalStage,
               {
                 paddingTop: Math.max(insets.top, 12),
-                paddingBottom: insets.bottom + 24,
+                paddingBottom: Math.max(insets.bottom, 12),
               },
             ]}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
           >
             <View style={styles.card}>
               <Text style={styles.title}>{editingItem ? "Sửa lịch sinh hoạt" : "Thêm lịch sinh hoạt"}</Text>
 
-              <Text style={styles.label}>Ngày</Text>
-              <View style={styles.rowOptions}>
-                {DAY_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.pill, value.day_of_week === opt.key && styles.pillActive]}
-                    onPress={() => setValue((prev) => ({ ...prev, day_of_week: opt.key }))}
-                  >
-                    <Text style={[styles.pillText, value.day_of_week === opt.key && styles.pillTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Tiêu đề</Text>
-              <TextInput
-                value={value.title}
-                onChangeText={(t) => setValue((prev) => ({ ...prev, title: t }))}
-                style={styles.input}
-                placeholder="Ví dụ: Đi bộ"
-              />
-
-              <Text style={styles.label}>Mô tả</Text>
-              <TextInput
-                value={value.description}
-                onChangeText={(t) => setValue((prev) => ({ ...prev, description: t }))}
-                style={[styles.input, styles.textArea]}
-                placeholder="Mô tả chi tiết"
-                multiline
-                scrollEnabled={false}
-              />
-
-              <View style={styles.timeRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Bắt đầu</Text>
-                  <TextInput
-                    value={value.start_time}
-                    onChangeText={(t) => setValue((prev) => ({ ...prev, start_time: t }))}
-                    style={styles.input}
-                    placeholder="HH:mm"
-                  />
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={styles.formContent}
+                keyboardShouldPersistTaps="always"
+                keyboardDismissMode="none"
+                showsVerticalScrollIndicator={false}
+              >
+                <Text style={styles.label}>Ngày</Text>
+                <View style={styles.rowOptions}>
+                  {DAY_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.pill, value.day_of_week === opt.key && styles.pillActive]}
+                      onPress={() => setValue((prev) => ({ ...prev, day_of_week: opt.key }))}
+                    >
+                      <Text style={[styles.pillText, value.day_of_week === opt.key && styles.pillTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Kết thúc</Text>
-                  <TextInput
-                    value={value.end_time}
-                    onChangeText={(t) => setValue((prev) => ({ ...prev, end_time: t }))}
-                    style={styles.input}
-                    placeholder="HH:mm"
-                  />
+
+                <Text style={styles.label}>Tiêu đề</Text>
+                <TextInput
+                  value={value.title}
+                  onChangeText={(t) => setValue((prev) => ({ ...prev, title: t }))}
+                  style={styles.input}
+                  placeholder="Ví dụ: Đi bộ"
+                />
+
+                <Text style={styles.label}>Mô tả</Text>
+                <TextInput
+                  value={value.description}
+                  onChangeText={(t) => setValue((prev) => ({ ...prev, description: t }))}
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Mô tả chi tiết"
+                  multiline
+                  scrollEnabled={false}
+                />
+
+                <View style={styles.timeRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Bắt đầu</Text>
+                    <TextInput
+                      value={value.start_time}
+                      onChangeText={(t) => setValue((prev) => ({ ...prev, start_time: formatTimeInput(t) }))}
+                      style={styles.input}
+                      placeholder="HH:mm"
+                      keyboardType={Platform.OS === "ios" ? "number-pad" : "numeric"}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Kết thúc</Text>
+                    <TextInput
+                      value={value.end_time}
+                      onChangeText={(t) => setValue((prev) => ({ ...prev, end_time: formatTimeInput(t) }))}
+                      style={styles.input}
+                      placeholder="HH:mm"
+                      keyboardType={Platform.OS === "ios" ? "number-pad" : "numeric"}
+                    />
+                  </View>
                 </View>
-              </View>
 
-              <Text style={styles.label}>Loại</Text>
-              <View style={styles.rowOptions}>
-                {TYPE_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.pill, value.type === opt.key && styles.pillActive]}
-                    onPress={() => setValue((prev) => ({ ...prev, type: opt.key }))}
-                  >
-                    <Text style={[styles.pillText, value.type === opt.key && styles.pillTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                <Text style={styles.label}>Loại</Text>
+                <View style={styles.rowOptions}>
+                  {TYPE_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.pill, value.type === opt.key && styles.pillActive]}
+                      onPress={() => setValue((prev) => ({ ...prev, type: opt.key }))}
+                    >
+                      <Text style={[styles.pillText, value.type === opt.key && styles.pillTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-              {!!error && <Text style={styles.error}>{error}</Text>}
+                {!!error && <Text style={styles.error}>{error}</Text>}
+              </ScrollView>
 
               <View style={styles.actions}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
@@ -207,7 +220,7 @@ export default function ScheduleModal({
                 </TouchableOpacity>
               </View>
             </View>
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -222,10 +235,10 @@ const styles = StyleSheet.create({
   keyboardAvoid: {
     flex: 1,
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
+  modalStage: {
+    flex: 1,
     paddingHorizontal: 16,
+    justifyContent: "center",
   },
   card: {
     backgroundColor: "#FFF",
@@ -235,6 +248,15 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     width: "100%",
     alignSelf: "center",
+    maxHeight: "85%",
+  },
+  formScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  formContent: {
+    paddingBottom: 12,
+    gap: 8,
   },
   title: { fontSize: 18, fontWeight: "700", color: "#111827" },
   label: { fontSize: 12, color: "#4B5563", fontWeight: "700", marginTop: 2 },

@@ -7,43 +7,53 @@ import {
     TouchableOpacity,
     SafeAreaView,
     Dimensions,
+    Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import Logo from "../../assets/images/Logo.png";
 
 const { width } = Dimensions.get("window");
-const scaleFont = (size: number) => size * (width / 375);
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const scale = clamp(width / 375, 0.92, 1.15);
+const scaleFont = (size: number) => Math.round(size * scale);
 
 const WelcomeScreen = () => {
     const router = useRouter();
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.content}>
+            {/* Decorative blobs */}
+            <View pointerEvents="none" style={[styles.blob, styles.blobTop]} />
+            <View pointerEvents="none" style={[styles.blob, styles.blobBottom]} />
 
-                <Image
-                    source={Logo}
-                    style={styles.image}
-                    resizeMode="contain"
-                />
+            <View style={styles.stage}>
+                <View style={styles.content}>
 
-                <Text style={styles.title}>WELCOME</Text>
+                    <Image
+                        source={Logo}
+                        style={styles.image}
+                        resizeMode="contain"
+                    />
 
-                <Text style={styles.mainText}>
-                    Chăm sóc người cao tuổi trở nên đơn giản và luôn trong tầm tay bạn!
-                </Text>
+                    <Text style={styles.title}>WELCOME</Text>
 
-                <Text style={styles.subText}>
-                    Theo dõi từ xa qua camera, phát hiện kịp thời các dấu hiệu bất thường,
-                    gửi cảnh báo ngay khi cần và hỗ trợ chăm sóc hiệu quả. Thật dễ dàng!
-                </Text>
+                    <Text style={styles.mainText}>
+                        Chăm sóc người cao tuổi trở nên đơn giản và luôn trong tầm tay bạn!
+                    </Text>
+
+                    <Text style={styles.subText}>
+                        Theo dõi từ xa qua camera, phát hiện kịp thời các dấu hiệu bất thường,
+                        gửi cảnh báo ngay khi cần và hỗ trợ chăm sóc hiệu quả. Thật dễ dàng!
+                    </Text>
+                </View>
+
+                <TouchableOpacity
+                    style={styles.button}
+                    activeOpacity={0.9}
+                    onPress={() => router.navigate("/(auths)/welcome")}
+                >
+                    <Text style={styles.buttonText}>Bắt đầu</Text>
+                </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-                style={styles.button}
-                onPress={() => router.navigate("/(tabs)")}
-            >
-                <Text style={styles.buttonText}>Bắt đầu</Text>
-            </TouchableOpacity>
         </SafeAreaView>
     );
 };
@@ -54,57 +64,102 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: "#F7F7FB",
-        justifyContent: "space-between",
         paddingHorizontal: 24,
     },
 
-    content: {
+    stage: {
+        flex: 1,
+        justifyContent: "center",
         alignItems: "center",
-        marginTop: 60,
+        paddingBottom: 12,
+    },
+
+    content: {
+        width: "100%",
+        maxWidth: 520,
+        alignItems: "center",
+        paddingHorizontal: 4,
     },
 
     image: {
-        width: 260,
-        height: 260,
-        marginBottom: 30,
+        width: clamp(width * 0.7, 220, 290),
+        height: clamp(width * 0.7, 220, 290),
+        marginBottom: 18,
     },
 
     title: {
         fontSize: scaleFont(12),
-        letterSpacing: 2,
-        color: "#6A5ACD",
-        fontWeight: "700",
-        marginBottom: 12,
+        letterSpacing: 2.4,
+        color: "#6D28D9",
+        fontWeight: "800",
+        marginBottom: 10,
     },
 
     mainText: {
         fontSize: scaleFont(18),
         textAlign: "center",
-        fontWeight: "600",
-        color: "#222",
+        fontWeight: "800",
+        color: "#0F172A",
         marginBottom: 10,
-        lineHeight: 26,
+        lineHeight: scaleFont(26),
     },
 
     subText: {
         fontSize: scaleFont(13),
         textAlign: "center",
-        color: "#777",
-        lineHeight: 20,
-        paddingHorizontal: 10,
+        color: "#475569",
+        lineHeight: scaleFont(20),
+        paddingHorizontal: 14,
     },
 
     button: {
         backgroundColor: "#4B2E83",
+        width: "100%",
+        maxWidth: 360,
+        alignSelf: "center",
         paddingVertical: 16,
-        borderRadius: 10,
-        marginBottom: 30,
+        borderRadius: 14,
+        marginTop: 22,
+        shadowColor: "#4B2E83",
+        shadowOpacity: 0.24,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 6,
     },
 
     buttonText: {
         color: "white",
         textAlign: "center",
         fontSize: scaleFont(15),
-        fontWeight: "700",
+        fontWeight: "800",
+    },
+
+    blob: {
+        position: "absolute",
+        width: 260,
+        height: 260,
+        borderRadius: 260,
+        backgroundColor: "#DDD6FE",
+        opacity: 0.55,
+    },
+    blobTop: {
+        top: -120,
+        left: -110,
+        backgroundColor: "#EDE9FE",
+        ...Platform.select({
+            ios: { shadowColor: "#A78BFA", shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+            android: { elevation: 1 },
+            default: {},
+        }),
+    },
+    blobBottom: {
+        bottom: -130,
+        right: -120,
+        backgroundColor: "#DBEAFE",
+        ...Platform.select({
+            ios: { shadowColor: "#60A5FA", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
+            android: { elevation: 1 },
+            default: {},
+        }),
     },
 });

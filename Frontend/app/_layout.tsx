@@ -9,7 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { hydrateAuthFromStorage } from "@/services/api";
 
 export const unstable_settings = {
-  initialRouteName: '(tabs)',
+  initialRouteName: 'index',
 };
 
 export default function RootLayout() {
@@ -24,7 +24,7 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack
           screenOptions={{ headerShown: false }}
-          initialRouteName="(tabs)"
+          initialRouteName="index"
         >
           <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
           <Stack.Screen name="(admin)" options={{ gestureEnabled: false }} />

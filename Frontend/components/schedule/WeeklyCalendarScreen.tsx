@@ -19,7 +19,9 @@ import {
 import { subscribeScheduleRefresh } from "@/services/scheduleEvents";
 import { resetScheduleActivityReminderKeys } from "@/services/scheduleActivityReminders";
 import ScheduleModal from "./ScheduleModal";
+import ScheduleDetailModal from "./ScheduleDetailModal";
 import TimeSlotCell from "./TimeSlotCell";
+import WeekRangeCalendarModal from "./WeekRangeCalendarModal";
 
 type DayKey = DailyScheduleItem["day_of_week"];
 type SlotKey = "morning" | "noon" | "afternoon" | "evening";
@@ -145,7 +147,6 @@ export default function WeeklyCalendarScreen() {
   const [roomInfo, setRoomInfo] = useState<MyRoomInfo | null>(null);
   const [canReadRoomData, setCanReadRoomData] = useState(false);
   const [canManageSchedule, setCanManageSchedule] = useState(false);
-  const [canReceiveScheduleNotifications, setCanReceiveScheduleNotifications] = useState(false);
   const [usingMock, setUsingMock] = useState(false);
   const [schedules, setSchedules] = useState<DailyScheduleItem[]>([]);
   const [filterType, setFilterType] = useState<"all" | DailyScheduleType>("all");
@@ -154,6 +155,11 @@ export default function WeeklyCalendarScreen() {
   const [editingItem, setEditingItem] = useState<DailyScheduleItem | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [now, setNow] = useState(dayjs());
+  const [rangeStart, setRangeStart] = useState<dayjs.Dayjs | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<dayjs.Dayjs | null>(null);
+  const [rangeModalVisible, setRangeModalVisible] = useState(false);
+  const [detailItem, setDetailItem] = useState<DailyScheduleItem | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -163,7 +169,6 @@ export default function WeeklyCalendarScreen() {
       if (!room) {
         setCanReadRoomData(false);
         setCanManageSchedule(false);
-        setCanReceiveScheduleNotifications(false);
         setPermissionMessage("Bạn chưa tham gia room. Hãy join room trước khi dùng lịch sinh hoạt.");
         return;
       }
@@ -171,7 +176,6 @@ export default function WeeklyCalendarScreen() {
       const canNotify = isHost || !!room.can_receive_schedule_notifications;
       setCanReadRoomData(true);
       setCanManageSchedule(isHost);
-      setCanReceiveScheduleNotifications(canNotify);
       setPermissionMessage(
         isHost
           ? ""
@@ -182,7 +186,6 @@ export default function WeeklyCalendarScreen() {
     } catch {
       setCanReadRoomData(false);
       setCanManageSchedule(false);
-      setCanReceiveScheduleNotifications(false);
       setPermissionMessage("Không tải được quyền truy cập room.");
     } finally {
       setPermissionLoading(false);
@@ -261,6 +264,31 @@ export default function WeeklyCalendarScreen() {
   const weekStart = useMemo(() => getMonday(now, weekOffset), [now, weekOffset]);
   const weekEnd = useMemo(() => weekStart.add(6, "day"), [weekStart]);
 
+  useEffect(() => {
+    // Nếu đổi tuần mà range đang lọc (không null) nhưng không nằm trong tuần mới thì tắt lọc (về cả tuần).
+    if (rangeStart && rangeEnd && (!rangeStart.isSame(weekStart, "week") || !rangeEnd.isSame(weekStart, "week"))) {
+      setRangeStart(null);
+      setRangeEnd(null);
+    }
+  }, [rangeEnd, rangeStart, weekEnd, weekStart]);
+
+  const effectiveRangeStart = rangeStart || weekStart;
+  const effectiveRangeEnd = rangeEnd || weekEnd;
+  const isRangeActive = !!rangeStart && !!rangeEnd;
+
+  const visibleDays = useMemo(() => {
+    const s = effectiveRangeStart.startOf("day");
+    const e = effectiveRangeEnd.startOf("day");
+    const startIndex = Math.max(0, Math.min(6, s.diff(weekStart.startOf("day"), "day")));
+    const endIndex = Math.max(0, Math.min(6, e.diff(weekStart.startOf("day"), "day")));
+    const from = Math.min(startIndex, endIndex);
+    const to = Math.max(startIndex, endIndex);
+    return DAYS.filter((d) => {
+      const idx = DAY_INDEX[d.key];
+      return idx >= from && idx <= to;
+    });
+  }, [effectiveRangeEnd, effectiveRangeStart, weekStart]);
+
   const schedulesInSelectedWeek = useMemo(
     () =>
       schedules.filter((item) => {
@@ -284,6 +312,28 @@ export default function WeeklyCalendarScreen() {
     (dayKey: DayKey) => weekStart.add(DAY_INDEX[dayKey], "day"),
     [weekStart]
   );
+
+  const handleApplyRange = (start: dayjs.Dayjs, end: dayjs.Dayjs) => {
+    const nextWeekStart = getMonday(start, 0);
+    const diffWeeks = nextWeekStart.diff(getMonday(now, 0), "week");
+    setWeekOffset(diffWeeks);
+    const s = start.startOf("day");
+    const e = end.startOf("day");
+    // Nếu chọn đúng full tuần thì coi như tắt lọc (để UI không highlight cam).
+    if (s.isSame(nextWeekStart, "day") && e.isSame(nextWeekStart.add(6, "day"), "day")) {
+      setRangeStart(null);
+      setRangeEnd(null);
+    } else {
+      setRangeStart(s);
+      setRangeEnd(e);
+    }
+    setRangeModalVisible(false);
+  };
+
+  const handleViewDetail = (item: DailyScheduleItem) => {
+    setDetailItem(item);
+    setDetailVisible(true);
+  };
 
   const isPastDateTime = useCallback(
     (dayKey: DayKey, hhmm: string) => {
@@ -439,9 +489,23 @@ export default function WeeklyCalendarScreen() {
           <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)}>
             <Text style={styles.weekBtnText}>Tuần trước</Text>
           </TouchableOpacity>
-          <Text style={styles.weekText}>
-            {weekStart.format("DD/MM")} - {weekEnd.format("DD/MM")}
-          </Text>
+          <TouchableOpacity
+            style={[styles.rangeSummaryBtn, isRangeActive && styles.rangeSummaryBtnActive]}
+            onPress={() => setRangeModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.rangeTopRow}>
+              <Text style={[styles.rangeSummaryLabel, isRangeActive && styles.rangeSummaryLabelActive]}>Khoảng ngày</Text>
+            </View>
+            <Text
+              style={[styles.rangeSummaryValue, isRangeActive && styles.rangeSummaryValueActive]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.9}
+            >
+              {effectiveRangeStart.format("DD/MM")} – {effectiveRangeEnd.format("DD/MM")}
+            </Text>
+          </TouchableOpacity>
           <View style={styles.weekActionsRight}>
             <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset(0)}>
               <Text style={styles.weekBtnText}>Hôm nay</Text>
@@ -451,6 +515,9 @@ export default function WeeklyCalendarScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        <Text style={styles.weekHint}>
+          Tuần: {weekStart.format("DD/MM")} - {weekEnd.format("DD/MM")}
+        </Text>
 
         {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
         {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
@@ -483,7 +550,7 @@ export default function WeeklyCalendarScreen() {
                 <View style={styles.slotHeader}>
                   <Text style={styles.slotHeaderText}>Khung giờ</Text>
                 </View>
-                {DAYS.map((d) => (
+                {visibleDays.map((d) => (
                   <View key={d.key} style={styles.dayHeader}>
                     <Text style={styles.dayHeaderText}>{d.label}</Text>
                     <Text style={styles.dayDateText}>{getDateForDay(d.key).format("DD/MM")}</Text>
@@ -496,17 +563,19 @@ export default function WeeklyCalendarScreen() {
                   <View style={styles.slotLabelCell}>
                     <Text style={styles.slotLabel}>{slot.label}</Text>
                   </View>
-                  {DAYS.map((d) => (
+                  {visibleDays.map((d) => (
                     <TimeSlotCell
                       key={`${slot.key}-${d.key}`}
                       dayKey={d.key}
                       slotLabel={slot.label}
                       schedules={getCellSchedules(d.key, slot.key)}
                       isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
-                      disabled={!canManageSchedule || isPastSlot(d.key, slot.key)}
+                      readonly={!canManageSchedule}
+                      isPast={isPastSlot(d.key, slot.key)}
                       onAdd={handleAdd}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onViewDetail={handleViewDetail}
                     />
                   ))}
                 </View>
@@ -525,6 +594,25 @@ export default function WeeklyCalendarScreen() {
           setEditingItem(null);
         }}
         onSubmit={handleSubmitModal}
+      />
+
+      <ScheduleDetailModal
+        visible={detailVisible}
+        item={detailItem}
+        onClose={() => {
+          setDetailVisible(false);
+          setDetailItem(null);
+        }}
+      />
+
+      <WeekRangeCalendarModal
+        visible={rangeModalVisible}
+        weekStart={weekStart}
+        weekEnd={weekEnd}
+        valueStart={effectiveRangeStart.startOf("day")}
+        valueEnd={effectiveRangeEnd.startOf("day")}
+        onClose={() => setRangeModalVisible(false)}
+        onApply={handleApplyRange}
       />
     </SafeAreaView>
   );
@@ -566,7 +654,36 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   weekBtnText: { color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
-  weekText: { color: "#1F2937", fontSize: 12, fontWeight: "700" },
+  rangeSummaryBtn: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    marginHorizontal: 6,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    alignItems: "flex-start",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  rangeTopRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rangeSummaryLabel: { color: "#6B7280", fontSize: 10, fontWeight: "800" },
+  rangeSummaryValue: { marginTop: 2, color: "#111827", fontSize: 14, fontWeight: "900" },
+  rangeSummaryBtnActive: {
+    borderColor: "#F97316",
+    backgroundColor: "#FFEDD5",
+  },
+  rangeSummaryLabelActive: { color: "#9A3412" },
+  rangeSummaryValueActive: { color: "#9A3412" },
+  weekHint: { color: "#64748B", fontSize: 11, fontWeight: "700", marginHorizontal: 12, marginBottom: 6 },
   errorText: {
     color: "#991B1B",
     backgroundColor: "#FEE2E2",

@@ -5,6 +5,8 @@ import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { adminCreateUser } from "@/services/api";
 
+const PLACEHOLDER_COLOR = "#64748B";
+
 export default function AdminAddAccountScreen() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
@@ -64,10 +66,17 @@ export default function AdminAddAccountScreen() {
         {!!error && <Text style={styles.error}>{error}</Text>}
         {!!success && <Text style={styles.success}>{success}</Text>}
 
-        <TextInput style={styles.input} placeholder="Họ tên" value={fullName} onChangeText={setFullName} />
+        <TextInput
+          style={styles.input}
+          placeholder="Họ tên"
+          placeholderTextColor={PLACEHOLDER_COLOR}
+          value={fullName}
+          onChangeText={setFullName}
+        />
         <TextInput
           style={styles.input}
           placeholder="Username *"
+          placeholderTextColor={PLACEHOLDER_COLOR}
           value={username}
           onChangeText={setUsername}
           autoCapitalize="none"
@@ -75,16 +84,30 @@ export default function AdminAddAccountScreen() {
         <TextInput
           style={styles.input}
           placeholder="Email *"
+          placeholderTextColor={PLACEHOLDER_COLOR}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
         />
-        <TextInput style={styles.input} placeholder="Số điện thoại" value={phone} onChangeText={setPhone} />
-        <TextInput style={styles.input} placeholder="Ngày sinh (YYYY-MM-DD)" value={dob} onChangeText={setDob} />
+        <TextInput
+          style={styles.input}
+          placeholder="Số điện thoại"
+          placeholderTextColor={PLACEHOLDER_COLOR}
+          value={phone}
+          onChangeText={setPhone}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Ngày sinh (YYYY-MM-DD)"
+          placeholderTextColor={PLACEHOLDER_COLOR}
+          value={dob}
+          onChangeText={setDob}
+        />
         <TextInput
           style={styles.input}
           placeholder="Mật khẩu *"
+          placeholderTextColor={PLACEHOLDER_COLOR}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -92,6 +115,7 @@ export default function AdminAddAccountScreen() {
         <TextInput
           style={styles.input}
           placeholder="Nhắc lại mật khẩu *"
+          placeholderTextColor={PLACEHOLDER_COLOR}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           secureTextEntry

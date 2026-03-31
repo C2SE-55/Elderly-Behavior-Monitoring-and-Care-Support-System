@@ -8,10 +8,12 @@ type Props = {
   slotLabel: string;
   schedules: DailyScheduleItem[];
   isCurrent: boolean;
-  disabled?: boolean;
+  readonly?: boolean;
+  isPast?: boolean;
   onAdd: (dayKey: DailyScheduleItem["day_of_week"]) => void;
   onEdit: (item: DailyScheduleItem) => void;
   onDelete: (item: DailyScheduleItem) => void;
+  onViewDetail?: (item: DailyScheduleItem) => void;
 };
 
 export default function TimeSlotCell({
@@ -19,27 +21,36 @@ export default function TimeSlotCell({
   slotLabel,
   schedules,
   isCurrent,
-  disabled = false,
+  readonly = false,
+  isPast = false,
   onAdd,
   onEdit,
   onDelete,
+  onViewDetail,
 }: Props) {
   return (
-    <View style={[styles.cell, isCurrent && styles.currentCell, disabled && styles.disabledCell]}>
+    <View style={[styles.cell, isCurrent && styles.currentCell, isPast && styles.disabledCell]}>
       {schedules.length === 0 ? (
         <Text style={styles.placeholder}>Chưa có lịch</Text>
       ) : (
         schedules.map((item) => (
-          <ScheduleItem key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} />
+          <ScheduleItem
+            key={item.id}
+            item={item}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            readonly={readonly}
+            onViewDetail={onViewDetail}
+          />
         ))
       )}
-      {!disabled ? (
+      {!readonly && !isPast ? (
         <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => onAdd(dayKey)}>
           <Text style={styles.addBtnText}>+ Thêm lịch</Text>
         </TouchableOpacity>
-      ) : (
+      ) : !readonly && isPast ? (
         <Text style={styles.disabledText}>Đã qua thời gian</Text>
-      )}
+      ) : null}
       {isCurrent && (
         <View style={styles.currentBadge}>
           <Text style={styles.currentBadgeText}>Đang diễn ra ({slotLabel})</Text>

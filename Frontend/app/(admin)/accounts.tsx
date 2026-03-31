@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { AdminUserAccount, getAdminUsers } from "@/services/api";
 
 export default function AdminAccountsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,6 +31,9 @@ export default function AdminAccountsScreen() {
   }, [loadRows]);
 
   const onSearch = () => loadRows(search);
+
+  // Tab bar in this app is ~75px tall. Keep FAB above it.
+  const fabBottom = insets.bottom + 75 + 14;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -84,11 +88,11 @@ export default function AdminAccountsScreen() {
             </TouchableOpacity>
           ))}
           {!rows.length && <Text style={styles.empty}>Không có tài khoản nào.</Text>}
-          <View style={{ height: 80 }} />
+          <View style={{ height: fabBottom + 40 }} />
         </ScrollView>
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => router.push("/(admin)/add-account")}>
+      <TouchableOpacity style={[styles.fab, { bottom: fabBottom }]} onPress={() => router.push("/(admin)/add-account")}>
         <Feather name="plus" size={24} color="#FFF" />
       </TouchableOpacity>
     </SafeAreaView>
@@ -158,7 +162,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 28,
     width: 52,
     height: 52,
     borderRadius: 26,

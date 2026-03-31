@@ -7,6 +7,7 @@ import {
     TouchableOpacity,
     ScrollView,
     Dimensions,
+    Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
@@ -71,6 +72,7 @@ const HomepageUserScreen = () => {
                 contentContainerStyle={styles.listContent}
             >
                 {OPTIONS.map((item) => {
+                    const isComingSoon = item.id === "family";
                     const handlePress = () => {
                         if (item.id === "medicine-reminder") {
                             router.push("/(screens)/medicine-reminder");
@@ -83,19 +85,20 @@ const HomepageUserScreen = () => {
                         } else if (item.id === "schedule") {
                             router.push("/(screens)/weekly-schedule");
                         } else if (item.id === "family") {
-                            router.push("/(screens)/room-access");
+                            Alert.alert("Đang phát triển", "Chức năng kết nối với người thân hiện chưa phát triển.");
                         }
                     };
 
                     return (
                         <TouchableOpacity
                             key={item.id}
-                            style={styles.card}
+                            style={[styles.card, isComingSoon && styles.cardDisabled]}
                             activeOpacity={0.85}
                             onPress={handlePress}
                         >
                             <View style={styles.cardTextWrapper}>
                                 <Text style={styles.cardTitle}>{item.title}</Text>
+                                {isComingSoon && <Text style={styles.comingSoonText}>Sắp ra mắt</Text>}
                             </View>
 
                             <Text style={styles.cardEmoji}>{item.emoji}</Text>
@@ -202,6 +205,9 @@ const styles = StyleSheet.create({
 
         elevation: 3,
     },
+    cardDisabled: {
+        opacity: 0.6,
+    },
 
     cardTextWrapper: {
         flex: 1,
@@ -213,6 +219,17 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         lineHeight: scaleFont(24),
         color: "#111827",
+    },
+    comingSoonText: {
+        marginTop: 6,
+        alignSelf: "flex-start",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        color: "#6B7280",
+        fontSize: scaleFont(11),
+        fontWeight: "800",
     },
 
     cardEmoji: {

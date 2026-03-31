@@ -6,6 +6,8 @@ type Props = {
   item: DailyScheduleItem;
   onEdit: (item: DailyScheduleItem) => void;
   onDelete: (item: DailyScheduleItem) => void;
+  readonly?: boolean;
+  onViewDetail?: (item: DailyScheduleItem) => void;
 };
 
 const TYPE_BG: Record<DailyScheduleItem["type"], string> = {
@@ -22,7 +24,7 @@ const TYPE_TEXT: Record<DailyScheduleItem["type"], string> = {
   other: "#1E40AF",
 };
 
-export default function ScheduleItem({ item, onEdit, onDelete }: Props) {
+export default function ScheduleItem({ item, onEdit, onDelete, readonly = false, onViewDetail }: Props) {
   return (
     <View style={[styles.box, { backgroundColor: TYPE_BG[item.type] }]}>
       <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
@@ -37,12 +39,20 @@ export default function ScheduleItem({ item, onEdit, onDelete }: Props) {
         </Text>
       )}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
-          <Text style={styles.actionText}>Sửa</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item)}>
-          <Text style={[styles.actionText, styles.deleteText]}>Xóa</Text>
-        </TouchableOpacity>
+        {readonly ? (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)}>
+            <Text style={styles.actionText}>Xem chi tiết</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
+              <Text style={styles.actionText}>Sửa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item)}>
+              <Text style={[styles.actionText, styles.deleteText]}>Xóa</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );

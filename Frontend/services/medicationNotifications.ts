@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import type { TodayScheduleItem } from "./api";
+import { appendNotificationLog } from "./notificationLog";
 
 const MEDICATION_CHANNEL_ID = "medication-reminders";
 
@@ -96,6 +97,13 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
           ...(Platform.OS === "android" ? { channelId: MEDICATION_CHANNEL_ID } : {}),
         },
       });
+      void appendNotificationLog({
+        type: "medication",
+        title: "Đã lên lịch nhắc thuốc",
+        body: `${time} • ${items.length} thuốc`,
+        data: { alarm_time: time, count: items.length, repeat: "daily" },
+        read: false,
+      }).catch(() => {});
       continue;
     }
 
@@ -112,6 +120,13 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
         ...(Platform.OS === "android" ? { channelId: MEDICATION_CHANNEL_ID } : {}),
       },
     });
+    void appendNotificationLog({
+      type: "medication",
+      title: "Đã lên lịch nhắc thuốc",
+      body: `${time} • ${items.length} thuốc`,
+      data: { alarm_time: time, count: items.length, repeat: "once" },
+      read: false,
+    }).catch(() => {});
   }
 };
 
