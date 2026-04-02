@@ -50,10 +50,10 @@ const getCameraServiceBaseUrl = () => {
     if (extra?.cameraServiceUrl) return extra.cameraServiceUrl.replace(/\/$/, "");
     const base = getApiBaseUrl();
     const url = new URL(base);
-    url.port = "9000";
+    url.port = "9001";
     return url.toString().replace(/\/$/, "");
   } catch {
-    return "http://localhost:9000";
+    return "http://localhost:9001";
   }
 };
 

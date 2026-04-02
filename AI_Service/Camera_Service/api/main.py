@@ -269,5 +269,16 @@ def stream():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 9000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    import argparse
+
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0"))
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("PORT", 9000)),
+        help="Port for Camera Service API (default: env PORT or 9000)",
+    )
+    args, _unknown = parser.parse_known_args()
+
+    uvicorn.run(app, host=args.host, port=args.port)
