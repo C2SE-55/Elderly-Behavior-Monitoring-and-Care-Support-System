@@ -1051,7 +1051,7 @@ const FloatingAssistant: React.FC = () => {
         }).start();
         const template: MealPlanTemplate = {
           id: `tpl-${Date.now()}`,
-          name: `Thuc don ${startDate} - ${endDate}`,
+          name: `Thực đơn ${startDate} - ${endDate}`,
           created_at: new Date().toISOString(),
           days: res.plan,
         };
@@ -1137,7 +1137,8 @@ const FloatingAssistant: React.FC = () => {
         }
       }
 
-      const payloads = plannerMealKeys
+      // Apply all meals that actually have content (even if user only generated 1 meal type initially).
+      const payloads = (["breakfast", "lunch", "dinner"] as MealKey[])
         .map((mealKey) => {
           const mealName = String(dayItem.meals[mealKey] || "").trim();
           if (!mealName) return null;
@@ -1158,26 +1159,26 @@ const FloatingAssistant: React.FC = () => {
       }
       return "applied";
     },
-    [askOverwriteDecision, plannerMealKeys]
+    [askOverwriteDecision]
   );
 
   const handleApplyDay = useCallback(
     async (date: string) => {
       const target = mealPlanDays.find((item) => item.date === date);
       if (!target) return;
-      const confirmed = await confirmApply(`Ap dung thuc don ngay ${date} vao lich sinh hoat?`);
+      const confirmed = await confirmApply(`Áp dụng thực đơn ngày ${date} vào lịch sinh hoạt?`);
       if (!confirmed) return;
       setApplyingByDate((prev) => ({ ...prev, [date]: true }));
       try {
         const result = await applyMealsOfDay(target);
         if (result === "applied") {
-          showPlannerToast(`Da ap dung thuc don ngay ${date}`);
+          showPlannerToast(`Đã áp dụng thực đơn ngày ${date}`);
           emitScheduleRefresh();
         } else if (result === "skipped") {
-          showPlannerToast(`Da bo qua ngay ${date}`);
+          showPlannerToast(`Đã bỏ qua ngày ${date}`);
         }
       } catch {
-        showPlannerToast("Ap dung that bai. Ban thu lai nhe.");
+        showPlannerToast("Áp dụng thất bại. Bạn thử lại nhé.");
       } finally {
         setApplyingByDate((prev) => ({ ...prev, [date]: false }));
       }
@@ -1187,7 +1188,7 @@ const FloatingAssistant: React.FC = () => {
 
   const handleApplyAll = useCallback(async () => {
     if (!mealPlanDays.length) return;
-    const confirmed = await confirmApply("Ap dung toan bo thuc don vao lich sinh hoat?");
+    const confirmed = await confirmApply("Áp dụng toàn bộ thực đơn vào lịch sinh hoạt?");
     if (!confirmed) return;
     setApplyingAll(true);
     let appliedCount = 0;
@@ -1198,9 +1199,9 @@ const FloatingAssistant: React.FC = () => {
         if (result === "applied") appliedCount += 1;
       }
       emitScheduleRefresh();
-      showPlannerToast(`Hoan tat ap dung ${appliedCount}/${mealPlanDays.length} ngay.`);
+      showPlannerToast(`Hoàn tất áp dụng ${appliedCount}/${mealPlanDays.length} ngày.`);
     } catch {
-      showPlannerToast("Ap dung toan bo that bai.");
+      showPlannerToast("Áp dụng toàn bộ thất bại.");
     } finally {
       setApplyingAll(false);
     }
@@ -1214,7 +1215,7 @@ const FloatingAssistant: React.FC = () => {
       duration: 200,
       useNativeDriver: true,
     }).start();
-    showPlannerToast(`Da nap template: ${template.name}`);
+    showPlannerToast(`Đã nạp template: ${template.name}`);
   }, [mealPlanFade, showPlannerToast]);
 
   const handleStartNewSession = useCallback(async () => {
@@ -1442,7 +1443,7 @@ const FloatingAssistant: React.FC = () => {
                     onPress={openMealPlanner}
                     disabled={loading || initializing || generatingMealPlan}
                   >
-                    <Text style={styles.headerMealBtnText}>Thuc don</Text>
+                    <Text style={styles.headerMealBtnText}>Thực đơn</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.headerBtn}
@@ -1526,7 +1527,7 @@ const FloatingAssistant: React.FC = () => {
                       onPress={openMealPlanner}
                       disabled={loading || initializing || generatingMealPlan}
                     >
-                      <Text style={styles.quickMealBtnText}>🍽️ Goi y thuc don theo ngay</Text>
+                      <Text style={styles.quickMealBtnText}>🍽️ Gợi ý thực đơn theo ngày</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1552,7 +1553,7 @@ const FloatingAssistant: React.FC = () => {
                       {generatingMealPlan && (
                         <View style={styles.generatingWrap}>
                           <ActivityIndicator size="small" color={COLORS.primary} />
-                          <Text style={styles.generatingText}>Dang tao thuc don...</Text>
+                          <Text style={styles.generatingText}>Đang tạo thực đơn...</Text>
                         </View>
                       )}
 

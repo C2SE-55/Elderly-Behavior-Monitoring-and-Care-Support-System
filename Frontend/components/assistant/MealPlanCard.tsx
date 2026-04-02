@@ -30,7 +30,7 @@ export default function MealPlanCard({
           value={meals.breakfast}
           onChangeText={(v) => onChangeMeal("breakfast", v)}
           editable={!disabled}
-          placeholder="Mon an buoi sang"
+          placeholder="Món ăn buổi sáng"
         />
       </View>
 
@@ -41,7 +41,7 @@ export default function MealPlanCard({
           value={meals.lunch}
           onChangeText={(v) => onChangeMeal("lunch", v)}
           editable={!disabled}
-          placeholder="Mon an buoi trua"
+          placeholder="Món ăn buổi trưa"
         />
       </View>
 
@@ -52,7 +52,7 @@ export default function MealPlanCard({
           value={meals.dinner}
           onChangeText={(v) => onChangeMeal("dinner", v)}
           editable={!disabled}
-          placeholder="Mon an buoi toi"
+          placeholder="Món ăn buổi tối"
         />
       </View>
 
@@ -61,7 +61,7 @@ export default function MealPlanCard({
         onPress={onApplyDay}
         disabled={disabled || applying}
       >
-        <Text style={styles.applyText}>{applying ? "Dang ap dung..." : "Ap dung ngay nay"}</Text>
+        <Text style={styles.applyText}>{applying ? "Đang áp dụng..." : "Áp dụng ngày này"}</Text>
       </TouchableOpacity>
     </View>
   );

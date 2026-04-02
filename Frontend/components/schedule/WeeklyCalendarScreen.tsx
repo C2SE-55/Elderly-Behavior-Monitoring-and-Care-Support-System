@@ -508,7 +508,7 @@ export default function WeeklyCalendarScreen() {
           </TouchableOpacity>
           <View style={styles.weekActionsRight}>
             <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset(0)}>
-              <Text style={styles.weekBtnText}>Hôm nay</Text>
+              <Text style={styles.weekBtnText}>Tuần hiện tại</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)}>
               <Text style={styles.weekBtnText}>Tuần sau</Text>
