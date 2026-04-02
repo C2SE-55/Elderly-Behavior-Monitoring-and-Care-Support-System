@@ -5,6 +5,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
 import * as Notifications from "expo-notifications";
 import { appendNotificationLog, getNotificationLogs } from "@/services/notificationLog";
+import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
 const PRIMARY = "#A78BFA";   // tím nhạt
 const ACTIVE = "#56328C";    // tím đậm
@@ -30,6 +31,26 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
+    // Host-only: poll fall / left-safe-zone events and append into notification log.
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await pollSafetyEventsOnce();
+        await refreshUnreadCount();
+      } catch {
+        // ignore
+      }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
     const appendFromContent = (content: Notifications.NotificationContent) => {
       const data: any = (content as any)?.data || {};
       const type =
@@ -37,6 +58,8 @@ export default function TabLayout() {
           ? "medication"
           : data?.type === "weekly-schedule"
             ? "weekly-schedule"
+            : data?.type === "care-confirmation"
+              ? "care-confirmation"
             : "system";
       const title = content.title || "Thông báo";
       const body = content.body || "";

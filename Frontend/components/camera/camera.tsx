@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import {
@@ -132,6 +132,7 @@ function renderCameraMedia(style: any, fit: "cover" | "contain") {
 
 export default function CameraLiveScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ eventId?: string }>();
   const insets = useSafeAreaInsets();
 
   const [currentTime, setCurrentTime] = useState(formatTime(new Date()));
@@ -145,6 +146,11 @@ export default function CameraLiveScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const requestedEventId = useMemo(() => {
+    const raw = params?.eventId;
+    const n = Number(raw || 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [params?.eventId]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -182,6 +188,8 @@ export default function CameraLiveScreen() {
         setHistory(items);
         setHistoryError(null);
         setSelectedEventId((prev) => {
+          // If coming from notification with eventId, prefer that.
+          if (requestedEventId && items.some((x) => x.id === requestedEventId)) return requestedEventId;
           if (prev && items.some((item) => item.id === prev)) return prev;
           return items[0]?.id ?? null;
         });
@@ -201,6 +209,14 @@ export default function CameraLiveScreen() {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (!requestedEventId) return;
+    if (!history.length) return;
+    if (!history.some((x) => x.id === requestedEventId)) return;
+    setSelectedEventId(requestedEventId);
+    setPreviewVisible(true);
+  }, [history, requestedEventId]);
 
   const selectedEvent = useMemo(
     () => history.find((item) => item.id === selectedEventId) ?? history[0] ?? null,

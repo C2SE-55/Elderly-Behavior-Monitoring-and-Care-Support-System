@@ -471,7 +471,40 @@ export const getMyRooms = async (): Promise<MyRoomSummary[]> => {
 
 export const getRoomMembers = async (): Promise<RoomMember[]> => {
   const res = await api.get("/rooms/members");
-  return Array.isArray(res.data?.data) ? res.data.data : [];
+  const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+  return rows.map((row: Record<string, unknown>) => ({
+    user_id: Number(row?.user_id ?? row?.userId ?? row?.id ?? (row as any)?.user?.id ?? 0),
+    username: ((row?.username as string) || (row as any)?.user?.username) || undefined,
+    fullName:
+      (row?.fullName as string) ||
+      (row?.full_name as string) ||
+      (row?.fullname as string) ||
+      (row as any)?.user?.fullName ||
+      (row as any)?.user?.full_name ||
+      (row as any)?.user?.fullname ||
+      undefined,
+    email: ((row?.email as string) || (row as any)?.user?.email) || undefined,
+    member_role:
+      ((row?.member_role as RoomMemberRole) ||
+        (row?.memberRole as RoomMemberRole) ||
+        ((row as any)?.role_in_room as RoomMemberRole) ||
+        ((row as any)?.role as RoomMemberRole) ||
+        ((row as any)?.role_in_room as any) ||
+        "caretaker") === ("caregiver" as any)
+        ? "caretaker"
+        : (((row?.member_role as RoomMemberRole) ||
+            (row?.memberRole as RoomMemberRole) ||
+            ((row as any)?.role_in_room as RoomMemberRole) ||
+            ((row as any)?.role as RoomMemberRole) ||
+            "caretaker") as RoomMemberRole),
+    can_manage_medication: !!((row as any)?.can_manage_medication ?? (row as any)?.canManageMedication),
+    can_receive_schedule_notifications: !!(
+      (row as any)?.can_receive_schedule_notifications ?? (row as any)?.canReceiveScheduleNotifications
+    ),
+    can_receive_medication_notifications: !!(
+      (row as any)?.can_receive_medication_notifications ?? (row as any)?.canReceiveMedicationNotifications
+    ),
+  })) as RoomMember[];
 };
 
 export const updateCaretakerPermissions = async (

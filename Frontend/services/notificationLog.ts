@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type NotificationLogType = "weekly-schedule" | "medication" | "system";
+export type NotificationLogType = "weekly-schedule" | "medication" | "system" | "care-confirmation";
 
 export type NotificationLogEntry = {
   id: string;
@@ -29,6 +29,10 @@ const safeParse = (raw: string | null): NotificationLogEntry[] => {
   } catch {
     return [];
   }
+};
+
+const writeLogs = async (rows: NotificationLogEntry[]): Promise<void> => {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(0, MAX_LOGS)));
 };
 
 export async function getNotificationLogs(): Promise<NotificationLogEntry[]> {
@@ -62,7 +66,7 @@ export async function appendNotificationLog(entry: Omit<NotificationLogEntry, "i
     ...entry,
   };
   const merged = [next, ...current].slice(0, MAX_LOGS);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  await writeLogs(merged);
 }
 
 const dayjsSafe = (iso: string): number | null => {
@@ -74,7 +78,7 @@ export async function markAllNotificationLogsRead(): Promise<void> {
   const current = await getNotificationLogs();
   if (!current.length) return;
   const updated = current.map((it) => (it.read ? it : { ...it, read: true }));
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await writeLogs(updated);
 }
 
 export async function markNotificationLogRead(id: string): Promise<void> {
@@ -85,7 +89,28 @@ export async function markNotificationLogRead(id: string): Promise<void> {
   if (current[idx]?.read) return;
   const updated = [...current];
   updated[idx] = { ...updated[idx], read: true };
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await writeLogs(updated);
+}
+
+export async function updateNotificationLog(
+  id: string,
+  patch: Partial<Omit<NotificationLogEntry, "id" | "createdAt">> & { data?: Record<string, any> }
+): Promise<void> {
+  if (!id) return;
+  const current = await getNotificationLogs();
+  const idx = current.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  const existing = current[idx]!;
+  const next: NotificationLogEntry = {
+    ...existing,
+    ...patch,
+    data: patch.data !== undefined ? patch.data : existing.data,
+    id: existing.id,
+    createdAt: existing.createdAt,
+  };
+  const updated = [...current];
+  updated[idx] = next;
+  await writeLogs(updated);
 }
 
 export async function deleteNotificationLog(id: string): Promise<void> {
@@ -93,6 +118,6 @@ export async function deleteNotificationLog(id: string): Promise<void> {
   const current = await getNotificationLogs();
   const updated = current.filter((x) => x.id !== id);
   if (updated.length === current.length) return;
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await writeLogs(updated);
 }
 
