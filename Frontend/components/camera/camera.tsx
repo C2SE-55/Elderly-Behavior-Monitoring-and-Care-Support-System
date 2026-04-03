@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Image,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,11 +16,14 @@ import {
   API_BASE_URL,
   CAMERA_STREAM_URL,
   getCameraEventHistory,
+  getCameraLiveAccess,
   getCameraStatus,
+  getActiveRoomId,
+  subscribeActiveRoomChange,
   type CameraHistoryEvent,
+  type CameraLiveAccessResponse,
 } from "../../services/api";
-
-const WebView = Platform.OS === "web" ? null : require("react-native-webview").WebView;
+import CameraStreamView from "./CameraStreamView";
 const TAB_ACTIVE = "#56328C";
 const TAB_INACTIVE = "#A78BFA";
 
@@ -76,60 +78,6 @@ function toAbsoluteImageUrl(imageUrl?: string | null) {
   return `${API_BASE_URL.replace(/\/$/, "")}${normalized}`;
 }
 
-function buildStreamHtml(streamUrl: string, fit: "cover" | "contain") {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-    <style>
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #000;
-      }
-      img {
-        width: 100%;
-        height: 100%;
-        object-fit: ${fit};
-        display: block;
-        background: #000;
-      }
-    </style>
-  </head>
-  <body>
-    <img src="${streamUrl}" alt="Camera Live" />
-  </body>
-</html>`;
-}
-
-function renderCameraMedia(style: any, fit: "cover" | "contain") {
-  if (Platform.OS === "web") {
-    return <Image source={{ uri: CAMERA_STREAM_URL }} style={style} resizeMode={fit} />;
-  }
-
-  if (!WebView) {
-    return (
-      <View style={[style, styles.placeholderCamera]}>
-        <Ionicons name="videocam-outline" size={48} color="#999" />
-        <Text style={styles.placeholderText}>Không hỗ trợ WebView</Text>
-      </View>
-    );
-  }
-
-  return (
-    <WebView
-      source={{ html: buildStreamHtml(CAMERA_STREAM_URL, fit) }}
-      style={style}
-      scrollEnabled={false}
-      originWhitelist={["*"]}
-      mixedContentMode="compatibility"
-    />
-  );
-}
-
 export default function CameraLiveScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ eventId?: string }>();
@@ -146,6 +94,9 @@ export default function CameraLiveScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [liveAccess, setLiveAccess] = useState<CameraLiveAccessResponse | null | "loading">("loading");
+  const [liveAccessError, setLiveAccessError] = useState<string | null>(null);
+  const [activeRoom, setActiveRoom] = useState<number | null>(() => getActiveRoomId());
   const requestedEventId = useMemo(() => {
     const raw = params?.eventId;
     const n = Number(raw || 0);
@@ -160,6 +111,60 @@ export default function CameraLiveScreen() {
   }, []);
 
   useEffect(() => {
+    return subscribeActiveRoomChange((roomId) => {
+      setActiveRoom(roomId);
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAccess = async () => {
+      const rid = getActiveRoomId();
+      setActiveRoom(rid);
+      if (!rid) {
+        setLiveAccess(null);
+        setLiveAccessError(null);
+        return;
+      }
+      setLiveAccess("loading");
+      setLiveAccessError(null);
+      try {
+        const data = await getCameraLiveAccess();
+        if (!cancelled) {
+          setLiveAccess(data);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setLiveAccess(null);
+          const msg =
+            (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+            "Không tải được quyền xem camera cho room này.";
+          setLiveAccessError(msg);
+        }
+      }
+    };
+
+    void loadAccess();
+    const t = setInterval(loadAccess, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [activeRoom]);
+
+  const useMjpegFallback =
+    liveAccess !== "loading" && liveAccess?.allowed && !liveAccess?.asset_key;
+
+  useEffect(() => {
+    if (!useMjpegFallback) {
+      setStreamReady(false);
+      setFallCount(0);
+      setFps(0);
+      setStreamError(null);
+      return;
+    }
+
     const loadStatus = async () => {
       try {
         const status = await getCameraStatus();
@@ -175,7 +180,7 @@ export default function CameraLiveScreen() {
     loadStatus();
     const interval = setInterval(loadStatus, 1500);
     return () => clearInterval(interval);
-  }, []);
+  }, [useMjpegFallback]);
 
   useEffect(() => {
     let mounted = true;
@@ -237,6 +242,13 @@ export default function CameraLiveScreen() {
     router.push("/(cameras)/camera-fullscreen");
   };
 
+  const showStreamBlock =
+    liveAccess !== "loading" &&
+    liveAccess?.allowed &&
+    (liveAccess?.asset_key || useMjpegFallback);
+  const blockNoRoom = !activeRoom && liveAccess !== "loading";
+  const blockDenied = liveAccess !== "loading" && liveAccess && !liveAccess.allowed;
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: 15 + insets.top }]}>
@@ -250,9 +262,45 @@ export default function CameraLiveScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.cameraBox}>
           <View style={styles.cameraFrame}>
-            {renderCameraMedia(styles.camera, "cover")}
+            {liveAccess === "loading" ? (
+              <View style={[styles.camera, styles.placeholderCamera]}>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={[styles.loadingText, { marginTop: 8 }]}>Đang kiểm tra quyền camera...</Text>
+              </View>
+            ) : blockNoRoom ? (
+              <View style={[styles.camera, styles.placeholderCamera]}>
+                <Ionicons name="home-outline" size={40} color="#999" />
+                <Text style={styles.placeholderText}>Chọn room hoạt động (tab truy cập room) để xem camera.</Text>
+              </View>
+            ) : liveAccessError ? (
+              <View style={[styles.camera, styles.placeholderCamera]}>
+                <Ionicons name="warning-outline" size={40} color="#c2410c" />
+                <Text style={styles.placeholderText}>{liveAccessError}</Text>
+              </View>
+            ) : blockDenied ? (
+              <View style={[styles.camera, styles.placeholderCamera]}>
+                <Ionicons name="eye-off-outline" size={40} color="#6b7280" />
+                <Text style={styles.placeholderText}>
+                  {liveAccess?.reason === "host_disabled"
+                    ? "Host đã tắt quyền xem camera trực tiếp cho tài khoản của bạn."
+                    : "Bạn không có quyền trong room đang chọn. Vào Phân quyền trong Room và chọn đúng phòng (room_id_int)."}
+                </Text>
+              </View>
+            ) : showStreamBlock ? (
+              <CameraStreamView
+                style={styles.camera}
+                fit="cover"
+                assetKey={liveAccess?.asset_key ?? null}
+                mjpegUrl={CAMERA_STREAM_URL}
+              />
+            ) : (
+              <View style={[styles.camera, styles.placeholderCamera]}>
+                <Ionicons name="videocam-off-outline" size={40} color="#999" />
+                <Text style={styles.placeholderText}>Chưa cấu hình nguồn video cho room này.</Text>
+              </View>
+            )}
 
-            {(streamReady || fallCount > 0) && (
+            {useMjpegFallback && (streamReady || fallCount > 0) && (
               <View style={styles.overlayBadge}>
                 <Text style={styles.overlayText}>FPS: {fps.toFixed(1)}</Text>
                 <Text style={[styles.overlayText, fallCount > 0 && styles.fallText]}>
@@ -261,7 +309,7 @@ export default function CameraLiveScreen() {
               </View>
             )}
 
-            {!streamReady && !streamError ? (
+            {useMjpegFallback && !streamReady && !streamError ? (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="small" color="#fff" />
                 <Text style={styles.loadingText}>Đang tải camera...</Text>
@@ -269,7 +317,7 @@ export default function CameraLiveScreen() {
             ) : null}
           </View>
 
-          {streamError ? <Text style={styles.streamErrorText}>{streamError}</Text> : null}
+          {useMjpegFallback && streamError ? <Text style={styles.streamErrorText}>{streamError}</Text> : null}
         </View>
 
         <View style={styles.controlRow}>

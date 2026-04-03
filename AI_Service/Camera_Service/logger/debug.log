@@ -1,14 +1,26 @@
-2026-04-02 18:13:38,154 [WARNING]: MainProcess face_recognizer.py(load_face_references:43) >> Thi\u1ebfu face_recognition ho\u1eb7c requests: b\u1ecf qua nh\u1eadn di\u1ec7n khuôn m\u1eb7t.
-2026-04-02 18:13:38,155 [WARNING]: MainProcess video.py(inference:319) >> Nh\u1eadn di\u1ec7n khuôn m\u1eb7t t\u1eaft: không có \u1ea3nh tham chi\u1ebfu. Ki\u1ec3m tra Backend (GET /api/health-metrics/face-references) và \u0111\u0103ng \u1ea3nh \u0111\u1ea1i di\u1ec7n trong Qu\u1ea3n lý thông tin s\u1ee9c kh\u1ecfe.
-2026-04-02 18:13:38,161 [WARNING]: MainProcess face_recognizer.py(load_face_references:43) >> Thi\u1ebfu face_recognition ho\u1eb7c requests: b\u1ecf qua nh\u1eadn di\u1ec7n khuôn m\u1eb7t.
-2026-04-02 18:13:38,162 [WARNING]: MainProcess video.py(inference:319) >> Nh\u1eadn di\u1ec7n khuôn m\u1eb7t t\u1eaft: không có \u1ea3nh tham chi\u1ebfu. Ki\u1ec3m tra Backend (GET /api/health-metrics/face-references) và \u0111\u0103ng \u1ea3nh \u0111\u1ea1i di\u1ec7n trong Qu\u1ea3n lý thông tin s\u1ee9c kh\u1ecfe.
-2026-04-02 18:14:06,658 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:14:06,662 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:18:31,256 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:18:31,291 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:22:58,135 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:22:58,772 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:27:06,002 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:27:06,040 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:31:10,086 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
-2026-04-02 18:31:10,133 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 06:58:25,994 [WARNING]: MainProcess face_recognizer.py(load_face_references:43) >> Thi\u1ebfu face_recognition ho\u1eb7c requests: b\u1ecf qua nh\u1eadn di\u1ec7n khuôn m\u1eb7t.
+2026-04-03 06:58:25,995 [WARNING]: MainProcess video.py(inference:319) >> Nh\u1eadn di\u1ec7n khuôn m\u1eb7t t\u1eaft: không có \u1ea3nh tham chi\u1ebfu. Ki\u1ec3m tra Backend (GET /api/health-metrics/face-references) và \u0111\u0103ng \u1ea3nh \u0111\u1ea1i di\u1ec7n trong Qu\u1ea3n lý thông tin s\u1ee9c kh\u1ecfe.
+2026-04-03 06:58:26,003 [WARNING]: MainProcess face_recognizer.py(load_face_references:43) >> Thi\u1ebfu face_recognition ho\u1eb7c requests: b\u1ecf qua nh\u1eadn di\u1ec7n khuôn m\u1eb7t.
+2026-04-03 06:58:26,004 [WARNING]: MainProcess video.py(inference:319) >> Nh\u1eadn di\u1ec7n khuôn m\u1eb7t t\u1eaft: không có \u1ea3nh tham chi\u1ebfu. Ki\u1ec3m tra Backend (GET /api/health-metrics/face-references) và \u0111\u0103ng \u1ea3nh \u0111\u1ea1i di\u1ec7n trong Qu\u1ea3n lý thông tin s\u1ee9c kh\u1ecfe.
+2026-04-03 06:58:49,288 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 06:58:49,950 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:02:42,572 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:02:47,393 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:06:33,193 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:06:42,091 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:10:37,108 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:10:52,241 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:14:41,351 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:15:00,879 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:18:51,892 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:19:15,535 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:22:44,033 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:23:13,319 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:26:50,488 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:27:28,477 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:30:39,965 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:31:17,216 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:34:49,257 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:35:37,702 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:38:43,393 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).
+2026-04-03 07:39:40,048 [WARNING]: MainProcess video.py(inference:588) >> \u0110ã g\u1eedi \u1ea3nh 'Không phát hi\u1ec7n ng\u01b0\u1eddi' \u2192 left_safe_zone_events (camera_id=1).

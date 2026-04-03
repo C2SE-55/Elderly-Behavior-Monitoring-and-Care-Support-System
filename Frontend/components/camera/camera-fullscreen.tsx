@@ -1,16 +1,22 @@
-import React, { useEffect } from "react";
-import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { CAMERA_STREAM_URL } from "../../services/api";
-
-const WebView = Platform.OS === "web" ? null : require("react-native-webview").WebView;
+import CameraStreamView from "./CameraStreamView";
+import {
+  CAMERA_STREAM_URL,
+  getActiveRoomId,
+  getCameraLiveAccess,
+  type CameraLiveAccessResponse,
+} from "../../services/api";
 
 export default function CameraFullscreenScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [access, setAccess] = useState<CameraLiveAccessResponse | null | "loading">("loading");
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== "web") {
@@ -24,6 +30,36 @@ export default function CameraFullscreenScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!getActiveRoomId()) {
+        setAccess(null);
+        setMessage("Chưa chọn room.");
+        return;
+      }
+      setAccess("loading");
+      setMessage(null);
+      try {
+        const data = await getCameraLiveAccess();
+        if (cancelled) return;
+        setAccess(data);
+        if (data && !data.allowed) {
+          setMessage("Bạn không có quyền xem camera trong room này.");
+        }
+      } catch {
+        if (!cancelled) {
+          setAccess(null);
+          setMessage("Không tải được quyền xem camera.");
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const closeScreen = () => {
     router.back();
   };
@@ -31,20 +67,27 @@ export default function CameraFullscreenScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.streamFrame}>
-        {Platform.OS === "web" ? (
-          <Image source={{ uri: CAMERA_STREAM_URL }} style={styles.stream} resizeMode="contain" />
-        ) : WebView ? (
-          <WebView
-            source={{ uri: CAMERA_STREAM_URL }}
+        {access === "loading" ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator color="#fff" />
+            <Text style={styles.hint}>Đang tải...</Text>
+          </View>
+        ) : message ? (
+          <View style={styles.centerBox}>
+            <Ionicons name="eye-off-outline" size={48} color="#9ca3af" />
+            <Text style={styles.hint}>{message}</Text>
+          </View>
+        ) : access?.allowed ? (
+          <CameraStreamView
             style={styles.stream}
-            scrollEnabled={false}
-            originWhitelist={["*"]}
-            mixedContentMode="compatibility"
+            fit="contain"
+            assetKey={access.asset_key}
+            mjpegUrl={CAMERA_STREAM_URL}
           />
         ) : (
-          <View style={styles.placeholder}>
-            <Ionicons name="videocam-outline" size={48} color="#999" />
-            <Text style={styles.placeholderText}>Không hỗ trợ WebView</Text>
+          <View style={styles.centerBox}>
+            <Ionicons name="videocam-off-outline" size={48} color="#9ca3af" />
+            <Text style={styles.hint}>Không có luồng video cho room này.</Text>
           </View>
         )}
       </View>
@@ -76,30 +119,32 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#000",
   },
-  placeholder: {
+  centerBox: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#111",
+    alignItems: "center",
+    padding: 24,
+    gap: 12,
   },
-  placeholderText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: "#ccc",
+  hint: {
+    color: "#d1d5db",
+    textAlign: "center",
+    fontSize: 14,
   },
   closeButton: {
     position: "absolute",
-    left: 12,
+    right: 16,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
+    gap: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   closeText: {
     color: "#fff",
-    fontSize: 14,
-    marginLeft: 6,
+    fontWeight: "600",
+    fontSize: 13,
   },
 });

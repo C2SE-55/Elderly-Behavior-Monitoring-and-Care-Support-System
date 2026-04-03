@@ -43,7 +43,7 @@ const getChatbotBaseUrl = () => {
 
 export const CHATBOT_BASE_URL = getChatbotBaseUrl();
 
-/** Base URL cho Camera Service (AI stream + fall detection) - port 9000 */
+/** Base URL cho Camera Service (AI stream + fall detection) - port 9001 */
 const getCameraServiceBaseUrl = () => {
   try {
     const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
@@ -61,6 +61,25 @@ export const CAMERA_SERVICE_BASE_URL = getCameraServiceBaseUrl();
 
 /** URL stream MJPEG (video đã qua model té ngã, quét liên tục) */
 export const CAMERA_STREAM_URL = `${CAMERA_SERVICE_BASE_URL}/stream`;
+
+export type CameraLiveAccessResponse = {
+  allowed: boolean;
+  reason?: string | null;
+  room_id: number | null;
+  asset_key: "video3" | "videofall" | null;
+  camera_id: number | null;
+};
+
+/** Quyền + khóa video demo theo room (header x-room-id / active room). */
+export const getCameraLiveAccess = async (): Promise<CameraLiveAccessResponse | null> => {
+  const roomId = getActiveRoomId();
+  if (!roomId) return null;
+  const res = await api.get("/cameras/live-access", {
+    params: { room_id: roomId },
+    timeout: 8000,
+  });
+  return (res.data?.data ?? null) as CameraLiveAccessResponse | null;
+};
 
 /** Lấy trạng thái fall detection (fallcount, fps) */
 export const getCameraStatus = async (): Promise<{
@@ -378,6 +397,7 @@ export type RoomMember = {
   can_manage_medication: boolean;
   can_receive_schedule_notifications: boolean;
   can_receive_medication_notifications: boolean;
+  can_view_live: boolean;
 };
 
 export type MyRoomInfo = {
@@ -390,6 +410,7 @@ export type MyRoomInfo = {
   can_manage_medication: boolean;
   can_receive_schedule_notifications: boolean;
   can_receive_medication_notifications: boolean;
+  can_view_live?: boolean;
 };
 
 export type MyRoomSummary = {
@@ -403,6 +424,7 @@ export type MyRoomSummary = {
   can_manage_medication: boolean;
   can_receive_schedule_notifications: boolean;
   can_receive_medication_notifications: boolean;
+  can_view_live?: boolean;
   created_at?: string;
 };
 
@@ -504,12 +526,21 @@ export const getRoomMembers = async (): Promise<RoomMember[]> => {
     can_receive_medication_notifications: !!(
       (row as any)?.can_receive_medication_notifications ?? (row as any)?.canReceiveMedicationNotifications
     ),
+    can_view_live: !!((row as any)?.can_view_live ?? (row as any)?.canViewLive ?? true),
   })) as RoomMember[];
 };
 
 export const updateCaretakerPermissions = async (
   userId: number,
-  payload: Partial<Pick<RoomMember, "can_manage_medication" | "can_receive_schedule_notifications" | "can_receive_medication_notifications">>
+  payload: Partial<
+    Pick<
+      RoomMember,
+      | "can_manage_medication"
+      | "can_receive_schedule_notifications"
+      | "can_receive_medication_notifications"
+      | "can_view_live"
+    >
+  >
 ): Promise<void> => {
   await api.patch(`/rooms/members/${userId}/permissions`, payload);
 };

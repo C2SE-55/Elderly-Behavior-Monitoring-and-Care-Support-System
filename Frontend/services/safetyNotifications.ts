@@ -45,6 +45,10 @@ const isSafetyEvent = (ev: CameraHistoryEvent) =>
 const titleFor = (ev: CameraHistoryEvent) =>
   ev.source_type === "left_safe_zone_event" ? "Rời khỏi vùng an toàn" : "Cảnh báo té ngã";
 
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 phút
+const cooldownKeyFor = (roomId?: string | number | null, safetyType?: string) =>
+  `ebms.safety.pushCooldown.v1.${String(roomId || "no-room")}.${String(safetyType || "unknown")}`;
+
 let _Notifications: typeof import("expo-notifications") | null = null;
 const getNotifications = async () => {
   if (_Notifications) return _Notifications;
@@ -52,9 +56,31 @@ const getNotifications = async () => {
   return _Notifications;
 };
 
+const shouldSendPush = async (roomId: string | number | null | undefined, safetyType: string) => {
+  try {
+    const key = cooldownKeyFor(roomId, safetyType);
+    const raw = await AsyncStorage.getItem(key);
+    const lastAt = raw ? Number(raw) : 0;
+    const now = Date.now();
+    if (lastAt && Number.isFinite(lastAt) && now - lastAt < COOLDOWN_MS) {
+      return false;
+    }
+    await AsyncStorage.setItem(key, String(now));
+    return true;
+  } catch {
+    // best-effort: if storage fails, still allow sending
+    return true;
+  }
+};
+
 const notifyDevice = async (title: string, body: string, data: Record<string, any>) => {
   if (Platform.OS === "web") return;
   try {
+    const safetyType = String((data as any)?.safety_type || "unknown");
+    const roomId = (data as any)?.room_id ?? null;
+    const ok = await shouldSendPush(roomId, safetyType);
+    if (!ok) return;
+
     const Notifications = await getNotifications();
     const perms = await Notifications.getPermissionsAsync();
     if (!perms.granted) {

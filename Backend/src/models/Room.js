@@ -133,15 +133,16 @@ class Room {
            SET member_role = 'host',
                can_manage_medication = 1,
                can_receive_schedule_notifications = 1,
-               can_receive_medication_notifications = 1
+               can_receive_medication_notifications = 1,
+               can_view_live = 1
            WHERE room_id = ? AND user_id = ?`,
           [room.id, userId]
         );
       } else if (!existing) {
         await connection.execute(
           `INSERT INTO room_members
-           (room_id, user_id, member_role, can_manage_medication, can_receive_schedule_notifications, can_receive_medication_notifications)
-           VALUES (?, ?, 'host', 1, 1, 1)`,
+           (room_id, user_id, member_role, can_manage_medication, can_receive_schedule_notifications, can_receive_medication_notifications, can_view_live)
+           VALUES (?, ?, 'host', 1, 1, 1, 1)`,
           [room.id, userId]
         );
       }
@@ -190,8 +191,8 @@ class Room {
       if (!existing) {
         await connection.execute(
           `INSERT INTO room_members
-           (room_id, user_id, member_role, can_manage_medication, can_receive_schedule_notifications, can_receive_medication_notifications)
-           VALUES (?, ?, 'caretaker', 0, 1, 1)`,
+           (room_id, user_id, member_role, can_manage_medication, can_receive_schedule_notifications, can_receive_medication_notifications, can_view_live)
+           VALUES (?, ?, 'caretaker', 0, 1, 1, 1)`,
           [room.id, userId]
         );
       } else if (existing.member_role === "caretaker") {
@@ -213,9 +214,41 @@ class Room {
 
   static async listRoomsByUser(userId) {
     const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        `SELECT
+    const sqlWithLive = `SELECT
+           r.id,
+           r.room_id,
+           r.admin_user_id,
+           r.host_user_id,
+           r.admin_join_token,
+           r.host_join_token,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_manage_medication
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_schedule_notifications
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_medication_notifications
+           END AS can_receive_medication_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_view_live, 1)
+           END AS can_view_live,
+           r.created_at
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
+         ORDER BY r.id DESC`;
+    const sqlNoLive = `SELECT
            r.id,
            r.room_id,
            r.admin_user_id,
@@ -244,10 +277,20 @@ class Room {
            ON rm.room_id = r.id
           AND rm.user_id = ?
          WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
-         ORDER BY r.id DESC`,
-        [userId, userId, userId, userId, userId, userId]
-      );
-      return rows;
+         ORDER BY r.id DESC`;
+    const paramsWithLive = [userId, userId, userId, userId, userId, userId, userId];
+    const paramsNoLive = [userId, userId, userId, userId, userId, userId];
+    try {
+      try {
+        const [rows] = await connection.execute(sqlWithLive, paramsWithLive);
+        return rows;
+      } catch (e) {
+        if (e?.code === "ER_BAD_FIELD_ERROR" && String(e.sqlMessage || "").includes("can_view_live")) {
+          const [rows] = await connection.execute(sqlNoLive, paramsNoLive);
+          return rows.map((row) => ({ ...row, can_view_live: 1 }));
+        }
+        throw e;
+      }
     } finally {
       connection.release();
     }
@@ -255,9 +298,21 @@ class Room {
 
   static async listMembers(roomId) {
     const connection = await pool.getConnection();
-    try {
-      const [rows] = await connection.execute(
-        `SELECT
+    const sqlWithLive = `SELECT
+           rm.user_id,
+           u.username,
+           u.full_name AS fullName,
+           u.email,
+           rm.member_role,
+           rm.can_manage_medication,
+           rm.can_receive_schedule_notifications,
+           rm.can_receive_medication_notifications,
+           COALESCE(rm.can_view_live, 1) AS can_view_live
+         FROM room_members rm
+         INNER JOIN users u ON u.id = rm.user_id
+         WHERE rm.room_id = ?
+         ORDER BY FIELD(rm.member_role, 'host', 'caretaker'), rm.user_id ASC`;
+    const sqlNoLive = `SELECT
            rm.user_id,
            u.username,
            u.full_name AS fullName,
@@ -269,10 +324,18 @@ class Room {
          FROM room_members rm
          INNER JOIN users u ON u.id = rm.user_id
          WHERE rm.room_id = ?
-         ORDER BY FIELD(rm.member_role, 'host', 'caretaker'), rm.user_id ASC`,
-        [roomId]
-      );
-      return rows;
+         ORDER BY FIELD(rm.member_role, 'host', 'caretaker'), rm.user_id ASC`;
+    try {
+      try {
+        const [rows] = await connection.execute(sqlWithLive, [roomId]);
+        return rows;
+      } catch (e) {
+        if (e?.code === "ER_BAD_FIELD_ERROR" && String(e.sqlMessage || "").includes("can_view_live")) {
+          const [rows] = await connection.execute(sqlNoLive, [roomId]);
+          return rows.map((row) => ({ ...row, can_view_live: 1 }));
+        }
+        throw e;
+      }
     } finally {
       connection.release();
     }
@@ -285,7 +348,10 @@ class Room {
         "SELECT member_role FROM room_members WHERE room_id = ? AND user_id = ? LIMIT 1",
         [roomId, targetUserId]
       );
-      if (!rows[0] || rows[0].member_role !== "caretaker") {
+      const roleNorm = String(rows[0]?.member_role || "")
+        .trim()
+        .toLowerCase();
+      if (!rows[0] || roleNorm !== "caretaker") {
         const error = new Error("CARETAKER_NOT_FOUND");
         error.code = "CARETAKER_NOT_FOUND";
         throw error;
@@ -305,6 +371,13 @@ class Room {
             ? 1
             : 0
           : undefined;
+      const rawViewLive =
+        payload.can_view_live !== undefined
+          ? payload.can_view_live
+          : payload.canViewLive !== undefined
+            ? payload.canViewLive
+            : undefined;
+      const canViewLive = rawViewLive !== undefined ? (rawViewLive ? 1 : 0) : undefined;
 
       const fields = [];
       const values = [];
@@ -320,6 +393,10 @@ class Room {
         fields.push("can_receive_medication_notifications = ?");
         values.push(canMedicationNotify);
       }
+      if (canViewLive !== undefined) {
+        fields.push("can_view_live = ?");
+        values.push(canViewLive);
+      }
 
       if (!fields.length) {
         const error = new Error("NO_PERMISSION_CHANGE");
@@ -328,12 +405,37 @@ class Room {
       }
 
       values.push(roomId, targetUserId);
-      await connection.execute(
-        `UPDATE room_members
+      try {
+        await connection.execute(
+          `UPDATE room_members
          SET ${fields.join(", ")}
          WHERE room_id = ? AND user_id = ?`,
-        values
-      );
+          values
+        );
+      } catch (e) {
+        if (e?.code === "ER_BAD_FIELD_ERROR" && String(e.sqlMessage || "").includes("can_view_live")) {
+          const idx = fields.findIndex((f) => f.startsWith("can_view_live"));
+          const wherePair = values.splice(-2, 2);
+          if (idx >= 0) {
+            fields.splice(idx, 1);
+            values.splice(idx, 1);
+          }
+          if (!fields.length) {
+            const err = new Error("NO_PERMISSION_CHANGE");
+            err.code = "NO_PERMISSION_CHANGE";
+            throw err;
+          }
+          values.push(...wherePair);
+          await connection.execute(
+            `UPDATE room_members
+         SET ${fields.join(", ")}
+         WHERE room_id = ? AND user_id = ?`,
+            values
+          );
+        } else {
+          throw e;
+        }
+      }
       return true;
     } finally {
       connection.release();

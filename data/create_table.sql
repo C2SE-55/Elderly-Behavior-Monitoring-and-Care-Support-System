@@ -72,21 +72,24 @@ CREATE TABLE room_members (
     can_manage_medication BOOLEAN NOT NULL DEFAULT FALSE,
     can_receive_schedule_notifications BOOLEAN NOT NULL DEFAULT TRUE,
     can_receive_medication_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    can_view_live BOOLEAN NOT NULL DEFAULT TRUE,
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_room_user (room_id, user_id),
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 5 CAMERAS (camera)
+-- 5 CAMERAS (camera, gắn room để chọn nguồn stream / video demo)
 CREATE TABLE cameras (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    room_id INT NULL,
     user_id INT,
     camera_name VARCHAR(100),
     location VARCHAR(100),
     stream_url TEXT,
     status ENUM('active','inactive') DEFAULT 'active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 

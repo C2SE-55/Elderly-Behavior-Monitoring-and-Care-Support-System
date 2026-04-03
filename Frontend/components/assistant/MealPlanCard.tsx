@@ -21,10 +21,10 @@ export default function MealPlanCard({
 }: Props) {
   return (
     <View style={styles.card}>
-      <Text style={styles.date}>Ngay {date}</Text>
+      <Text style={styles.date}>Ngày {date}</Text>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Breakfast</Text>
+        <Text style={styles.label}>Bữa sáng</Text>
         <TextInput
           style={styles.input}
           value={meals.breakfast}
@@ -35,7 +35,7 @@ export default function MealPlanCard({
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Lunch</Text>
+        <Text style={styles.label}>Bữa trưa</Text>
         <TextInput
           style={styles.input}
           value={meals.lunch}
@@ -46,7 +46,7 @@ export default function MealPlanCard({
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Dinner</Text>
+        <Text style={styles.label}>Bữa tối</Text>
         <TextInput
           style={styles.input}
           value={meals.dinner}

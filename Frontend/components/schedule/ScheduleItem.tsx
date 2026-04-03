@@ -25,6 +25,7 @@ const TYPE_TEXT: Record<DailyScheduleItem["type"], string> = {
 };
 
 export default function ScheduleItem({ item, onEdit, onDelete, readonly = false, onViewDetail }: Props) {
+  const isDone = String(item.description || "").includes("[ĐÃ XONG]");
   return (
     <View style={[styles.box, { backgroundColor: TYPE_BG[item.type] }]}>
       <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
@@ -38,12 +39,12 @@ export default function ScheduleItem({ item, onEdit, onDelete, readonly = false,
           {item.description}
         </Text>
       )}
+      {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
       <View style={styles.actions}>
-        {readonly ? (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)}>
-            <Text style={styles.actionText}>Xem chi tiết</Text>
-          </TouchableOpacity>
-        ) : (
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)}>
+          <Text style={styles.actionText}>Chi tiết</Text>
+        </TouchableOpacity>
+        {!readonly && (
           <>
             <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
               <Text style={styles.actionText}>Sửa</Text>
@@ -80,6 +81,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#4B5563",
     marginTop: 2,
+  },
+  doneBadge: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(22,163,74,0.15)",
+    color: "#166534",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 10,
+    fontWeight: "800",
+    overflow: "hidden",
   },
   actions: {
     flexDirection: "row",

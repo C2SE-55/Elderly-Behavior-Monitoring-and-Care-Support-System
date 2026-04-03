@@ -134,7 +134,10 @@ export default function RoomPermissionsScreen() {
 
   const onToggle = async (
     member: RoomMember,
-    field: "can_receive_schedule_notifications" | "can_receive_medication_notifications",
+    field:
+      | "can_receive_schedule_notifications"
+      | "can_receive_medication_notifications"
+      | "can_view_live",
     nextValue: boolean
   ) => {
     if (togglePendingRef.current.has(member.user_id)) return;
@@ -257,6 +260,14 @@ export default function RoomPermissionsScreen() {
                           value={member.can_receive_medication_notifications}
                           disabled={updatingId === member.user_id}
                           onValueChange={(v) => void onToggle(member, "can_receive_medication_notifications", v)}
+                        />
+                      </View>
+                      <View style={styles.toggleRow}>
+                        <Text style={styles.toggleLabel}>Xem camera trực tiếp trong room</Text>
+                        <PermissionToggle
+                          value={member.can_view_live}
+                          disabled={updatingId === member.user_id}
+                          onValueChange={(v) => void onToggle(member, "can_view_live", v)}
                         />
                       </View>
                       <TouchableOpacity

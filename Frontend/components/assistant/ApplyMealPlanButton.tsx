@@ -14,7 +14,7 @@ export default function ApplyMealPlanButton({ disabled, loading, onPress }: Prop
       onPress={onPress}
       disabled={disabled || loading}
     >
-      <Text style={styles.text}>{loading ? "Dang ap dung..." : "Ap dung vao lich"}</Text>
+      <Text style={styles.text}>{loading ? "Đang áp dụng..." : "Áp dụng vào lịch"}</Text>
     </TouchableOpacity>
   );
 }

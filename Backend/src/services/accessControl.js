@@ -7,11 +7,12 @@ const ROOM_ROLE = {
 };
 
 const resolveRequestedRoomId = (req) => {
+  // Ưu tiên query/body (gửi rõ room) trước header — tránh header axios cũ lệch với ?room_id
   const raw =
-    req?.headers?.["x-room-id"] ||
-    req?.query?.room_id ||
-    req?.body?.room_id ||
-    req?.params?.roomId ||
+    req?.query?.room_id ??
+    req?.body?.room_id ??
+    req?.headers?.["x-room-id"] ??
+    req?.params?.roomId ??
     null;
   const roomId = Number(raw);
   return roomId && !Number.isNaN(roomId) ? roomId : null;
@@ -19,10 +20,74 @@ const resolveRequestedRoomId = (req) => {
 
 async function getRoomMemberContext(userId, roomId) {
   const connection = await pool.getConnection();
-  try {
-    const hasRoomId = !!roomId;
-    const query = hasRoomId
-      ? `SELECT
+  const hasRoomId = !!roomId;
+  const queryWithLive = hasRoomId
+    ? `SELECT
+           r.id AS room_id,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_manage_medication, 0)
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_schedule_notifications, 0)
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_medication_notifications, 0)
+           END AS can_receive_medication_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_view_live, 1)
+           END AS can_view_live,
+           r.host_user_id
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE r.id = ?
+           AND (rm.user_id IS NOT NULL OR r.host_user_id = ?)
+         LIMIT 1`
+    : `SELECT
+           r.id AS room_id,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_manage_medication, 0)
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_schedule_notifications, 0)
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_receive_medication_notifications, 0)
+           END AS can_receive_medication_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_view_live, 1)
+           END AS can_view_live,
+           r.host_user_id
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
+         ORDER BY r.id DESC
+         LIMIT 1`;
+  const paramsWithLive = hasRoomId
+    ? [userId, userId, userId, userId, userId, userId, roomId, userId]
+    : [userId, userId, userId, userId, userId, userId, userId];
+
+  const queryNoLive = hasRoomId
+    ? `SELECT
            r.id AS room_id,
            CASE
              WHEN r.host_user_id = ? THEN 'host'
@@ -48,7 +113,7 @@ async function getRoomMemberContext(userId, roomId) {
          WHERE r.id = ?
            AND (rm.user_id IS NOT NULL OR r.host_user_id = ?)
          LIMIT 1`
-      : `SELECT
+    : `SELECT
            r.id AS room_id,
            CASE
              WHEN r.host_user_id = ? THEN 'host'
@@ -74,11 +139,21 @@ async function getRoomMemberContext(userId, roomId) {
          WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
          ORDER BY r.id DESC
          LIMIT 1`;
-    const params = hasRoomId
-      ? [userId, userId, userId, userId, userId, roomId, userId]
-      : [userId, userId, userId, userId, userId, userId];
-    const [rows] = await connection.execute(query, params);
+  const paramsNoLive = hasRoomId
+    ? [userId, userId, userId, userId, userId, roomId, userId]
+    : [userId, userId, userId, userId, userId, userId];
+
+  try {
+    const [rows] = await connection.execute(queryWithLive, paramsWithLive);
     return rows[0] || null;
+  } catch (e) {
+    if (e?.code === "ER_BAD_FIELD_ERROR" && String(e.sqlMessage || "").includes("can_view_live")) {
+      const [rows] = await connection.execute(queryNoLive, paramsNoLive);
+      const row = rows[0] || null;
+      if (row) row.can_view_live = 1;
+      return row;
+    }
+    throw e;
   } finally {
     connection.release();
   }
@@ -88,7 +163,7 @@ async function resolveAccessContext(req, userId) {
   const systemRole = (await Role.getUserRole(userId)) || "user";
   const requestedRoomId = resolveRequestedRoomId(req);
   const room = await getRoomMemberContext(userId, requestedRoomId);
-  const roomRole = room?.member_role || null;
+  const roomRole = room?.member_role != null ? String(room.member_role).trim().toLowerCase() : null;
   const isAdmin = systemRole === "admin";
   const canReadRoomData = roomRole === ROOM_ROLE.HOST || roomRole === ROOM_ROLE.CARETAKER;
   const canManageRoomData = roomRole === ROOM_ROLE.HOST;
@@ -98,6 +173,10 @@ async function resolveAccessContext(req, userId) {
     roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_schedule_notifications);
   const canReceiveMedicationNotifications =
     roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_medication_notifications);
+  const canViewLive =
+    roomRole === ROOM_ROLE.HOST ||
+    (roomRole === ROOM_ROLE.CARETAKER &&
+      (room?.can_view_live === undefined || room?.can_view_live === null ? true : !!room.can_view_live));
 
   return {
     userId,
@@ -113,6 +192,7 @@ async function resolveAccessContext(req, userId) {
     canManageMedication,
     canReceiveScheduleNotifications,
     canReceiveMedicationNotifications,
+    canViewLive,
   };
 }
 

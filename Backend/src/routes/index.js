@@ -9,6 +9,7 @@ const schedulesRoutes = require("./schedules");
 const logsRoutes = require("./logs");
 const dailySchedulesRoutes = require("./dailySchedules");
 const roomsRoutes = require("./rooms");
+const camerasRoutes = require("./cameras");
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ router.use("/api/schedules", schedulesRoutes);
 router.use("/api/logs", logsRoutes);
 router.use("/api/daily-schedules", dailySchedulesRoutes);
 router.use("/api/rooms", roomsRoutes);
+router.use("/api/cameras", camerasRoutes);
 // Alias routes for compatibility across FE baseURL variants.
 router.use("/daily-schedules", dailySchedulesRoutes);
 router.use("/api/api/daily-schedules", dailySchedulesRoutes);

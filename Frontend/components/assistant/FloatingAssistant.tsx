@@ -303,16 +303,16 @@ function parseMealPlanPromptDisplay(
   content: string
 ): { start: string; end: string; mealsStr?: string } | null {
   const between =
-    content.match(/tu ngay\s+(\d{4}-\d{2}-\d{2})\s+den\s+(\d{4}-\d{2}-\d{2})/i) ||
+    content.match(/Từ ngày\s+(\d{4}-\d{2}-\d{2})\s+đến\s+(\d{4}-\d{2}-\d{2})/i) ||
     content.match(/Khoảng ngày:\s*(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})/i) ||
-    content.match(/Khoang ngay:\s*(\d{4}-\d{2}-\d{2})\s*->\s*(\d{4}-\d{2}-\d{2})/i);
+    content.match(/Khoảng ngày:\s*(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})/i);
   if (!between) return null;
   const start = between[1];
   const end = between[2];
   const mealsMatch =
     content.match(/Chỉ tạo chi tiết cho các bữa:\s*([^\n]+)/i) ||
-    content.match(/Chi tao chi tiet cho cac bua duoc chon:\s*([^\n]+)/i) ||
-    content.match(/chi tiet cho cac bua[^:]*:\s*([^\n]+)/i);
+    content.match(/Chi tiết cho các bữa được chọn:\s*([^\n]+)/i) ||
+    content.match(/Chi tiết cho các bữa được chọn:\s*([^\n]+)/i);
   let mealsStr = mealsMatch?.[1]?.trim();
   if (mealsStr) {
     mealsStr = mealsStr
@@ -1081,11 +1081,11 @@ const FloatingAssistant: React.FC = () => {
   }, []);
 
   const askOverwriteDecision = useCallback(async (date: string): Promise<"overwrite" | "skip" | "cancel"> => {
-    const msg = `Ngay ${date} da co lich an. Ban muon ghi de hay bo qua?`;
+    const msg = `Ngày ${date} đã có lịch ăn. Bạn muốn ghi đè hay bỏ qua?`;
     if (Platform.OS === "web") {
       const raw =
         typeof window !== "undefined"
-          ? window.prompt(`${msg}\nNhap: overwrite | skip | cancel`, "skip")
+          ? window.prompt(`${msg}\nNhập: overwrite | skip | cancel`, "skip")
           : "cancel";
       const decision = String(raw || "cancel").trim().toLowerCase();
       if (decision === "overwrite") return "overwrite";
@@ -1093,10 +1093,10 @@ const FloatingAssistant: React.FC = () => {
       return "cancel";
     }
     return new Promise((resolve) => {
-      Alert.alert("Xac nhan ap dung", msg, [
-        { text: "Huy", style: "cancel", onPress: () => resolve("cancel") },
-        { text: "Bo qua", onPress: () => resolve("skip") },
-        { text: "Ghi de", style: "destructive", onPress: () => resolve("overwrite") },
+      Alert.alert("Xác nhận áp dụng", msg, [
+        { text: "Hủy", style: "cancel", onPress: () => resolve("cancel") },
+        { text: "Bỏ qua", onPress: () => resolve("skip") },
+        { text: "Ghi đè", style: "destructive", onPress: () => resolve("overwrite") },
       ]);
     });
   }, []);
@@ -1106,9 +1106,9 @@ const FloatingAssistant: React.FC = () => {
       return typeof window !== "undefined" ? window.confirm(message) : true;
     }
     return new Promise((resolve) => {
-      Alert.alert("Xac nhan", message, [
-        { text: "Huy", style: "cancel", onPress: () => resolve(false) },
-        { text: "Dong y", onPress: () => resolve(true) },
+      Alert.alert("Xác nhận", message, [
+        { text: "Hủy", style: "cancel", onPress: () => resolve(false) },
+        { text: "Đồng ý", onPress: () => resolve(true) },
       ]);
     });
   }, []);
@@ -1172,7 +1172,11 @@ const FloatingAssistant: React.FC = () => {
       try {
         const result = await applyMealsOfDay(target);
         if (result === "applied") {
-          showPlannerToast(`Đã áp dụng thực đơn ngày ${date}`);
+          const msg = `Đã áp dụng thực đơn ngày ${date}`;
+          showPlannerToast(msg);
+          if (Platform.OS !== "web") {
+            Alert.alert("Đã áp dụng thành công", msg);
+          }
           emitScheduleRefresh();
         } else if (result === "skipped") {
           showPlannerToast(`Đã bỏ qua ngày ${date}`);
@@ -1199,7 +1203,11 @@ const FloatingAssistant: React.FC = () => {
         if (result === "applied") appliedCount += 1;
       }
       emitScheduleRefresh();
-      showPlannerToast(`Hoàn tất áp dụng ${appliedCount}/${mealPlanDays.length} ngày.`);
+      const msg = `Hoàn tất áp dụng ${appliedCount}/${mealPlanDays.length} ngày.`;
+      showPlannerToast(msg);
+      if (Platform.OS !== "web") {
+        Alert.alert("Đã áp dụng thành công", msg);
+      }
     } catch {
       showPlannerToast("Áp dụng toàn bộ thất bại.");
     } finally {
@@ -1537,7 +1545,7 @@ const FloatingAssistant: React.FC = () => {
 
                       {templates.length > 0 && (
                         <View style={styles.templateWrap}>
-                          <Text style={styles.templateTitle}>Template da luu</Text>
+                          <Text style={styles.templateTitle}>Template đã lưu</Text>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateList}>
                             {templates.map((tpl) => (
                               <TouchableOpacity key={tpl.id} style={styles.templateChip} onPress={() => handleUseTemplate(tpl)}>

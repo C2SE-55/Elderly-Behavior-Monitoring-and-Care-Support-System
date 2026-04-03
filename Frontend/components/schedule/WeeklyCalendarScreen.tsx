@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import { useRouter } from "expo-router";
@@ -60,6 +60,9 @@ const TYPE_FILTERS: { key: "all" | DailyScheduleType; label: string }[] = [
   { key: "rest", label: "Nghỉ ngơi" },
   { key: "other", label: "Khác" },
 ];
+
+const SLOT_HEADER_WIDTH = 110;
+const DAY_COLUMN_WIDTH = 185;
 
 const MOCK_DATA: DailyScheduleItem[] = [
   {
@@ -140,6 +143,8 @@ const isSameWeekAs = (dateIso: string | undefined, weekStart: dayjs.Dayjs) => {
 export default function WeeklyCalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const gridScrollRef = useRef<ScrollView | null>(null);
+  const gridScrollXRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [permissionLoading, setPermissionLoading] = useState(true);
   const [screenError, setScreenError] = useState("");
@@ -335,6 +340,51 @@ export default function WeeklyCalendarScreen() {
     setDetailVisible(true);
   };
 
+  const markScheduleDone = async (item: DailyScheduleItem) => {
+    if (!canManageSchedule) {
+      setScreenError("Bạn chỉ có quyền xem lịch.");
+      return;
+    }
+    if (item.id < 0) {
+      setScreenError("Đang dùng dữ liệu mẫu, không thể cập nhật.");
+      return;
+    }
+    const marker = "[ĐÃ XONG]";
+    const raw = String(item.description || "").trim();
+    const nextDesc = raw.includes(marker) ? raw : (raw ? `${raw}\n${marker}` : marker);
+    try {
+      const keepX = gridScrollXRef.current;
+      await updateDailySchedule(item.id, { description: nextDesc });
+      await loadSchedules();
+      setTimeout(() => gridScrollRef.current?.scrollTo({ x: keepX, y: 0, animated: false }), 0);
+      setDetailVisible(false);
+      setDetailItem(null);
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không thể cập nhật lịch.");
+    }
+  };
+
+  const cancelSchedule = (item: DailyScheduleItem) => {
+    // reuse existing delete flow
+    handleDelete(item);
+  };
+
+  const scrollToCurrentDayColumn = useCallback(
+    (animated = true) => {
+      const idx = DAY_INDEX[currentDay] ?? 0;
+      const x = SLOT_HEADER_WIDTH + idx * DAY_COLUMN_WIDTH;
+      gridScrollRef.current?.scrollTo({ x, y: 0, animated });
+    },
+    [currentDay]
+  );
+
+  const goToToday = useCallback(() => {
+    setWeekOffset(0);
+    // Defer scroll until layout re-renders current week.
+    setTimeout(() => scrollToCurrentDayColumn(true), 50);
+  }, [scrollToCurrentDayColumn]);
+
   const isPastDateTime = useCallback(
     (dayKey: DayKey, hhmm: string) => {
       if (weekOffset < 0) return true;
@@ -405,15 +455,13 @@ export default function WeeklyCalendarScreen() {
       setScreenError("Đang dùng dữ liệu mẫu, không thể xóa.");
       return;
     }
-    if (isPastSchedule(item)) {
-      setScreenError("Lịch đã qua thời gian, không thể xóa.");
-      return;
-    }
     const doDelete = async () => {
       try {
         setScreenError("");
+        const keepX = gridScrollXRef.current;
         await deleteDailySchedule(item.id);
         await loadSchedules();
+        setTimeout(() => gridScrollRef.current?.scrollTo({ x: keepX, y: 0, animated: false }), 0);
       } catch (error) {
         const backendMessage = (error as any)?.response?.data?.message;
         setScreenError(backendMessage || "Không thể xóa lịch.");
@@ -507,8 +555,8 @@ export default function WeeklyCalendarScreen() {
             </Text>
           </TouchableOpacity>
           <View style={styles.weekActionsRight}>
-            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset(0)}>
-              <Text style={styles.weekBtnText}>Tuần hiện tại</Text>
+            <TouchableOpacity style={styles.weekBtn} onPress={goToToday}>
+              <Text style={styles.weekBtnText}>Ngày hiện tại</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)}>
               <Text style={styles.weekBtnText}>Tuần sau</Text>
@@ -544,7 +592,16 @@ export default function WeeklyCalendarScreen() {
             <Text style={styles.loadingText}>Đang tải lịch...</Text>
           </View>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
+          <ScrollView
+            ref={gridScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator
+            nestedScrollEnabled
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              gridScrollXRef.current = e.nativeEvent.contentOffset.x || 0;
+            }}
+          >
             <View style={styles.grid}>
               <View style={styles.headerRow}>
                 <View style={styles.slotHeader}>
@@ -599,6 +656,9 @@ export default function WeeklyCalendarScreen() {
       <ScheduleDetailModal
         visible={detailVisible}
         item={detailItem}
+        canManage={canManageSchedule}
+        isPast={!!detailItem && isPastSchedule(detailItem)}
+        onDone={(it) => void markScheduleDone(it)}
         onClose={() => {
           setDetailVisible(false);
           setDetailItem(null);
