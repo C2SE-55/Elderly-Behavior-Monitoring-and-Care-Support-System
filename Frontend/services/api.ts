@@ -3,19 +3,75 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const trimUrl = (u: string) => u.trim().replace(/\/$/, "");
+
+const isLocalhostUrl = (raw: string): boolean => {
+  try {
+    const u = new URL(raw.includes("://") ? raw : `http://${raw}`);
+    return u.hostname === "localhost" || u.hostname === "127.0.0.1";
+  } catch {
+    return /\blocalhost\b|127\.0\.0\.1/i.test(raw);
+  }
+};
+
+/** Host từ Expo hostUri (vd 192.168.1.5:8081 → 192.168.1.5), không lấy nhầm cổng làm API. */
+const hostFromExpoHostUri = (hostUri: string): string => {
+  if (hostUri.startsWith("[")) {
+    const end = hostUri.indexOf("]");
+    if (end > 0) return hostUri.slice(1, end);
+  }
+  const idx = hostUri.lastIndexOf(":");
+  if (idx > 0 && /^\d+$/.test(hostUri.slice(idx + 1))) {
+    return hostUri.slice(0, idx);
+  }
+  return hostUri;
+};
+
+/**
+ * Expo trên điện thoại thật: Metro báo hostUri dạng 192.168.x.x.
+ * Khi đó EXPO_PUBLIC_*=localhost trong .env trỏ nhầm vào chính điện thoại → bỏ qua .env, dùng IP LAN.
+ * Giữ .env localhost cho web + iOS Simulator (hostUri thường là localhost).
+ */
+const preferLanHostOverLocalhostEnv = (): boolean => {
+  if (Platform.OS === "web") return false;
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (!hostUri) return false;
+  const h = hostFromExpoHostUri(hostUri);
+  return h !== "localhost" && h !== "127.0.0.1";
+};
+
 const getApiBaseUrl = () => {
+  const envApi =
+    typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL
+      ? trimUrl(String(process.env.EXPO_PUBLIC_API_URL))
+      : "";
+  if (envApi && !(preferLanHostOverLocalhostEnv() && isLocalhostUrl(envApi))) {
+    return envApi;
+  }
+
   // Nếu cấu hình trong app.json / app.config.ts có extra.apiUrl thì ưu tiên dùng
   // (phù hợp cho môi trường production)
   // @ts-ignore
   const extraApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
   if (extraApiUrl) {
-    return extraApiUrl;
+    const raw = trimUrl(String(extraApiUrl));
+    try {
+      const u = new URL(raw.includes("://") ? raw : `http://${raw}`);
+      // Tránh cấu hình nhầm: trỏ apiUrl vào cổng Metro (8081) — Backend Node là 5000
+      if (Platform.OS === "web" && (u.port === "8081" || u.port === "19006")) {
+        u.port = "5000";
+        return trimUrl(u.toString());
+      }
+    } catch {
+      // giữ nguyên raw
+    }
+    return raw;
   }
 
   // Trong môi trường phát triển với Expo, lấy host của Metro bundler
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
-    const host = hostUri.split(":")[0];
+    const host = hostFromExpoHostUri(hostUri);
     return `http://${host}:5000`;
   }
 
@@ -43,15 +99,36 @@ const getChatbotBaseUrl = () => {
 
 export const CHATBOT_BASE_URL = getChatbotBaseUrl();
 
-/** Base URL cho Camera Service (AI stream + fall detection) - port 9001 */
+/** Base URL cho Camera Service (AI stream + fall detection) - port 9001 (không phải cổng Expo 8081). */
 const getCameraServiceBaseUrl = () => {
+  const envCam =
+    typeof process !== "undefined" && process.env?.EXPO_PUBLIC_CAMERA_SERVICE_URL
+      ? trimUrl(String(process.env.EXPO_PUBLIC_CAMERA_SERVICE_URL))
+      : "";
+  if (envCam && !(preferLanHostOverLocalhostEnv() && isLocalhostUrl(envCam))) {
+    return envCam;
+  }
   try {
     const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
-    if (extra?.cameraServiceUrl) return extra.cameraServiceUrl.replace(/\/$/, "");
+    if (extra?.cameraServiceUrl) {
+      const raw = trimUrl(extra.cameraServiceUrl);
+      try {
+        const u = new URL(raw.includes("://") ? raw : `http://${raw}`);
+        if (Platform.OS === "web" && (u.port === "8081" || u.port === "19006")) {
+          const base = getApiBaseUrl();
+          const bu = new URL(base.includes("://") ? base : `http://${base}`);
+          bu.port = "9001";
+          return trimUrl(bu.toString());
+        }
+      } catch {
+        // fall through
+      }
+      return raw;
+    }
     const base = getApiBaseUrl();
-    const url = new URL(base);
+    const url = new URL(base.includes("://") ? base : `http://${base}`);
     url.port = "9001";
-    return url.toString().replace(/\/$/, "");
+    return trimUrl(url.toString());
   } catch {
     return "http://localhost:9001";
   }
@@ -62,12 +139,40 @@ export const CAMERA_SERVICE_BASE_URL = getCameraServiceBaseUrl();
 /** URL stream MJPEG (video đã qua model té ngã, quét liên tục) */
 export const CAMERA_STREAM_URL = `${CAMERA_SERVICE_BASE_URL}/stream`;
 
+/** Base URL Camera Service theo port (đa tiến trình AI: CAMERA_AI_STREAM_PORTS trên Backend). */
+export const getCameraServiceBaseUrlForPort = (port?: number | null): string => {
+  if (!port || port < 1) {
+    return CAMERA_SERVICE_BASE_URL;
+  }
+  try {
+    const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
+    if (extra?.cameraServiceUrl) {
+      const u = new URL(extra.cameraServiceUrl);
+      u.port = String(port);
+      return u.toString().replace(/\/$/, "");
+    }
+    const base = getApiBaseUrl();
+    const url = new URL(base);
+    url.port = String(port);
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return `http://localhost:${port}`;
+  }
+};
+
+export const getCameraServiceStreamUrl = (port?: number | null): string =>
+  `${getCameraServiceBaseUrlForPort(port ?? null)}/stream`;
+
 export type CameraLiveAccessResponse = {
   allowed: boolean;
   reason?: string | null;
   room_id: number | null;
   asset_key: "video3" | "videofall" | null;
   camera_id: number | null;
+  /** Port tiến trình Camera Service cho camera này (khi Backend bật CAMERA_AI_STREAM_PORTS). */
+  stream_port?: number | null;
+  /** Video demo trong app khi stream_port bật nhưng MJPEG tắt / lỗi mạng */
+  fallback_asset_key?: "video3" | "videofall" | null;
 };
 
 /** Quyền + khóa video demo theo room (header x-room-id / active room). */
@@ -82,12 +187,13 @@ export const getCameraLiveAccess = async (): Promise<CameraLiveAccessResponse | 
 };
 
 /** Lấy trạng thái fall detection (fallcount, fps) */
-export const getCameraStatus = async (): Promise<{
+export const getCameraStatus = async (streamPort?: number | null): Promise<{
   fallcount: number;
   fps: number;
   ready: boolean;
 }> => {
-  const { data } = await axios.get(`${CAMERA_SERVICE_BASE_URL}/api/status`, {
+  const base = getCameraServiceBaseUrlForPort(streamPort ?? null);
+  const { data } = await axios.get(`${base}/api/status`, {
     timeout: 5000,
   });
   return data;
@@ -104,9 +210,16 @@ export type CameraHistoryEvent = {
   title?: string | null;
 };
 
-export const getCameraEventHistory = async (limit = 20): Promise<CameraHistoryEvent[]> => {
+export const getCameraEventHistory = async (
+  limit = 20,
+  cameraId?: number | null
+): Promise<CameraHistoryEvent[]> => {
+  const params: Record<string, string | number> = { limit };
+  if (cameraId != null && Number(cameraId) > 0) {
+    params.camera_id = Number(cameraId);
+  }
   const { data } = await api.get("/fall-events/history", {
-    params: { limit },
+    params,
     timeout: 5000,
   });
 
@@ -411,6 +524,8 @@ export type MyRoomInfo = {
   can_receive_schedule_notifications: boolean;
   can_receive_medication_notifications: boolean;
   can_view_live?: boolean;
+  /** cameras.id gắn room — dùng lọc lịch sử / thông báo an toàn */
+  camera_id?: number | null;
 };
 
 export type MyRoomSummary = {
@@ -425,6 +540,7 @@ export type MyRoomSummary = {
   can_receive_schedule_notifications: boolean;
   can_receive_medication_notifications: boolean;
   can_view_live?: boolean;
+  camera_id?: number | null;
   created_at?: string;
 };
 

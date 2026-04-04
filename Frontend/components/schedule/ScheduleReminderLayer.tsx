@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Platform, View } from "react-native";
 import dayjs from "dayjs";
-import * as Notifications from "expo-notifications";
 import {
   getDailySchedules,
   getMyRoom,
@@ -83,14 +82,17 @@ export default function ScheduleReminderLayer() {
   }, []);
 
   useEffect(() => {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+    if (Platform.OS === "web") return;
+    void import("expo-notifications").then((Notifications) => {
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
     });
   }, []);
 
@@ -98,6 +100,7 @@ export default function ScheduleReminderLayer() {
     if (Platform.OS === "web") return;
     const setup = async () => {
       try {
+        const Notifications = await import("expo-notifications");
         const perms = await Notifications.getPermissionsAsync();
         if (perms.status !== "granted") {
           await Notifications.requestPermissionsAsync();

@@ -1,9 +1,8 @@
 import { Tabs } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
-import * as Notifications from "expo-notifications";
 import { appendNotificationLog, getNotificationLogs } from "@/services/notificationLog";
 import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
@@ -51,41 +50,54 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
-    const appendFromContent = (content: Notifications.NotificationContent) => {
-      const data: any = (content as any)?.data || {};
-      const type =
-        data?.type === "medication"
-          ? "medication"
-          : data?.type === "weekly-schedule"
-            ? "weekly-schedule"
-            : data?.type === "care-confirmation"
-              ? "care-confirmation"
-            : "system";
-      const title = content.title || "Thông báo";
-      const body = content.body || "";
+    if (Platform.OS === "web") return;
 
-      // Deduplicate (received + tapped, or custom schedule + received).
-      const sig = `${type}::${title}::${body}::${JSON.stringify(data || {})}`;
-      const now = Date.now();
-      if (lastSigRef.current?.sig === sig && now - lastSigRef.current.at < 2000) return;
-      lastSigRef.current = { sig, at: now };
+    let cancelled = false;
+    let subReceived: { remove: () => void } | null = null;
+    let subResponse: { remove: () => void } | null = null;
 
-      void appendNotificationLog({ type, title, body, data, read: false })
-        .then(() => refreshUnreadCount())
-        .catch(() => {});
+    const run = async () => {
+      const Notifications = await import("expo-notifications");
+      if (cancelled) return;
+
+      const appendFromContent = (content: import("expo-notifications").NotificationContent) => {
+        const data: any = (content as any)?.data || {};
+        const type =
+          data?.type === "medication"
+            ? "medication"
+            : data?.type === "weekly-schedule"
+              ? "weekly-schedule"
+              : data?.type === "care-confirmation"
+                ? "care-confirmation"
+                : "system";
+        const title = content.title || "Thông báo";
+        const body = content.body || "";
+
+        const sig = `${type}::${title}::${body}::${JSON.stringify(data || {})}`;
+        const now = Date.now();
+        if (lastSigRef.current?.sig === sig && now - lastSigRef.current.at < 2000) return;
+        lastSigRef.current = { sig, at: now };
+
+        void appendNotificationLog({ type, title, body, data, read: false })
+          .then(() => refreshUnreadCount())
+          .catch(() => {});
+      };
+
+      subReceived = Notifications.addNotificationReceivedListener((n) => {
+        appendFromContent(n.request.content);
+      });
+
+      subResponse = Notifications.addNotificationResponseReceivedListener((resp) => {
+        appendFromContent(resp.notification.request.content);
+      });
     };
 
-    const subReceived = Notifications.addNotificationReceivedListener((n) => {
-      appendFromContent(n.request.content);
-    });
-
-    const subResponse = Notifications.addNotificationResponseReceivedListener((resp) => {
-      appendFromContent(resp.notification.request.content);
-    });
+    void run();
 
     return () => {
-      subReceived.remove();
-      subResponse.remove();
+      cancelled = true;
+      subReceived?.remove();
+      subResponse?.remove();
     };
   }, []);
 

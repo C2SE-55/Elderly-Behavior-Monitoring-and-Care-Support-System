@@ -107,10 +107,13 @@ export async function pollSafetyEventsOnce(): Promise<void> {
   // Safety alerts should be visible to both host and caretaker.
   if (room.member_role !== "host" && room.member_role !== "caretaker") return;
 
+  const camId = Number(room.camera_id || 0);
+  if (!camId) return;
+
   const key = lastSeenKeyFor(room.room_id, room.member_role);
   const lastSeen = await readLastSeen(key);
-  const items = await getCameraEventHistory(30).catch(() => []);
-  const safety = items.filter(isSafetyEvent);
+  const items = await getCameraEventHistory(30, camId).catch(() => []);
+  const safety = items.filter(isSafetyEvent).filter((ev) => Number(ev.camera_id || 0) === camId);
   if (!safety.length) return;
 
   const typeKeyOf = (ev: CameraHistoryEvent): keyof LastSeen =>

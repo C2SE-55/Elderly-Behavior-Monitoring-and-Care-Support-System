@@ -2,6 +2,7 @@ const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError } = require("../utils/response");
 const { resolveAccessContext } = require("../services/accessControl");
 const { Camera } = require("../models/Camera");
+const { getStreamPortForCameraId, isAiStreamRoutingEnabled } = require("../config/cameraAiStream");
 
 /**
  * GET /api/cameras/live-access
@@ -41,7 +42,10 @@ exports.getLiveAccess = async (req, res) => {
     }
 
     const row = await Camera.findActiveByRoomId(context.roomId);
-    const assetKey = Camera.resolveAssetKey(row, context.roomId);
+    const bundleKeyForRoom = Camera.resolveAssetKey(row, context.roomId);
+    const streamPort = getStreamPortForCameraId(row?.id);
+    const usePerCameraAi = isAiStreamRoutingEnabled() && streamPort != null;
+    const assetKey = usePerCameraAi ? null : bundleKeyForRoom;
 
     return sendSuccess(
       res,
@@ -50,6 +54,9 @@ exports.getLiveAccess = async (req, res) => {
         room_id: context.roomId,
         camera_id: row?.id ?? null,
         asset_key: assetKey,
+        stream_port: streamPort,
+        /** Khi bật CAMERA_AI_STREAM_PORTS: dùng làm video dự phòng nếu MJPEG không kết nối được */
+        fallback_asset_key: usePerCameraAi ? bundleKeyForRoom : null,
       },
       "OK",
       HTTP_STATUS.OK

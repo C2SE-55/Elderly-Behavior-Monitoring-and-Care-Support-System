@@ -70,7 +70,8 @@ def lying_hint_from_keypoints(kps) -> bool:
     if pipeline_config.FALL_USE_KEYPOINT_SPREAD:
         wk, hk = keypoint_span_wh(arr)
         if wk is not None and hk is not None and hk > 1e-6:
-            if wk >= pipeline_config.FALL_KP_LYING_ASPECT * hk:
+            min_h = max(8.0, float(pipeline_config.FALL_KP_MIN_SPAN_H))
+            if hk >= min_h and wk >= pipeline_config.FALL_KP_LYING_ASPECT * hk:
                 return True
     if torso_shoulder_hip_horizontal(arr):
         return True
@@ -98,11 +99,45 @@ class FallDetector:
         self._per_id = OrderedDict()
         self.falls = OrderedDict()
 
-    def _get_state(self, w_: float, h_: float, lying_hint: bool) -> int:
-        if h_ > 1e-6 and w_ >= LYING_ASPECT * h_:
-            return LYING
+    @staticmethod
+    def _center_in_floor_band(cy: float, frame_height: float, y_inverted: bool) -> bool:
+        """Tâm bbox nằm thấp trong khung (gần sàn) — tách FP ‘chỉ lại gần cam’ (đứng vẫn h>w, không qua aspect nằm)."""
+        fh = frame_height
+        if fh is None or fh <= 0:
+            return True
+        r = max(0.15, min(0.92, float(pipeline_config.FALL_BBOX_BOTTOM_MIN_RATIO)))
+        if not y_inverted:
+            return cy >= r * fh
+        return cy <= (1.0 - r) * fh
+
+    def _get_state(
+        self,
+        w_: float,
+        h_: float,
+        lying_hint: bool,
+        frame_height: Optional[float],
+        y_inverted: bool,
+        y_top: float,
+        y_bottom: float,
+    ) -> int:
+        # 1) Khung xương / spread / torso
         if lying_hint:
             return LYING
+        # 2) Bbox pose nằm ngang rõ + tâm thấp: bắt lúc nằm mà mất keypoint (không dùng mỗi “bbox to” khi đứng)
+        if (
+            pipeline_config.FALL_USE_HORIZONTAL_FLOOR_HINT
+            and frame_height is not None
+            and frame_height > 0
+            and h_ > 1e-6
+            and w_ >= pipeline_config.FALL_HORIZONTAL_FLOOR_ASPECT * h_
+        ):
+            cy = 0.5 * (float(y_top) + float(y_bottom))
+            if self._center_in_floor_band(cy, float(frame_height), y_inverted):
+                return LYING
+        # 3) Tùy chọn cũ: aspect bbox pose mọi chỗ (dễ FP)
+        if pipeline_config.FALL_USE_POSE_BBOX_ASPECT and h_ > 1e-6 and w_ >= LYING_ASPECT * h_:
+            return LYING
+        # Đứng/đi: bbox cao hơn rộng (scale-invariant, không phụ thuộc khoảng cách như “diện tích” thuần)
         return WALKING if h_ >= w_ else STANDING
 
     def _had_recent_movement(self, positions, diag_ref):
@@ -144,7 +179,11 @@ class FallDetector:
                 lying_hint = lying_hint_from_keypoints(ann.data)
 
             diag = math.sqrt(w_ * w_ + h_ * h_)
-            state = self._get_state(w_, h_, lying_hint)
+            y_top = float(y_)
+            y_bottom = float(y_ + h_)
+            state = self._get_state(
+                w_, h_, lying_hint, frame_height, y_inverted, y_top, y_bottom
+            )
 
             if ID not in self._per_id:
                 self._per_id[ID] = {
@@ -197,6 +236,12 @@ class FallDetector:
                     rec["state_frames"] >= STABLE_LYING_FALL_FRAMES
                     and len(pos_list) >= STABLE_LYING_FALL_FRAMES
                 )
+                # Chỉ geometry (bbox ngang+sàn), không có keypoint: bắt buộc đã từng đứng/đi + có chuyển động — tránh mở cam thấy người nằm sẵn / nhầm khung to
+                if not lying_hint:
+                    if rec["state_frames"] < pipeline_config.FALL_GEOMETRY_LYING_MIN_FRAMES:
+                        continue
+                    if not (had_movement and was_upright_long_enough):
+                        continue
                 if (
                     (had_movement and was_upright_long_enough)
                     or (clearly_lying and enough_history)

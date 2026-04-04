@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import {
   getMyRoom,
   getRoomMembers,
@@ -91,7 +90,7 @@ export async function createCareConfirmationRequest(): Promise<void> {
   });
 
   if (Platform.OS !== "web") {
-    // local ping (device-only). Cross-device push requires backend + Expo push token pipeline.
+    const Notifications = await import("expo-notifications");
     await Notifications.scheduleNotificationAsync({
       content: { title, body: `${myRole === "host" ? "Chủ phòng" : "Người chăm sóc"} đã tạo yêu cầu xác nhận.` },
       trigger: null,

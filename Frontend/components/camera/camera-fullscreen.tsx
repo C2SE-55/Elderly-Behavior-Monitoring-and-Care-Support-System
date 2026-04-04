@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,17 +6,41 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ScreenOrientation from "expo-screen-orientation";
 import CameraStreamView from "./CameraStreamView";
 import {
-  CAMERA_STREAM_URL,
   getActiveRoomId,
   getCameraLiveAccess,
+  getCameraServiceStreamUrl,
+  getCameraStatus,
+  subscribeActiveRoomChange,
   type CameraLiveAccessResponse,
 } from "../../services/api";
+
+const DEMO_ASSET_KEYS = new Set<string>(["video3", "videofall"]);
 
 export default function CameraFullscreenScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [access, setAccess] = useState<CameraLiveAccessResponse | null | "loading">("loading");
   const [message, setMessage] = useState<string | null>(null);
+  const [mjpegUrl, setMjpegUrl] = useState(() => getCameraServiceStreamUrl(null));
+  const [activeRoom, setActiveRoom] = useState<number | null>(() => getActiveRoomId());
+  const [streamError, setStreamError] = useState<string | null>(null);
+
+  const useMjpeg =
+    access !== "loading" && access?.allowed && !access?.asset_key;
+
+  const effectiveAssetKey = useMemo(() => {
+    if (access === "loading" || !access?.allowed) return null;
+    if (access.asset_key) return access.asset_key;
+    if (
+      useMjpeg &&
+      streamError &&
+      access.fallback_asset_key &&
+      DEMO_ASSET_KEYS.has(access.fallback_asset_key)
+    ) {
+      return access.fallback_asset_key;
+    }
+    return null;
+  }, [access, useMjpeg, streamError]);
 
   useEffect(() => {
     if (Platform.OS !== "web") {
@@ -31,11 +55,18 @@ export default function CameraFullscreenScreen() {
   }, []);
 
   useEffect(() => {
+    return subscribeActiveRoomChange((roomId) => {
+      setActiveRoom(roomId);
+    });
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     const run = async () => {
       if (!getActiveRoomId()) {
         setAccess(null);
         setMessage("Chưa chọn room.");
+        setMjpegUrl(getCameraServiceStreamUrl(null));
         return;
       }
       setAccess("loading");
@@ -44,6 +75,7 @@ export default function CameraFullscreenScreen() {
         const data = await getCameraLiveAccess();
         if (cancelled) return;
         setAccess(data);
+        setMjpegUrl(getCameraServiceStreamUrl(data?.stream_port ?? null));
         if (data && !data.allowed) {
           setMessage("Bạn không có quyền xem camera trong room này.");
         }
@@ -51,6 +83,7 @@ export default function CameraFullscreenScreen() {
         if (!cancelled) {
           setAccess(null);
           setMessage("Không tải được quyền xem camera.");
+          setMjpegUrl(getCameraServiceStreamUrl(null));
         }
       }
     };
@@ -58,7 +91,26 @@ export default function CameraFullscreenScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeRoom]);
+
+  useEffect(() => {
+    if (!useMjpeg || access === "loading" || !access?.allowed) {
+      setStreamError(null);
+      return;
+    }
+    const port = access.stream_port ?? null;
+    const tick = async () => {
+      try {
+        await getCameraStatus(port);
+        setStreamError(null);
+      } catch {
+        setStreamError("offline");
+      }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 2000);
+    return () => clearInterval(t);
+  }, [useMjpeg, access]);
 
   const closeScreen = () => {
     router.back();
@@ -81,8 +133,8 @@ export default function CameraFullscreenScreen() {
           <CameraStreamView
             style={styles.stream}
             fit="contain"
-            assetKey={access.asset_key}
-            mjpegUrl={CAMERA_STREAM_URL}
+            assetKey={effectiveAssetKey}
+            mjpegUrl={mjpegUrl}
           />
         ) : (
           <View style={styles.centerBox}>

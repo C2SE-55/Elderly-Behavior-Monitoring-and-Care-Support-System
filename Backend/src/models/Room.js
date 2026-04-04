@@ -241,6 +241,7 @@ class Room {
              WHEN r.host_user_id = ? THEN 1
              ELSE COALESCE(rm.can_view_live, 1)
            END AS can_view_live,
+           (SELECT c.id FROM cameras c WHERE c.room_id = r.id AND c.status = 'active' ORDER BY c.id ASC LIMIT 1) AS camera_id,
            r.created_at
          FROM rooms r
          LEFT JOIN room_members rm
@@ -271,6 +272,7 @@ class Room {
              WHEN r.host_user_id = ? THEN 1
              ELSE rm.can_receive_medication_notifications
            END AS can_receive_medication_notifications,
+           (SELECT c.id FROM cameras c WHERE c.room_id = r.id AND c.status = 'active' ORDER BY c.id ASC LIMIT 1) AS camera_id,
            r.created_at
          FROM rooms r
          LEFT JOIN room_members rm

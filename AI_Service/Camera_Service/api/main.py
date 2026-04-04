@@ -163,6 +163,32 @@ def _run_inference():
     global stream_state, _inference_started
     log = logging.getLogger(__name__)
     try:
+        try:
+            from ..core import pipeline_config
+
+            log.warning(
+                "Camera pipeline: CAMERA_ID=%s BACKEND_URL=%s (sự kiện té/vùng an toàn POST về đây)",
+                pipeline_config.CAMERA_ID,
+                pipeline_config.BACKEND_URL,
+            )
+            try:
+                import requests
+
+                health = f"{pipeline_config.BACKEND_URL}/health"
+                r = requests.get(health, timeout=3)
+                if r.ok:
+                    log.warning("Đã kết nối Backend OK: GET %s → %s", health, r.status_code)
+                else:
+                    log.warning("Backend trả mã %s khi GET %s — kiểm tra server.", r.status_code, health)
+            except Exception as ex:
+                log.warning(
+                    "Không gọi được Backend (%s): %s — POST fall / left_safe_zone sẽ thất bại.",
+                    pipeline_config.BACKEND_URL,
+                    ex,
+                )
+        except Exception:
+            pass
+
         source = _get_video_source()
         if isinstance(source, str) and source.lower().endswith((".mp4", ".avi", ".mkv", ".mov")):
             log.info("Nguồn video (file): %s", source)

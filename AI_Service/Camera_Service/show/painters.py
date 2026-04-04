@@ -1,7 +1,7 @@
 import os
 import logging
 import numpy as np
-from collections import defaultdict, OrderedDict
+from collections import defaultdict, OrderedDict, deque
 
 try:
     import matplotlib
@@ -203,6 +203,55 @@ class KeypointPainter:
         self.persons = OrderedDict()
         self.fallen = OrderedDict()
         self.prev_fallen = OrderedDict()
+        _mh = pipeline_config.FALL_YOLO_MOTION_HISTORY_FRAMES
+        self._yolo_cy_norm = deque(maxlen=_mh)
+        self._upright_flag_history = deque(maxlen=_mh)
+
+    def _append_fall_motion_context(self, yolo_boxes, filtered_annotations, frame_height):
+        """Lưu tâm Y (YOLO) + cờ ‘đứng’ để fallback YOLO chỉ bắt sau cú rơi / từng upright."""
+        fh = float(frame_height) if frame_height and frame_height > 0 else None
+        if fh and yolo_boxes:
+            bx = max(
+                yolo_boxes,
+                key=lambda b: max(0.0, float(b[2] - b[0]) * float(b[3] - b[1])),
+            )
+            cy = 0.5 * (float(bx[1]) + float(bx[3]))
+            cy_n = cy / fh
+            # Không nhét cùng một cy liên tục (YOLO mỗi N frame) — nếu không max-min = 0, không thấy cú rơi
+            if not self._yolo_cy_norm or abs(float(self._yolo_cy_norm[-1]) - cy_n) > 0.003:
+                self._yolo_cy_norm.append(cy_n)
+        upright = False
+        ur = pipeline_config.FALL_UPRIGHT_BBOX_RATIO
+        for ann in filtered_annotations:
+            xa, ya, wa, ha = ann.bbox()
+            if lying_hint_from_keypoints(ann.data):
+                continue
+            if ha >= ur * max(wa, 1e-6):
+                upright = True
+                break
+        if not upright and yolo_boxes:
+            for b in yolo_boxes:
+                w_ = float(b[2] - b[0])
+                h_ = float(b[3] - b[1])
+                if h_ >= 0.9 * max(w_, 1e-6):
+                    upright = True
+                    break
+        self._upright_flag_history.append(1 if upright else 0)
+
+    def _yolo_drop_supports_fall(self):
+        if not pipeline_config.FALL_YOLO_REQUIRE_DROP:
+            return True
+        if len(self._yolo_cy_norm) < 6:
+            return False
+        ys = list(self._yolo_cy_norm)
+        return (max(ys) - min(ys)) >= pipeline_config.FALL_YOLO_DROP_CY_NORM
+
+    def _yolo_upright_context_ok(self):
+        if not pipeline_config.FALL_YOLO_REQUIRE_UPRIGHT:
+            return True
+        if len(self._upright_flag_history) < 5:
+            return True
+        return sum(self._upright_flag_history) >= 1
 
     def _draw_skeleton(self, ax, x, y, v, x_, y_, w_, h_, *, skeleton, color=None, **kwargs):
         if not np.any(v > 0):
@@ -418,6 +467,10 @@ class KeypointPainter:
             filtered_annotations.append(ann)
             filtered_texts.append(texts[i] if texts is not None and i < len(texts) else None)
 
+        ylim_pre = ax.get_ylim()
+        frame_height_pre = abs(ylim_pre[1] - ylim_pre[0]) if ylim_pre else None
+        self._append_fall_motion_context(yolo_boxes, filtered_annotations, frame_height_pre)
+
         for i, ann in enumerate(filtered_annotations):
             self.centroid = -1
             
@@ -483,18 +536,17 @@ class KeypointPainter:
 
         self.prev_fallen = self.fallen
 
-        # Fallback 1: từ pose annotation đã lọc
+        # Fallback 1: chỉ khi đã có bằng chứng keypoint (không đếm té chỉ vì bbox pose đổi kích thước)
         if len(self.fallen) == 0 and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN:
             for ann in filtered_annotations:
+                if not lying_hint_from_keypoints(ann.data):
+                    continue
                 x_, y_, w_, h_ = ann.bbox()
                 if w_ < 5:
                     w_ = w_ + 4
                 if h_ < 5:
                     h_ = h_ + 4
                 if w_ * h_ <= 200:
-                    continue
-                lying_bbox = h_ > 1e-6 and w_ >= pipeline_config.FALL_LYING_ASPECT * h_
-                if not (lying_bbox or lying_hint_from_keypoints(ann.data)):
                     continue
                 on_floor = True
                 if pipeline_config.FALL_REQUIRE_FLOOR and frame_height is not None and frame_height > 0:
@@ -509,12 +561,14 @@ class KeypointPainter:
                     LOG.info("FALL COUNT (fallback): {}".format(self.fallcount))
                     break
         
-        # Fallback 2: nếu pose rớt keypoint khi người nằm, dùng YOLO bbox nằm ngang để vẫn bắt té.
+        # Fallback 2: pose mất track — YOLO bbox nằm ngang + có cú rơi + từng thấy upright (tránh đếm vì khung to)
         if (
             pipeline_config.FALL_USE_YOLO_FALLBACK
             and len(self.fallen) == 0
             and yolo_boxes
             and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN
+            and self._yolo_drop_supports_fall()
+            and self._yolo_upright_context_ok()
         ):
             for (x1, y1, x2, y2) in yolo_boxes:
                 w_ = max(0.0, float(x2 - x1))
@@ -585,6 +639,9 @@ class KeypointPainter:
         self.subject_height = h_
 
         self._draw_skeleton(ax, x, y, v, x_, y_, w_, h_, color=color, skeleton=skeleton)
+        # Mất keypoint khi nằm: vẫn track theo bbox pose để FallDetector không mất người
+        if self.centroid == -1 and w_ > 0 and h_ > 0:
+            self.centroid = (x_ + w_ / 2.0, y_ + h_ / 2.0, x_, y_, w_, h_)
 
         if self.show_joint_scales and ann.joint_scales is not None:
             self._draw_scales(ax, x, y, v, color, ann.joint_scales)

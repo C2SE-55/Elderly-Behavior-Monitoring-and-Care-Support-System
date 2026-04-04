@@ -1,5 +1,7 @@
+create database data_ecms;
 USE data_ecms;
--- 1 USERS (bảng tài khoảng)
+
+-- 1 USERS
 CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     full_name VARCHAR(100),
@@ -11,19 +13,19 @@ CREATE TABLE users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2 ROLES 
+-- 2 ROLES
 CREATE TABLE roles (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name ENUM('admin','user','caregiver','family') NOT NULL UNIQUE
 );
--- Thêm dữ liệu mặc định cho các role
+
 INSERT INTO roles (name) VALUES
   ('admin'),
   ('user'),
   ('caregiver'),
   ('family');
- 
--- 3 user_roles (chia role)
+
+-- 3 user_roles
 CREATE TABLE user_roles (
     user_id INT,
     role_id INT,
@@ -32,7 +34,7 @@ CREATE TABLE user_roles (
     FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 
--- 4 HEALTH PROFILES (thông tin sức khỏe)
+-- 4 HEALTH PROFILES
 CREATE TABLE health_profiles (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT,
@@ -49,61 +51,70 @@ CREATE TABLE health_profiles (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 4b ROOMS (phòng chăm sóc, admin tạo)
+-- 5 CAMERAS (thiết bị/stream)
+CREATE TABLE cameras (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NULL,
+    camera_name VARCHAR(100),
+    location VARCHAR(100),
+    stream_url TEXT,
+    status ENUM('active','inactive') DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- 6 ROOMS (1 room = 1 camera)
 CREATE TABLE rooms (
     id INT PRIMARY KEY AUTO_INCREMENT,
     room_id VARCHAR(40) NOT NULL UNIQUE,
     admin_user_id INT NOT NULL,
-    host_user_id INT NULL ,
+    host_user_id INT NULL,
+    camera_id INT NULL UNIQUE,
     admin_join_token VARCHAR(128) NULL UNIQUE,
     host_join_token VARCHAR(128) NULL UNIQUE,
     max_members INT NOT NULL DEFAULT 5,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (host_user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (host_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE SET NULL
 );
 
--- 4c ROOM MEMBERS (thành viên trong room)
+-- 7 ROOM MEMBERS (phân quyền giám sát nằm ở đây)
 CREATE TABLE room_members (
     id INT PRIMARY KEY AUTO_INCREMENT,
     room_id INT NOT NULL,
-    user_id INT NOT NULL ,
+    user_id INT NOT NULL,
     member_role ENUM('host','caretaker') NOT NULL,
+
+    -- quyền hiện có
     can_manage_medication BOOLEAN NOT NULL DEFAULT FALSE,
     can_receive_schedule_notifications BOOLEAN NOT NULL DEFAULT TRUE,
     can_receive_medication_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- quyền giám sát/camera (mới)
     can_view_live BOOLEAN NOT NULL DEFAULT TRUE,
+    can_view_events BOOLEAN NOT NULL DEFAULT TRUE,
+    can_manage_safe_zones BOOLEAN NOT NULL DEFAULT FALSE,
+    can_receive_fall_alerts BOOLEAN NOT NULL DEFAULT TRUE,
+    can_receive_left_zone_alerts BOOLEAN NOT NULL DEFAULT TRUE,
+
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_room_user (room_id, user_id),
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 5 CAMERAS (camera, gắn room để chọn nguồn stream / video demo)
-CREATE TABLE cameras (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    room_id INT NULL,
-    user_id INT,
-    camera_name VARCHAR(100),
-    location VARCHAR(100),
-    stream_url TEXT,
-    status ENUM('active','inactive') DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- 6 SAFE ZONES (phải tạo trước left_safe_zone_events) (vùng an toàn)
+-- 8 SAFE ZONES
 CREATE TABLE safe_zones (
     id INT PRIMARY KEY AUTO_INCREMENT,
     camera_id INT,
     zone_name VARCHAR(100),
     coordinates TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (camera_id) REFERENCES cameras(id)
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
 );
 
--- 7 FALL EVENTS (té ngã)
+-- 9 FALL EVENTS
 CREATE TABLE fall_events (
     id INT PRIMARY KEY AUTO_INCREMENT,
     camera_id INT NOT NULL,
@@ -111,33 +122,34 @@ CREATE TABLE fall_events (
     video_url VARCHAR(255),
     severity_level ENUM('low', 'medium', 'high') DEFAULT 'high',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (camera_id) REFERENCES cameras(id)
-);
--- 8 LEFT SAFE ZONE EVENTS (rời khoảng vùng an toàn)
-CREATE TABLE left_safe_zone_events ( 
-    id INT PRIMARY KEY AUTO_INCREMENT, 
-    camera_id INT, 
-    zone_id INT, 
-    image_url VARCHAR(255), 
-    severity_level ENUM('low','medium','high') DEFAULT 'medium', 
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
-    FOREIGN KEY (camera_id) REFERENCES cameras(id), 
-    FOREIGN KEY (zone_id) REFERENCES safe_zones(id) 
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
 );
 
--- 9 ALERTS (thông báo té ngã + rời khoải vùng an toàn)
-CREATE TABLE alerts ( 
-    id INT PRIMARY KEY AUTO_INCREMENT, 
-    user_id INT, 
-    event_type ENUM('fall','left_safe_zone'), 
-    event_id INT, 
-    message TEXT, 
-    is_read BOOLEAN DEFAULT FALSE, 
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
-    FOREIGN KEY (user_id) REFERENCES users(id) 
+-- 10 LEFT SAFE ZONE EVENTS
+CREATE TABLE left_safe_zone_events (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    camera_id INT,
+    zone_id INT,
+    image_url VARCHAR(255),
+    severity_level ENUM('low','medium','high') DEFAULT 'medium',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE,
+    FOREIGN KEY (zone_id) REFERENCES safe_zones(id) ON DELETE CASCADE
 );
 
--- 10 MEDICATIONS (tên thuốc)
+-- 11 ALERTS
+CREATE TABLE alerts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT,
+    event_type ENUM('fall','left_safe_zone'),
+    event_id INT,
+    message TEXT,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 12 MEDICATIONS
 CREATE TABLE medications (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT,
@@ -145,10 +157,10 @@ CREATE TABLE medications (
     dosage VARCHAR(100),
     note TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (profile_id) REFERENCES health_profiles(id)
+    FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE
 );
 
--- 11 medication_schedules (lịch uống thuốc)
+-- 13 medication_schedules
 CREATE TABLE medication_schedules (
     id INT PRIMARY KEY AUTO_INCREMENT,
     medication_id INT,
@@ -156,10 +168,10 @@ CREATE TABLE medication_schedules (
     repeat_type ENUM('once','daily') DEFAULT 'daily',
     is_active BOOLEAN DEFAULT TRUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (medication_id) REFERENCES medications(id)
+    FOREIGN KEY (medication_id) REFERENCES medications(id) ON DELETE CASCADE
 );
 
--- 12 medication_logs (ghi lại lịch sử uống thuốc)
+-- 14 medication_logs
 CREATE TABLE medication_logs (
     id INT PRIMARY KEY AUTO_INCREMENT,
     schedule_id INT,
@@ -167,10 +179,10 @@ CREATE TABLE medication_logs (
     status ENUM('taken','missed','skipped') DEFAULT 'taken',
     note TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id)
+    FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id) ON DELETE CASCADE
 );
 
--- 13 DAILY SCHEDULE (thời gian biểu)
+-- 15 DAILY SCHEDULE
 CREATE TABLE daily_schedules (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT NOT NULL,
@@ -181,10 +193,10 @@ CREATE TABLE daily_schedules (
     end_time TIME,
     type ENUM('exercise','meal','rest','other') DEFAULT 'other',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (profile_id) REFERENCES health_profiles(id)
+    FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE
 );
 
--- 14 MEAL PLANS (kế hoạch ăn từ chatbot)
+-- 16 MEAL PLANS
 CREATE TABLE meal_plans (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT,
@@ -192,40 +204,40 @@ CREATE TABLE meal_plans (
     food_suggestion TEXT,
     suggested_by VARCHAR(100) DEFAULT 'AI',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (profile_id) REFERENCES health_profiles(id)
+    FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE
 );
 
--- 15 CHAT SESSIONS (phiên chat chatbot)
+-- 17 CHAT SESSIONS
 CREATE TABLE chat_sessions (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT,
     title VARCHAR(255),
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 15b CHAT MESSAGES (tin nhắn theo từng phiên chat)
+-- 18 CHAT MESSAGES
 CREATE TABLE chat_messages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     session_id INT NOT NULL,
     role VARCHAR(30) NOT NULL,
     content TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
--- 16 NOTES (ghi chú)
+-- 19 NOTES
 CREATE TABLE notes (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT,
     content TEXT,
     created_by INT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (profile_id) REFERENCES health_profiles(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
--- 17 FAMILY MESSAGES (chat giữa các thành viên)
+-- 20 FAMILY MESSAGES
 CREATE TABLE family_messages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     profile_id INT NOT NULL,
@@ -233,6 +245,6 @@ CREATE TABLE family_messages (
     content TEXT NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (profile_id) REFERENCES health_profiles(id),
-    FOREIGN KEY (sender_id) REFERENCES users(id)
+    FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );

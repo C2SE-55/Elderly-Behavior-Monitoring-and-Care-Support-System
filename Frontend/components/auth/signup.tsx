@@ -83,7 +83,7 @@ export default function SignupScreen() {
       const message =
         backendMessage ||
         (networkMessage === "Network Error"
-          ? "Không thể kết nối tới server. Vui lòng kiểm tra lại API_BASE_URL và việc backend đã chạy chưa."
+          ? "Không thể kết nối tới server. Bật Backend (port 5000), cùng Wi‑Fi với điện thoại; trên máy thật app tự dùng IP LAN từ Expo (không dùng localhost trên điện thoại)."
           : networkMessage) ||
         "Đăng ký thất bại, vui lòng thử lại";
       setError(message);

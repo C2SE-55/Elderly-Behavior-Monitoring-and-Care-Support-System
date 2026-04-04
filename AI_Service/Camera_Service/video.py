@@ -262,6 +262,28 @@ def processor_factory(args):
     processor = decoder.factory_from_args(args, model)
     return processor, model
 
+def _configure_webcam_capture(capture):
+    """Yêu cầu độ phân giải + buffer nhỏ (iVCam / webcam ảo hay mặc định 640x480 → nhòe khi scale).
+
+    Biến môi trường: WEBCAM_WIDTH, WEBCAM_HEIGHT (mặc định 1280x720). Đặt 0 để không ép.
+    """
+    try:
+        w = int(os.environ.get("WEBCAM_WIDTH", "1280"))
+        h = int(os.environ.get("WEBCAM_HEIGHT", "720"))
+    except ValueError:
+        w, h = 1280, 720
+    if w > 0 and h > 0:
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(w))
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(h))
+    try:
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    except Exception:
+        pass
+    aw = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    ah = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    LOG.info("Webcam: yêu cầu %dx%d, OpenCV thực tế: %dx%d", w, h, aw, ah)
+
+
 def reconnect(capture, RTSPURL):
     capture.release()
     droppedFrames = 0
@@ -284,7 +306,13 @@ def inference(args, stream, stream_state=None):
         matplotlib.use('Agg')
     processor, model = processor_factory(args)
 
-    keypoint_painter = show.KeypointPainter(color_connections=args.colored_connections, linewidth=6)
+    keypoint_painter = show.KeypointPainter(
+        color_connections=args.colored_connections,
+        linewidth=6,
+        markersize=max(10, int(6 * 2)),
+    )
+    # Mặc định tắt: bbox xanh/cam quanh pose là heuristic té, dễ nhầm viền vùng an toàn (xanh/đỏ) phía dưới
+    keypoint_painter.show_box = os.environ.get("SHOW_POSE_BOX", "0").lower() in ("1", "true", "yes", "")
     annotation_painter = show.AnnotationPainter(keypoint_painter=keypoint_painter)
 
     animation = show.AnimationFrame(
@@ -297,7 +325,12 @@ def inference(args, stream, stream_state=None):
     online = False
     
     if isinstance(RTSPURL, int):
-        capture = cv2.VideoCapture(RTSPURL if RTSPURL is not None else 0)
+        idx = RTSPURL if RTSPURL is not None else 0
+        # Windows: CAP_DSHOW ổn định hơn với webcam USB (tránh read() luôn None → ready=false).
+        if sys.platform == "win32":
+            capture = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        else:
+            capture = cv2.VideoCapture(idx)
     else:
         # file path or URL (rtsp, http, etc.)
         capture = cv2.VideoCapture(RTSPURL, cv2.CAP_FFMPEG)
@@ -305,6 +338,8 @@ def inference(args, stream, stream_state=None):
     if capture.isOpened():
         online = True
         LOG.info('Loaded stream: ' + str(RTSPURL))
+        if isinstance(RTSPURL, int):
+            _configure_webcam_capture(capture)
     else:
         LOG.error('Cannot open stream: ' + str(RTSPURL))
 
@@ -334,9 +369,10 @@ def inference(args, stream, stream_state=None):
     if not zone_poly:
         zone_poly = default_supervisor_zone()
 
-    # Cạnh “có người → không người” + cooldown để ghi left_safe_zone_events (không spam mỗi frame)
+    # Cạnh “có người → không người” + (tùy chọn) thiếu người kéo dài → ghi left_safe_zone_events
     prev_any_person_for_snapshot = None
     last_no_person_snapshot_ts = 0.0
+    no_person_snapshot_run = 0
 
     for frame_i, (ax, ax_second) in enumerate(animation.iter()):
         grabbed, image = capture.read()
@@ -368,6 +404,9 @@ def inference(args, stream, stream_state=None):
                 if not capture.isOpened():
                     LOG.error('Cannot reopen video file: %s', RTSPURL)
                     break
+                # Tránh cạnh "có người → không người" giả ngay frame đầu sau khi loop,
+                # khiến left_safe_zone_events bắn nhầm hoặc trạng thái lệch.
+                prev_any_person_for_snapshot = None
                 continue
             LOG.info('no more images captured')
             capture.release()
@@ -563,13 +602,28 @@ def inference(args, stream, stream_state=None):
         else:
             ax.text(0, 0.9, "Fall Count: {}".format(old_fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
 
-        # Chụp ảnh khi vừa mất người (không phát hiện người) → POST left_safe_zone_events
+        # Đếm frame liên tiếp supervisor_missing (trước khi cập nhật prev_any_person)
+        if pipeline_config.SUPERVISOR_ZONE_ENABLED and supervisor_missing:
+            no_person_snapshot_run += 1
+        else:
+            no_person_snapshot_run = 0
+
+        # POST left_safe_zone_events: (1) cạnh có người → mất, hoặc (2) không người liên tục đủ lâu
+        # (trường hợp YOLO/pose không bao giờ báo có người — UI vẫn báo đỏ nhưng DB không có nếu chỉ dùng cạnh)
+        should_snapshot_edge = (
+            prev_any_person_for_snapshot is True
+            and supervisor_missing
+        )
+        should_snapshot_sustained = (
+            pipeline_config.SUPERVISOR_NO_PERSON_SUSTAINED_SNAPSHOT
+            and supervisor_missing
+            and no_person_snapshot_run >= pipeline_config.SUPERVISOR_NO_PERSON_SUSTAINED_FRAMES
+        )
         if (
             pipeline_config.SUPERVISOR_ZONE_ENABLED
             and pipeline_config.SUPERVISOR_NO_PERSON_SNAPSHOT
-            and supervisor_missing
-            and prev_any_person_for_snapshot is True
             and animation.fig is not None
+            and (should_snapshot_edge or should_snapshot_sustained)
         ):
             now_ts = time.time()
             if now_ts - last_no_person_snapshot_ts >= pipeline_config.SUPERVISOR_NO_PERSON_COOLDOWN_SECONDS:
@@ -577,6 +631,7 @@ def inference(args, stream, stream_state=None):
                     buf = io.BytesIO()
                     animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
                     buf.seek(0)
+                    note_kind = "edge" if should_snapshot_edge else "sustained"
                     ok = fall_event_client.send_left_safe_zone_image_to_backend(
                         buf.getvalue(),
                         camera_id=pipeline_config.CAMERA_ID,
@@ -585,8 +640,10 @@ def inference(args, stream, stream_state=None):
                     )
                     if ok:
                         last_no_person_snapshot_ts = now_ts
+                        no_person_snapshot_run = 0
                         LOG.warning(
-                            "Đã gửi ảnh 'Không phát hiện người' → left_safe_zone_events (camera_id=%s).",
+                            "Đã gửi ảnh 'Không phát hiện người' (%s) → left_safe_zone_events (camera_id=%s).",
+                            note_kind,
                             pipeline_config.CAMERA_ID,
                         )
                 except Exception as e:

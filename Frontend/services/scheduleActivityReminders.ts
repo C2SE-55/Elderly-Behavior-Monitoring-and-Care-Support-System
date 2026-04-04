@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import dayjs from "dayjs";
 import type { DailyScheduleItem, DayOfWeek } from "./api";
 import { appendNotificationLog } from "./notificationLog";
@@ -36,6 +35,7 @@ export const resetScheduleActivityReminderKeys = () => {
 
 export const ensureWeeklyScheduleNotificationChannel = async (): Promise<void> => {
   if (Platform.OS !== "android") return;
+  const Notifications = await import("expo-notifications");
   await Notifications.setNotificationChannelAsync(WEEKLY_SCHEDULE_CHANNEL, {
     name: "Lịch sinh hoạt",
     importance: Notifications.AndroidImportance.HIGH,
@@ -73,26 +73,28 @@ export const checkScheduleActivityStarts = (
     });
 
     if (Platform.OS !== "web") {
-      void Notifications.scheduleNotificationAsync({
-        content: {
-          title: heading,
-          body: item.description ? `${item.title} — ${item.description}` : item.title,
-          sound: true,
-          ...(Platform.OS === "android" ? { channelId: WEEKLY_SCHEDULE_CHANNEL } : {}),
-          data: { type: "weekly-schedule", schedule_id: item.id },
-        },
-        trigger: null,
-      })
-        .then(() =>
-          appendNotificationLog({
-            type: "weekly-schedule",
+      void import("expo-notifications").then((Notifications) =>
+        Notifications.scheduleNotificationAsync({
+          content: {
             title: heading,
             body: item.description ? `${item.title} — ${item.description}` : item.title,
-            data: { schedule_id: item.id },
-            read: false,
-          }).catch(() => {})
-        )
-        .catch(() => {});
+            sound: true,
+            ...(Platform.OS === "android" ? { channelId: WEEKLY_SCHEDULE_CHANNEL } : {}),
+            data: { type: "weekly-schedule", schedule_id: item.id },
+          },
+          trigger: null,
+        })
+          .then(() =>
+            appendNotificationLog({
+              type: "weekly-schedule",
+              title: heading,
+              body: item.description ? `${item.title} — ${item.description}` : item.title,
+              data: { schedule_id: item.id },
+              read: false,
+            }).catch(() => {})
+          )
+          .catch(() => {})
+      );
     }
   }
 };

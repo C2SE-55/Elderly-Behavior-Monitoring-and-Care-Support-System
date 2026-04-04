@@ -1,19 +1,25 @@
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import type { TodayScheduleItem } from "./api";
 import { appendNotificationLog } from "./notificationLog";
 
 const MEDICATION_CHANNEL_ID = "medication-reminders";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+let handlerInstalled = false;
+
+const ensureNotificationHandler = async () => {
+  if (Platform.OS === "web" || handlerInstalled) return;
+  handlerInstalled = true;
+  const Notifications = await import("expo-notifications");
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+};
 
 const parseHHMM = (hhmm: string): { hour: number; minute: number } | null => {
   const raw = String(hhmm || "").slice(0, 5);
@@ -25,6 +31,9 @@ const parseHHMM = (hhmm: string): { hour: number; minute: number } | null => {
 
 export const ensureNotificationPermission = async (): Promise<boolean> => {
   if (Platform.OS === "web") return false;
+
+  await ensureNotificationHandler();
+  const Notifications = await import("expo-notifications");
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(MEDICATION_CHANNEL_ID, {
@@ -55,20 +64,12 @@ const buildContent = (time: string, items: TodayScheduleItem[]) => {
   };
 };
 
-/**
- * Schedule local notifications based on today's schedules.
- * Strategy:
- * - Group by alarm_time
- * - If repeat_type is daily => repeats every day at HH:mm
- * - If repeat_type is once => schedule next occurrence today (if in future), otherwise skip
- *
- * To avoid duplicates, this cancels previously scheduled notifications for this app session.
- */
 export const rescheduleMedicationNotifications = async (schedules: TodayScheduleItem[]): Promise<void> => {
   if (Platform.OS === "web") return;
 
-  // Cancel all scheduled notifications to prevent duplicates.
-  // If later you add other notification types, replace this with targeted cancellation.
+  await ensureNotificationHandler();
+  const Notifications = await import("expo-notifications");
+
   await Notifications.cancelAllScheduledNotificationsAsync();
 
   const pendingActive = schedules.filter((s) => s.status === "pending" && s.is_active);
@@ -107,7 +108,6 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
       continue;
     }
 
-    // once: schedule only if the time is still ahead today
     const fireDate = new Date(now);
     fireDate.setHours(hm.hour, hm.minute, 0, 0);
     if (fireDate.getTime() <= now.getTime()) continue;
@@ -129,4 +129,3 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
     }).catch(() => {});
   }
 };
-

@@ -22,15 +22,27 @@ class Camera {
   }
 
   /**
-   * Khóa asset bundle trên app: video3 | videofall (từ stream_url trong DB hoặc room id).
+   * Khóa asset bundle trên app: video3 | videofall (chỉ khi stream_url trỏ file demo trong app).
+   * Webcam / file khác / đường dẫn tuyệt đối không chứa tên demo → null (dùng MJPEG từ Camera Service).
    */
   static resolveAssetKey(cameraRow, numericRoomId) {
-    const url = cameraRow?.stream_url ? String(cameraRow.stream_url).toLowerCase() : "";
+    const raw = cameraRow?.stream_url != null ? String(cameraRow.stream_url).trim() : "";
+    const url = raw.toLowerCase();
     if (url.includes("videofall")) return "videofall";
     if (url.includes("video3")) return "video3";
-    const rid = Number(numericRoomId);
-    if (rid === 2) return "videofall";
-    if (rid === 1) return "video3";
+    if (!raw) {
+      const rid = Number(numericRoomId);
+      if (rid === 2) return "videofall";
+      if (rid === 1) return "video3";
+      return null;
+    }
+    if (/^\d+$/.test(raw)) return null;
+    if (url.includes("webcam") || url.includes("device:") || url.includes("camera:")) {
+      return null;
+    }
+    if (/\.(mp4|avi|mkv|mov)(\?|$)/i.test(raw) || raw.includes("\\") || /^[a-z]:/i.test(raw)) {
+      return null;
+    }
     return null;
   }
 }

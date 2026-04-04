@@ -132,6 +132,9 @@ exports.createLeftSafeZoneEvent = async (req, res) => {
 
     const camera_id =
       req.body.camera_id != null ? parseInt(req.body.camera_id, 10) : null;
+    if (camera_id == null || isNaN(camera_id) || camera_id < 1) {
+      return sendFail(res, "camera_id là bắt buộc và phải là số nguyên dương", HTTP_STATUS.BAD_REQUEST);
+    }
     const zone_id =
       req.body.zone_id != null && req.body.zone_id !== ""
         ? parseInt(req.body.zone_id, 10)
@@ -140,7 +143,7 @@ exports.createLeftSafeZoneEvent = async (req, res) => {
     const image_url = "/uploads/fall/" + req.file.filename;
 
     const result = await LeftSafeZoneEvent.create({
-      camera_id: isNaN(camera_id) ? null : camera_id,
+      camera_id,
       zone_id: isNaN(zone_id) ? null : zone_id,
       image_url,
       severity_level,

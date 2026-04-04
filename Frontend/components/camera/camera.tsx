@@ -14,9 +14,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import {
   API_BASE_URL,
-  CAMERA_STREAM_URL,
   getCameraEventHistory,
   getCameraLiveAccess,
+  getCameraServiceStreamUrl,
   getCameraStatus,
   getActiveRoomId,
   subscribeActiveRoomChange,
@@ -26,6 +26,7 @@ import {
 import CameraStreamView from "./CameraStreamView";
 const TAB_ACTIVE = "#56328C";
 const TAB_INACTIVE = "#A78BFA";
+const DEMO_ASSET_KEYS = new Set<string>(["video3", "videofall"]);
 
 function formatTime(date: Date) {
   return date.toTimeString().slice(0, 5);
@@ -156,6 +157,37 @@ export default function CameraLiveScreen() {
   const useMjpegFallback =
     liveAccess !== "loading" && liveAccess?.allowed && !liveAccess?.asset_key;
 
+  /** MJPEG lỗi → xem video demo (video3/videofall) để không màn hình đen khi chưa bật Python. */
+  const effectiveAssetKey = useMemo(() => {
+    if (liveAccess === "loading" || !liveAccess?.allowed) return null;
+    if (liveAccess.asset_key) return liveAccess.asset_key;
+    if (
+      useMjpegFallback &&
+      streamError &&
+      liveAccess.fallback_asset_key &&
+      DEMO_ASSET_KEYS.has(liveAccess.fallback_asset_key)
+    ) {
+      return liveAccess.fallback_asset_key;
+    }
+    return null;
+  }, [liveAccess, useMjpegFallback, streamError]);
+
+  const showingDemoFallback =
+    !!streamError &&
+    useMjpegFallback &&
+    !!liveAccess &&
+    typeof liveAccess === "object" &&
+    "allowed" in liveAccess &&
+    !!liveAccess.fallback_asset_key &&
+    effectiveAssetKey === liveAccess.fallback_asset_key;
+
+  const mjpegStreamUrl = useMemo(() => {
+    if (liveAccess === "loading" || !liveAccess?.allowed) {
+      return getCameraServiceStreamUrl(null);
+    }
+    return getCameraServiceStreamUrl(liveAccess.stream_port ?? null);
+  }, [liveAccess]);
+
   useEffect(() => {
     if (!useMjpegFallback) {
       setStreamReady(false);
@@ -164,31 +196,55 @@ export default function CameraLiveScreen() {
       setStreamError(null);
       return;
     }
+    if (!liveAccess || !liveAccess.allowed) return;
+
+    const access = liveAccess;
+    const port = access.stream_port ?? null;
 
     const loadStatus = async () => {
       try {
-        const status = await getCameraStatus();
+        const status = await getCameraStatus(port);
         setStreamReady(status.ready);
         setFallCount(status.fallcount);
         setFps(status.fps);
         setStreamError(null);
       } catch {
-        setStreamError("Chưa kết nối Camera Service");
+        const p = access.stream_port;
+        setStreamError(
+          p
+            ? `Chưa kết nối Camera Service (cổng ${p}). Trên máy dev chạy: AI_Service\\run_camera_room1.ps1`
+            : "Chưa kết nối Camera Service. Kiểm tra tiến trình Python và cổng MJPEG."
+        );
       }
     };
 
     loadStatus();
     const interval = setInterval(loadStatus, 1500);
     return () => clearInterval(interval);
-  }, [useMjpegFallback]);
+  }, [useMjpegFallback, liveAccess]);
 
   useEffect(() => {
     let mounted = true;
 
+    const cameraIdForHistory =
+      liveAccess !== "loading" &&
+      liveAccess?.allowed &&
+      liveAccess?.camera_id != null &&
+      Number(liveAccess.camera_id) > 0
+        ? Number(liveAccess.camera_id)
+        : null;
+
     const loadHistory = async (firstLoad = false) => {
       if (firstLoad) setHistoryLoading(true);
+      if (!cameraIdForHistory) {
+        if (!mounted) return;
+        setHistory([]);
+        setHistoryError(null);
+        if (firstLoad) setHistoryLoading(false);
+        return;
+      }
       try {
-        const items = await getCameraEventHistory(20);
+        const items = await getCameraEventHistory(20, cameraIdForHistory);
         if (!mounted) return;
         setHistory(items);
         setHistoryError(null);
@@ -213,7 +269,7 @@ export default function CameraLiveScreen() {
       mounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [activeRoom, liveAccess, requestedEventId]);
 
   useEffect(() => {
     if (!requestedEventId) return;
@@ -287,12 +343,22 @@ export default function CameraLiveScreen() {
                 </Text>
               </View>
             ) : showStreamBlock ? (
-              <CameraStreamView
-                style={styles.camera}
-                fit="cover"
-                assetKey={liveAccess?.asset_key ?? null}
-                mjpegUrl={CAMERA_STREAM_URL}
-              />
+              <View style={styles.cameraInner}>
+                {showingDemoFallback ? (
+                  <View style={styles.demoFallbackBanner} pointerEvents="none">
+                    <Text style={styles.demoFallbackText}>
+                      Đang xem video demo — bật Camera Service (cổng {liveAccess?.stream_port ?? "?"}) để có luồng
+                      AI thật.
+                    </Text>
+                  </View>
+                ) : null}
+                <CameraStreamView
+                  style={styles.camera}
+                  fit="cover"
+                  assetKey={effectiveAssetKey}
+                  mjpegUrl={mjpegStreamUrl}
+                />
+              </View>
             ) : (
               <View style={[styles.camera, styles.placeholderCamera]}>
                 <Ionicons name="videocam-off-outline" size={40} color="#999" />
@@ -317,7 +383,12 @@ export default function CameraLiveScreen() {
             ) : null}
           </View>
 
-          {useMjpegFallback && streamError ? <Text style={styles.streamErrorText}>{streamError}</Text> : null}
+          {useMjpegFallback && streamError && !showingDemoFallback ? (
+            <Text style={styles.streamErrorText}>{streamError}</Text>
+          ) : null}
+          {useMjpegFallback && streamError && showingDemoFallback ? (
+            <Text style={styles.streamHintText}>{streamError}</Text>
+          ) : null}
         </View>
 
         <View style={styles.controlRow}>
@@ -483,6 +554,31 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     overflow: "hidden",
     backgroundColor: "#000",
+  },
+  cameraInner: {
+    position: "relative",
+  },
+  demoFallbackBanner: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    backgroundColor: "rgba(180, 83, 9, 0.92)",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  demoFallbackText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  streamHintText: {
+    marginTop: 8,
+    color: "#92400e",
+    fontSize: 11,
+    paddingHorizontal: 4,
   },
   camera: {
     width: "100%",
