@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import type { NotificationLogEntry } from "@/services/notificationLog";
-import { isCareConfirmationData, labelForType, statusLabelForCareConfirmation } from "./notificationTypes";
+import { categoryLabelForEntry, isCareConfirmationData, statusLabelForCareConfirmation } from "./notificationTypes";
 import { getCurrentUser, getMyRoom, getRoomMembers, type RoomMemberRole } from "@/services/api";
 import { confirmCareNotification } from "@/services/careConfirmationNotifications";
 import { getElderNameFromHealthMetrics } from "@/services/healthContext";
@@ -253,7 +253,7 @@ export default function NotificationDetailModal({
               >
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Mục</Text>
-                  <Text style={styles.metaValue}>{labelForType(item.type)}</Text>
+                  <Text style={styles.metaValue}>{categoryLabelForEntry(item)}</Text>
                 </View>
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Thời gian</Text>

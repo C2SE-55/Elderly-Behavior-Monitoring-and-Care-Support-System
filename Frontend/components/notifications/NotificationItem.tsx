@@ -2,7 +2,13 @@ import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import type { NotificationLogEntry } from "@/services/notificationLog";
-import { isCareConfirmationData, labelForType, statusLabelForCareConfirmation, toneForCareConfirmationStatus, toneForType } from "./notificationTypes";
+import {
+  categoryLabelForEntry,
+  categoryToneForEntry,
+  isCareConfirmationData,
+  statusLabelForCareConfirmation,
+  toneForCareConfirmationStatus,
+} from "./notificationTypes";
 
 const formatWhen = (iso: string) => {
   const d = dayjs(iso);
@@ -22,7 +28,8 @@ export default function NotificationItem({
   onPress: () => void;
   onPressIn?: () => void;
 }) {
-  const typeTone = useMemo(() => toneForType(item.type), [item.type]);
+  const typeTone = useMemo(() => categoryToneForEntry(item), [item]);
+  const categoryLabel = useMemo(() => categoryLabelForEntry(item), [item]);
 
   const careStatusChip = useMemo(() => {
     if (item.type !== "care-confirmation") return null;
@@ -58,7 +65,7 @@ export default function NotificationItem({
 
       <View style={styles.bottomRow}>
         <View style={[styles.badgePill, { backgroundColor: typeTone.bg, borderColor: typeTone.border, opacity: item.read ? 0.6 : 1 }]}>
-          <Text style={[styles.badge, { color: typeTone.text }]}>{labelForType(item.type)}</Text>
+          <Text style={[styles.badge, { color: typeTone.text }]}>{categoryLabel}</Text>
         </View>
 
         {!!careStatusChip && (

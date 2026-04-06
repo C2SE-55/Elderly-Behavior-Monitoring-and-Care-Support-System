@@ -17,6 +17,30 @@ export const labelForType = (type: NotificationLogEntry["type"]) => {
   return "Hệ thống";
 };
 
+/** Phân loại cảnh báo camera (data.type === "safety" trong log type system). */
+export type SafetyKind = "fall" | "left_safe_zone";
+
+export function safetyKindFromEntry(entry: NotificationLogEntry): SafetyKind | null {
+  const d: any = entry?.data;
+  if (!d || d.type !== "safety") return null;
+  if (d.safety_type === "left_safe_zone") return "left_safe_zone";
+  return "fall";
+}
+
+export function categoryLabelForEntry(entry: NotificationLogEntry): string {
+  const sk = safetyKindFromEntry(entry);
+  if (sk === "fall") return "Té ngã";
+  if (sk === "left_safe_zone") return "Rời vùng an toàn";
+  return labelForType(entry.type);
+}
+
+export function categoryToneForEntry(entry: NotificationLogEntry): NotificationStatusTone {
+  const sk = safetyKindFromEntry(entry);
+  if (sk === "fall") return { bg: "#FEE2E2", border: "#FECACA", text: "#991B1B" };
+  if (sk === "left_safe_zone") return { bg: "#FFEDD5", border: "#FDBA74", text: "#C2410C" };
+  return toneForType(entry.type);
+}
+
 export const statusLabelForCareConfirmation = (status: CareConfirmationStatus) => {
   if (status === "done") return "Hoàn tất";
   if (status === "half") return "Đã xác nhận 1 bên";

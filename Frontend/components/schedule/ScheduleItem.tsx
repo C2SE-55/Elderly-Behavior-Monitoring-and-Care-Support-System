@@ -61,9 +61,11 @@ export default function ScheduleItem({
         </TouchableOpacity>
         {!readonly && (
           <>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
-              <Text style={styles.actionText}>Sửa</Text>
-            </TouchableOpacity>
+            {!isDone && (
+              <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
+                <Text style={styles.actionText}>Sửa</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item)}>
               <Text style={[styles.actionText, styles.deleteText]}>Xóa</Text>
             </TouchableOpacity>

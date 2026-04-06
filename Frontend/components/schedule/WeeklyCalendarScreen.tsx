@@ -500,6 +500,10 @@ export default function WeeklyCalendarScreen() {
       setScreenError("Bạn chỉ có quyền xem lịch.");
       return;
     }
+    if (isScheduleMarkedDone(item)) {
+      setScreenError("Lịch đã đánh dấu hoàn thành, không thể chỉnh sửa.");
+      return;
+    }
     if (isPastSchedule(item)) {
       setScreenError("Lịch đã qua thời gian, không thể chỉnh sửa.");
       return;
