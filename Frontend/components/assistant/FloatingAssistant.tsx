@@ -42,6 +42,13 @@ import { emitScheduleRefresh } from "@/services/scheduleEvents";
 import DateRangePicker from "./DateRangePicker";
 import MealPlanCard from "./MealPlanCard";
 import ApplyMealPlanButton from "./ApplyMealPlanButton";
+import {
+  getApplicableMealKeys,
+  isMealApplyWindowPassed,
+  MEAL_APPLY_LABEL_VI,
+  MEAL_TIMES,
+  parseMealPlanDateLocalStart,
+} from "./mealApplyWindows";
 import { MealKey, MealPlanDay, MealPlanMeals, MealPlanTemplate } from "./mealPlanTypes";
 
 const { width, height } = Dimensions.get("window");
@@ -564,14 +571,9 @@ type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
 
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
-const MEAL_TIMES: Record<keyof MealPlanMeals, { label: string; start: string; end: string }> = {
-  breakfast: { label: "Breakfast", start: "07:00", end: "08:00" },
-  lunch: { label: "Lunch", start: "12:00", end: "13:00" },
-  dinner: { label: "Dinner", start: "18:00", end: "19:00" },
-};
-
 const toDayKey = (isoDate: string): DayKey => {
-  const d = dayjs(isoDate).day();
+  const parsed = parseMealPlanDateLocalStart(isoDate);
+  const d = (parsed ?? dayjs(isoDate)).day();
   if (d === 0) return "sun";
   if (d === 1) return "mon";
   if (d === 2) return "tue";
@@ -1114,14 +1116,21 @@ const FloatingAssistant: React.FC = () => {
   }, []);
 
   const applyMealsOfDay = useCallback(
-    async (dayItem: MealPlanDay): Promise<"applied" | "skipped" | "cancelled"> => {
+    async (dayItem: MealPlanDay): Promise<"applied" | "skipped" | "cancelled" | "nothing_to_apply"> => {
+      const now = dayjs();
+      const applicableKeys = getApplicableMealKeys(dayItem, now);
+      if (!applicableKeys.length) {
+        return "nothing_to_apply";
+      }
+
       const dayKey = toDayKey(dayItem.date);
       const rows = await getDailySchedules();
+      const startTimesToMatch = applicableKeys.map((k) => MEAL_TIMES[k].start.slice(0, 5));
       const conflicts = rows.filter(
         (row) =>
           row.day_of_week === dayKey &&
           row.type === "meal" &&
-          ["07:00", "12:00", "18:00"].includes(String(row.start_time || "").slice(0, 5))
+          startTimesToMatch.includes(String(row.start_time || "").slice(0, 5))
       );
 
       let action: "overwrite" | "skip" | "cancel" = "overwrite";
@@ -1137,22 +1146,18 @@ const FloatingAssistant: React.FC = () => {
         }
       }
 
-      // Apply all meals that actually have content (even if user only generated 1 meal type initially).
-      const payloads = (["breakfast", "lunch", "dinner"] as MealKey[])
-        .map((mealKey) => {
-          const mealName = String(dayItem.meals[mealKey] || "").trim();
-          if (!mealName) return null;
-          const map = MEAL_TIMES[mealKey];
-          return {
-            day_of_week: dayKey,
-            title: mealName,
-            description: map.label,
-            start_time: map.start,
-            end_time: map.end,
-            type: "meal" as const,
-          };
-        })
-        .filter(Boolean);
+      const payloads = applicableKeys.map((mealKey) => {
+        const mealName = String(dayItem.meals[mealKey] || "").trim();
+        const map = MEAL_TIMES[mealKey];
+        return {
+          day_of_week: dayKey,
+          title: mealName,
+          description: map.label,
+          start_time: map.start,
+          end_time: map.end,
+          type: "meal" as const,
+        };
+      });
 
       for (const payload of payloads) {
         await createDailySchedule(payload as any);
@@ -1166,7 +1171,33 @@ const FloatingAssistant: React.FC = () => {
     async (date: string) => {
       const target = mealPlanDays.find((item) => item.date === date);
       if (!target) return;
-      const confirmed = await confirmApply(`Áp dụng thực đơn ngày ${date} vào lịch sinh hoạt?`);
+      const now = dayjs();
+      const applicable = getApplicableMealKeys(target, now);
+      if (!applicable.length) {
+        const hasAnyText = (["breakfast", "lunch", "dinner"] as MealKey[]).some(
+          (k) => String(target.meals[k] || "").trim().length > 0
+        );
+        const msg = hasAnyText
+          ? "Các bữa trong ngày này đã qua khung giờ áp dụng (sáng/trưa/tối). Bạn chỉ có thể áp dụng các bữa chưa hết giờ."
+          : "Chưa có món nào để áp dụng. Hãy nhập ít nhất một bữa còn trong khung giờ.";
+        if (Platform.OS === "web") {
+          typeof window !== "undefined" && window.alert(msg);
+        } else {
+          Alert.alert("Không thể áp dụng", msg);
+        }
+        return;
+      }
+
+      const skippedByTime = (["breakfast", "lunch", "dinner"] as MealKey[]).filter((k) => {
+        const text = String(target.meals[k] || "").trim();
+        if (!text) return false;
+        return !applicable.includes(k);
+      });
+      let confirmMsg = `Áp dụng thực đơn ngày ${date} vào lịch sinh hoạt?`;
+      if (skippedByTime.length) {
+        confirmMsg += `\n\nChỉ áp dụng: ${applicable.map((k) => MEAL_APPLY_LABEL_VI[k]).join(", ")}. Các bữa đã qua giờ sẽ bỏ qua.`;
+      }
+      const confirmed = await confirmApply(confirmMsg);
       if (!confirmed) return;
       setApplyingByDate((prev) => ({ ...prev, [date]: true }));
       try {
@@ -1180,6 +1211,8 @@ const FloatingAssistant: React.FC = () => {
           emitScheduleRefresh();
         } else if (result === "skipped") {
           showPlannerToast(`Đã bỏ qua ngày ${date}`);
+        } else if (result === "nothing_to_apply") {
+          showPlannerToast("Không còn bữa nào có thể áp dụng (đã qua giờ).");
         }
       } catch {
         showPlannerToast("Áp dụng thất bại. Bạn thử lại nhé.");
@@ -1201,6 +1234,7 @@ const FloatingAssistant: React.FC = () => {
         const result = await applyMealsOfDay(dayItem);
         if (result === "cancelled") break;
         if (result === "applied") appliedCount += 1;
+        // nothing_to_apply: bỏ qua ngày đó (đã qua giờ / không có món hợp lệ)
       }
       emitScheduleRefresh();
       const msg = `Hoàn tất áp dụng ${appliedCount}/${mealPlanDays.length} ngày.`;
@@ -1565,19 +1599,38 @@ const FloatingAssistant: React.FC = () => {
                         </View>
                       )}
 
-                      {mealPlanDays.map((dayItem) => (
-                        <MealPlanCard
-                          key={dayItem.date}
-                          date={dayItem.date}
-                          meals={dayItem.meals}
-                          disabled={applyingAll}
-                          applying={!!applyingByDate[dayItem.date]}
-                          onChangeMeal={(mealKey, value) => handleChangeMeal(dayItem.date, mealKey, value)}
-                          onApplyDay={() => void handleApplyDay(dayItem.date)}
-                        />
-                      ))}
+                      {mealPlanDays.map((dayItem) => {
+                        const now = dayjs();
+                        const applicable = getApplicableMealKeys(dayItem, now);
+                        const mealPassed = {
+                          breakfast: isMealApplyWindowPassed(dayItem.date, "breakfast", now),
+                          lunch: isMealApplyWindowPassed(dayItem.date, "lunch", now),
+                          dinner: isMealApplyWindowPassed(dayItem.date, "dinner", now),
+                        };
+                        return (
+                          <MealPlanCard
+                            key={dayItem.date}
+                            date={dayItem.date}
+                            meals={dayItem.meals}
+                            disabled={applyingAll}
+                            applying={!!applyingByDate[dayItem.date]}
+                            canApplyDay={applicable.length > 0}
+                            mealPassed={mealPassed}
+                            onChangeMeal={(mealKey, value) => handleChangeMeal(dayItem.date, mealKey, value)}
+                            onApplyDay={() => void handleApplyDay(dayItem.date)}
+                          />
+                        );
+                      })}
 
-                      {!!mealPlanDays.length && <ApplyMealPlanButton loading={applyingAll} onPress={() => void handleApplyAll()} />}
+                      {!!mealPlanDays.length && (
+                        <ApplyMealPlanButton
+                          loading={applyingAll}
+                          disabled={
+                            !mealPlanDays.some((d) => getApplicableMealKeys(d, dayjs()).length > 0)
+                          }
+                          onPress={() => void handleApplyAll()}
+                        />
+                      )}
                       {!!plannerToast && <Text style={styles.plannerToast}>{plannerToast}</Text>}
                     </Animated.View>
                   )}

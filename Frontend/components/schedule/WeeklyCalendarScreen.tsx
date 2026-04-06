@@ -16,6 +16,7 @@ import {
   updateDailySchedule,
   subscribeActiveRoomChange,
 } from "@/services/api";
+import { isScheduleMarkedDone } from "@/utils/scheduleMarkedDone";
 import { subscribeScheduleRefresh } from "@/services/scheduleEvents";
 import { resetScheduleActivityReminderKeys } from "@/services/scheduleActivityReminders";
 import ScheduleModal from "./ScheduleModal";
@@ -45,6 +46,14 @@ const DAY_INDEX: Record<DayKey, number> = {
   sat: 5,
   sun: 6,
 };
+
+/** API / MySQL đôi khi trả ENUM lệch chữ hoa → tránh DAY_INDEX undefined và map sai ngày. */
+function normalizeDayKey(raw: string | undefined | null): DayKey | null {
+  const k = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return k in DAY_INDEX ? (k as DayKey) : null;
+}
 
 const SLOT_CONFIG: { key: SlotKey; label: string; start: string; end: string }[] = [
   { key: "morning", label: "Sáng\n06:00 - 11:00", start: "06:00", end: "11:00" },
@@ -314,7 +323,11 @@ export default function WeeklyCalendarScreen() {
   const currentSlot = getCurrentSlotKey(now);
 
   const getDateForDay = useCallback(
-    (dayKey: DayKey) => weekStart.add(DAY_INDEX[dayKey], "day"),
+    (dayKey: DayKey) => {
+      const dk = normalizeDayKey(dayKey);
+      const idx = dk !== null ? DAY_INDEX[dk] : 0;
+      return weekStart.add(idx, "day");
+    },
     [weekStart]
   );
 
@@ -349,12 +362,42 @@ export default function WeeklyCalendarScreen() {
       setScreenError("Đang dùng dữ liệu mẫu, không thể cập nhật.");
       return;
     }
+    if (isScheduleMarkedDone(item)) {
+      setDetailVisible(false);
+      setDetailItem(null);
+      return;
+    }
+    if (!canMarkScheduleDone(item)) {
+      setScreenError("Chưa tới giờ bắt đầu lịch, không thể đánh dấu đã xong.");
+      return;
+    }
     const marker = "[ĐÃ XONG]";
     const raw = String(item.description || "").trim();
     const nextDesc = raw.includes(marker) ? raw : (raw ? `${raw}\n${marker}` : marker);
+    const dk = normalizeDayKey(item.day_of_week);
+    if (!dk) {
+      setScreenError("Dữ liệu ngày trong tuần không hợp lệ, không thể cập nhật.");
+      return;
+    }
+    const toApiTime = (t: string) => {
+      const raw = String(t || "07:00:00").trim();
+      const m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (!m) return "07:00:00";
+      const hh = m[1].padStart(2, "0");
+      const mm = m[2].padStart(2, "0");
+      const ss = (m[3] || "00").padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    };
     try {
       const keepX = gridScrollXRef.current;
-      await updateDailySchedule(item.id, { description: nextDesc });
+      await updateDailySchedule(item.id, {
+        day_of_week: dk,
+        title: item.title,
+        description: nextDesc,
+        start_time: toApiTime(String(item.start_time)),
+        end_time: toApiTime(String(item.end_time)),
+        type: item.type,
+      });
       await loadSchedules();
       setTimeout(() => gridScrollRef.current?.scrollTo({ x: keepX, y: 0, animated: false }), 0);
       setDetailVisible(false);
@@ -385,15 +428,16 @@ export default function WeeklyCalendarScreen() {
     setTimeout(() => scrollToCurrentDayColumn(true), 50);
   }, [scrollToCurrentDayColumn]);
 
+  /** So sánh mốc thời gian thực trên lịch (không rút gọn theo weekOffset — tránh coi nhầm thứ 5 tuần này là “đã qua” khi đang thứ 2). */
   const isPastDateTime = useCallback(
     (dayKey: DayKey, hhmm: string) => {
-      if (weekOffset < 0) return true;
-      if (weekOffset > 0) return false;
+      const dk = normalizeDayKey(dayKey);
+      if (dk === null) return false;
       const [h, m] = normalizeHHMM(hhmm).split(":").map((x) => Number(x));
-      const target = getDateForDay(dayKey).hour(h || 0).minute(m || 0).second(0);
+      const target = getDateForDay(dk).hour(h || 0).minute(m || 0).second(0).millisecond(0);
       return target.isBefore(now);
     },
-    [getDateForDay, now, weekOffset]
+    [getDateForDay, now]
   );
 
   const isPastSlot = useCallback(
@@ -410,8 +454,27 @@ export default function WeeklyCalendarScreen() {
     [isPastDateTime]
   );
 
+  /** Chỉ cho đánh dấu hoàn thành khi đã tới hoặc qua giờ bắt đầu (chặn lịch còn trong tương lai). */
+  const canMarkScheduleDone = useCallback(
+    (item: DailyScheduleItem) => {
+      const dk = normalizeDayKey(item.day_of_week);
+      if (dk === null) return false;
+      const [h, m] = normalizeHHMM(String(item.start_time)).split(":").map((x) => Number(x));
+      const startInstant = getDateForDay(dk).hour(h || 0).minute(m || 0).second(0).millisecond(0);
+      return !now.isBefore(startInstant);
+    },
+    [getDateForDay, now]
+  );
+
+  const isItemOverdueIncomplete = useCallback(
+    (item: DailyScheduleItem) => isPastSchedule(item) && !isScheduleMarkedDone(item),
+    [isPastSchedule]
+  );
+
   const getCellSchedules = (dayKey: DayKey, slotKey: SlotKey) =>
-    filteredSchedules.filter((item) => item.day_of_week === dayKey && getSlotByTime(item.start_time) === slotKey);
+    filteredSchedules.filter(
+      (item) => normalizeDayKey(item.day_of_week) === dayKey && getSlotByTime(item.start_time) === slotKey
+    );
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -441,7 +504,8 @@ export default function WeeklyCalendarScreen() {
       setScreenError("Lịch đã qua thời gian, không thể chỉnh sửa.");
       return;
     }
-    setModalDay(item.day_of_week);
+    const dk = normalizeDayKey(item.day_of_week);
+    setModalDay(dk ?? item.day_of_week);
     setEditingItem(item);
     setModalVisible(true);
   };
@@ -629,6 +693,7 @@ export default function WeeklyCalendarScreen() {
                       isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
                       readonly={!canManageSchedule}
                       isPast={isPastSlot(d.key, slot.key)}
+                      isItemOverdueIncomplete={isItemOverdueIncomplete}
                       onAdd={handleAdd}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
@@ -658,6 +723,7 @@ export default function WeeklyCalendarScreen() {
         item={detailItem}
         canManage={canManageSchedule}
         isPast={!!detailItem && isPastSchedule(detailItem)}
+        canMarkDone={!!detailItem && canMarkScheduleDone(detailItem)}
         onDone={(it) => void markScheduleDone(it)}
         onClose={() => {
           setDetailVisible(false);

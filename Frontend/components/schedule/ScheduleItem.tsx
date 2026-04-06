@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { DailyScheduleItem } from "@/services/api";
+import { isScheduleMarkedDone } from "@/utils/scheduleMarkedDone";
 
 type Props = {
   item: DailyScheduleItem;
@@ -8,6 +9,8 @@ type Props = {
   onDelete: (item: DailyScheduleItem) => void;
   readonly?: boolean;
   onViewDetail?: (item: DailyScheduleItem) => void;
+  /** Đã qua giờ kết thúc lịch nhưng chưa tích hoàn thành */
+  overdueNotice?: boolean;
 };
 
 const TYPE_BG: Record<DailyScheduleItem["type"], string> = {
@@ -24,8 +27,15 @@ const TYPE_TEXT: Record<DailyScheduleItem["type"], string> = {
   other: "#1E40AF",
 };
 
-export default function ScheduleItem({ item, onEdit, onDelete, readonly = false, onViewDetail }: Props) {
-  const isDone = String(item.description || "").includes("[ĐÃ XONG]");
+export default function ScheduleItem({
+  item,
+  onEdit,
+  onDelete,
+  readonly = false,
+  onViewDetail,
+  overdueNotice = false,
+}: Props) {
+  const isDone = isScheduleMarkedDone(item);
   return (
     <View style={[styles.box, { backgroundColor: TYPE_BG[item.type] }]}>
       <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
@@ -38,6 +48,11 @@ export default function ScheduleItem({ item, onEdit, onDelete, readonly = false,
         <Text style={styles.description} numberOfLines={2}>
           {item.description}
         </Text>
+      )}
+      {overdueNotice && (
+        <View style={styles.overdueWrap}>
+          <Text style={styles.overdueText}>Đã qua lịch — chưa hoàn thành</Text>
+        </View>
       )}
       {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
       <View style={styles.actions}>
@@ -81,6 +96,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#4B5563",
     marginTop: 2,
+  },
+  overdueWrap: {
+    marginTop: 4,
+    alignSelf: "stretch",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  overdueText: {
+    color: "#92400E",
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 14,
   },
   doneBadge: {
     marginTop: 4,

@@ -10,6 +10,8 @@ type Props = {
   isCurrent: boolean;
   readonly?: boolean;
   isPast?: boolean;
+  /** Mục đã qua thời gian kết thúc và chưa đánh dấu hoàn thành → hiện nhắc trên thẻ */
+  isItemOverdueIncomplete?: (item: DailyScheduleItem) => boolean;
   onAdd: (dayKey: DailyScheduleItem["day_of_week"]) => void;
   onEdit: (item: DailyScheduleItem) => void;
   onDelete: (item: DailyScheduleItem) => void;
@@ -23,6 +25,7 @@ export default function TimeSlotCell({
   isCurrent,
   readonly = false,
   isPast = false,
+  isItemOverdueIncomplete,
   onAdd,
   onEdit,
   onDelete,
@@ -41,6 +44,7 @@ export default function TimeSlotCell({
             onDelete={onDelete}
             readonly={readonly}
             onViewDetail={onViewDetail}
+            overdueNotice={isItemOverdueIncomplete?.(item) ?? false}
           />
         ))
       )}

@@ -2,6 +2,7 @@ import React from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DailyScheduleItem } from "@/services/api";
+import { isScheduleMarkedDone } from "@/utils/scheduleMarkedDone";
 
 type Props = {
   visible: boolean;
@@ -9,6 +10,8 @@ type Props = {
   onClose: () => void;
   canManage?: boolean;
   isPast?: boolean;
+  /** false = lịch chưa tới giờ bắt đầu → không hiện nút Đã xong */
+  canMarkDone?: boolean;
   onDone?: (item: DailyScheduleItem) => void;
 };
 
@@ -25,12 +28,17 @@ export default function ScheduleDetailModal({
   onClose,
   canManage = false,
   isPast = false,
+  canMarkDone = true,
   onDone,
 }: Props) {
   const insets = useSafeAreaInsets();
   if (!visible) return null;
 
   const canAct = !!item && canManage && item.id > 0;
+  const alreadyDone = !!item && isScheduleMarkedDone(item);
+  const showDoneBtn = canAct && !alreadyDone && canMarkDone;
+  const showFutureHint = canAct && !alreadyDone && !canMarkDone;
+  const showOverdueWarning = !!item && isPast && !alreadyDone;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
@@ -49,6 +57,20 @@ export default function ScheduleDetailModal({
               <Text style={styles.value}>Không có dữ liệu.</Text>
             ) : (
               <>
+                {showFutureHint ? (
+                  <View style={styles.futureBanner}>
+                    <Text style={styles.futureBannerText}>
+                      Lịch chưa tới giờ bắt đầu. Đến đúng khung giờ bạn mới có thể bấm &quot;Đã xong&quot;.
+                    </Text>
+                  </View>
+                ) : null}
+                {showOverdueWarning ? (
+                  <View style={styles.overdueBanner}>
+                    <Text style={styles.overdueBannerText}>
+                      Lịch đã qua thời gian nhưng chưa đánh dấu hoàn thành. Bạn có thể bấm &quot;Đã xong&quot; nếu đã thực hiện.
+                    </Text>
+                  </View>
+                ) : null}
                 <View style={styles.row}>
                   <Text style={styles.label}>Thời gian</Text>
                   <Text style={styles.value}>
@@ -72,7 +94,7 @@ export default function ScheduleDetailModal({
 
             <View style={styles.actions}>
               <View style={styles.rightActions}>
-                {canAct ? (
+                {showDoneBtn ? (
                   <TouchableOpacity style={styles.doneBtn} onPress={() => item && onDone?.(item)}>
                     <Text style={styles.doneText}>Đã xong</Text>
                   </TouchableOpacity>
@@ -102,6 +124,24 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   title: { fontSize: 18, fontWeight: "700", color: "#111827" },
+  futureBanner: {
+    backgroundColor: "#E0E7FF",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#818CF8",
+  },
+  futureBannerText: { color: "#312E81", fontSize: 12, fontWeight: "700", lineHeight: 17 },
+  overdueBanner: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  overdueBannerText: { color: "#92400E", fontSize: 12, fontWeight: "700", lineHeight: 17 },
   row: { gap: 4 },
   label: { fontSize: 12, color: "#4B5563", fontWeight: "800" },
   value: { fontSize: 14, color: "#111827", fontWeight: "600", lineHeight: 20 },

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
@@ -11,6 +11,45 @@ type Props = {
 };
 
 const MAX_RANGE_DAYS = 7;
+
+type QuickPreset = { key: string; label: string; getRange: () => { start: Date; end: Date } };
+
+const QUICK_PRESETS: QuickPreset[] = [
+  {
+    key: "today",
+    label: "Hôm nay",
+    getRange: () => {
+      const t = dayjs().startOf("day").toDate();
+      return { start: t, end: t };
+    },
+  },
+  {
+    key: "tomorrow",
+    label: "Ngày mai",
+    getRange: () => {
+      const t = dayjs().add(1, "day").startOf("day").toDate();
+      return { start: t, end: t };
+    },
+  },
+  {
+    key: "3d",
+    label: "3 ngày tới",
+    getRange: () => {
+      const s = dayjs().startOf("day").toDate();
+      const e = dayjs().add(2, "day").startOf("day").toDate();
+      return { start: s, end: e };
+    },
+  },
+  {
+    key: "7d",
+    label: "7 ngày tới",
+    getRange: () => {
+      const s = dayjs().startOf("day").toDate();
+      const e = dayjs().add(6, "day").startOf("day").toDate();
+      return { start: s, end: e };
+    },
+  },
+];
 
 type PickerTarget = "start" | "end" | null;
 
@@ -109,9 +148,36 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
     setError("");
   };
 
+  const applyQuickPreset = (preset: QuickPreset) => {
+    if (disabled) return;
+    const { start, end } = preset.getRange();
+    setStartDate(start);
+    setEndDate(end);
+    setError("");
+  };
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Bạn muốn tạo thực đơn từ ngày nào đến ngày nào?</Text>
+      <Text style={styles.quickTitle}>Chọn nhanh</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.quickRow}
+        nestedScrollEnabled
+      >
+        {QUICK_PRESETS.map((p) => (
+          <TouchableOpacity
+            key={p.key}
+            style={[styles.quickChip, disabled && styles.dateBtnDisabled]}
+            onPress={() => applyQuickPreset(p)}
+            disabled={disabled}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.quickChipText}>{p.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
       <View style={styles.row}>
         <TouchableOpacity
           style={[styles.dateBtn, disabled && styles.dateBtnDisabled]}
@@ -228,7 +294,32 @@ const styles = StyleSheet.create({
     color: "#1E1B4B",
     fontSize: 13,
     fontWeight: "700",
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  quickTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4338CA",
+    marginBottom: 6,
+  },
+  quickRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingBottom: 10,
+    paddingRight: 4,
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#A5B4FC",
+  },
+  quickChipText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#3730A3",
   },
   row: {
     flexDirection: "row",

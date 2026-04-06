@@ -1,12 +1,16 @@
 import React from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { MealPlanMeals } from "./mealPlanTypes";
+import { MealKey, MealPlanMeals } from "./mealPlanTypes";
 
 type Props = {
   date: string;
   meals: MealPlanMeals;
   disabled?: boolean;
   applying?: boolean;
+  /** Có ít nhất một bữa (có nội dung) còn trong khung giờ áp dụng */
+  canApplyDay?: boolean;
+  /** Bữa nào đã qua giờ kết thúc (theo ngày trên thẻ) */
+  mealPassed?: Record<MealKey, boolean>;
   onChangeMeal: (mealKey: keyof MealPlanMeals, value: string) => void;
   onApplyDay: () => void;
 };
@@ -16,50 +20,41 @@ export default function MealPlanCard({
   meals,
   disabled,
   applying,
+  canApplyDay = true,
+  mealPassed,
   onChangeMeal,
   onApplyDay,
 }: Props) {
+  const applyBlocked = disabled || applying || !canApplyDay;
+
+  const field = (key: MealKey, label: string, placeholder: string) => (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        style={[styles.input, mealPassed?.[key] && styles.inputPassedSlot]}
+        value={meals[key]}
+        onChangeText={(v) => onChangeMeal(key, v)}
+        editable={!disabled}
+        placeholder={placeholder}
+      />
+      {mealPassed?.[key] ? (
+        <Text style={styles.passedHint}>Đã qua khung giờ bữa này — không thể áp dụng vào lịch</Text>
+      ) : null}
+    </View>
+  );
+
   return (
     <View style={styles.card}>
       <Text style={styles.date}>Ngày {date}</Text>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Bữa sáng</Text>
-        <TextInput
-          style={styles.input}
-          value={meals.breakfast}
-          onChangeText={(v) => onChangeMeal("breakfast", v)}
-          editable={!disabled}
-          placeholder="Món ăn buổi sáng"
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Bữa trưa</Text>
-        <TextInput
-          style={styles.input}
-          value={meals.lunch}
-          onChangeText={(v) => onChangeMeal("lunch", v)}
-          editable={!disabled}
-          placeholder="Món ăn buổi trưa"
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Bữa tối</Text>
-        <TextInput
-          style={styles.input}
-          value={meals.dinner}
-          onChangeText={(v) => onChangeMeal("dinner", v)}
-          editable={!disabled}
-          placeholder="Món ăn buổi tối"
-        />
-      </View>
+      {field("breakfast", "Bữa sáng", "Món ăn buổi sáng")}
+      {field("lunch", "Bữa trưa", "Món ăn buổi trưa")}
+      {field("dinner", "Bữa tối", "Món ăn buổi tối")}
 
       <TouchableOpacity
-        style={[styles.applyBtn, (disabled || applying) && styles.applyBtnDisabled]}
+        style={[styles.applyBtn, applyBlocked && styles.applyBtnDisabled]}
         onPress={onApplyDay}
-        disabled={disabled || applying}
+        disabled={applyBlocked}
       >
         <Text style={styles.applyText}>{applying ? "Đang áp dụng..." : "Áp dụng ngày này"}</Text>
       </TouchableOpacity>
@@ -100,6 +95,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     fontSize: 13,
     color: "#111827",
+  },
+  inputPassedSlot: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
+    opacity: 0.92,
+  },
+  passedHint: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#B45309",
   },
   applyBtn: {
     marginTop: 6,
