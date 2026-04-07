@@ -10,6 +10,12 @@ import {
   toneForCareConfirmationStatus,
 } from "./notificationTypes";
 
+const stripDoneMarker = (v: string) =>
+  v
+    .replace(/\[\s*đã\s*xong\s*\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
 const formatWhen = (iso: string) => {
   const d = dayjs(iso);
   if (!d.isValid()) return "";
@@ -54,12 +60,15 @@ export default function NotificationItem({
         <Text style={[styles.cardTitle, item.read && styles.cardTitleRead]} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={styles.time}>{formatWhen(item.createdAt)}</Text>
+        <View style={styles.rightMeta}>
+          {!item.read && <View style={styles.unreadDot} />}
+          <Text style={styles.time}>{formatWhen(item.createdAt)}</Text>
+        </View>
       </View>
 
       {!!item.body && (
         <Text style={[styles.body, item.read && styles.bodyRead]} numberOfLines={3}>
-          {item.body}
+          {stripDoneMarker(item.body)}
         </Text>
       )}
 
@@ -94,7 +103,9 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 14,
   },
   cardRead: { opacity: 0.7, backgroundColor: "#F8FAFC" },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
+  cardTop: { flexDirection: "row", justifyContent: "space-between", gap: 10, alignItems: "flex-start" },
+  rightMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
+  unreadDot: { width: 8, height: 8, borderRadius: 99, backgroundColor: "#EF4444" },
   cardTitle: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "900" },
   cardTitleRead: { color: "#374151" },
   time: { color: "#6B7280", fontSize: 12, fontWeight: "700" },

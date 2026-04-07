@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import type { AxiosError } from "axios";
 import dayjs from "dayjs";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   createRoomNote,
   deleteRoomNote,
@@ -41,6 +42,15 @@ const fmt = (iso?: string | null) => {
   return d.format("HH:mm DD/MM");
 };
 
+type PinnedMessage = {
+  id: number;
+  sender_name: string;
+  content: string;
+  created_at: string | null;
+};
+
+const pinnedKeyFor = (roomId: number) => `ebms.roomchat.pinnedMessage.v1.${String(roomId || 0)}`;
+
 export default function RoomChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ roomId?: string; roomName?: string }>();
@@ -63,9 +73,51 @@ export default function RoomChatScreen() {
   const [notePinned, setNotePinned] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [showComposer, setShowComposer] = useState(false);
+  const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
 
   const beforeIdRef = useRef<number | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listRef = useRef<FlatList<RoomChatMessage> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!roomId) {
+        setPinnedMessage(null);
+        return;
+      }
+      try {
+        const raw = await AsyncStorage.getItem(pinnedKeyFor(roomId));
+        if (cancelled) return;
+        if (!raw) {
+          setPinnedMessage(null);
+          return;
+        }
+        const v = JSON.parse(raw);
+        if (!v || typeof v !== "object") {
+          setPinnedMessage(null);
+          return;
+        }
+        const id = Number((v as any).id || 0);
+        if (!id) {
+          setPinnedMessage(null);
+          return;
+        }
+        setPinnedMessage({
+          id,
+          sender_name: String((v as any).sender_name || ""),
+          content: String((v as any).content || ""),
+          created_at: (v as any).created_at != null ? String((v as any).created_at) : null,
+        });
+      } catch {
+        setPinnedMessage(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   const loadInitial = useCallback(async () => {
     if (!roomId) return;
@@ -113,6 +165,15 @@ export default function RoomChatScreen() {
   useEffect(() => {
     void loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    // Messenger-like: always keep newest visible (best-effort).
+    if (!messages.length) return;
+    const t = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [messages.length]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -292,7 +353,58 @@ export default function RoomChatScreen() {
   };
 
   const goBackToRoomList = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace("/(screens)/family-chat");
+  };
+
+  const pinMessage = async (msg: RoomChatMessage) => {
+    if (!roomId) return;
+    const next: PinnedMessage = {
+      id: Number(msg.id),
+      sender_name: String(msg.sender_name || ""),
+      content: String(msg.content || ""),
+      created_at: msg.created_at ? String(msg.created_at) : null,
+    };
+    setPinnedMessage(next);
+    try {
+      await AsyncStorage.setItem(pinnedKeyFor(roomId), JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const unpinMessage = async () => {
+    if (!roomId) return;
+    setPinnedMessage(null);
+    try {
+      await AsyncStorage.removeItem(pinnedKeyFor(roomId));
+    } catch {
+      // ignore
+    }
+  };
+
+  const scrollToPinned = () => {
+    if (!pinnedMessage) return;
+    const idx = messages.findIndex((m) => Number(m.id) === Number(pinnedMessage.id));
+    if (idx < 0) return;
+    try {
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+    } catch {
+      // ignore
+    }
+  };
+
+  const openMessageActions = (msg: RoomChatMessage) => {
+    const isPinned = pinnedMessage?.id === Number(msg.id);
+    Alert.alert("Tùy chọn tin nhắn", String(msg.content || "").slice(0, 120), [
+      isPinned
+        ? { text: "Bỏ ghim", style: "destructive", onPress: () => void unpinMessage() }
+        : { text: "Ghim lên đầu", onPress: () => void pinMessage(msg) },
+      { text: "Đóng", style: "cancel" },
+    ]);
   };
 
   const renderMessage = ({ item }: { item: RoomChatMessage }) => {
@@ -306,9 +418,11 @@ export default function RoomChatScreen() {
     return (
       <View style={[styles.messageWrap, mine ? styles.messageMineWrap : styles.messageOtherWrap]}>
         {!mine && <Text style={styles.sender}>{item.sender_name}</Text>}
-        <View style={[styles.bubble, mine ? styles.mine : styles.other]}>
-          <Text style={[styles.messageText, mine && { color: "#FFFFFF" }]}>{item.content}</Text>
-        </View>
+        <TouchableOpacity activeOpacity={0.9} onLongPress={() => openMessageActions(item)}>
+          <View style={[styles.bubble, mine ? styles.mine : styles.other]}>
+            <Text style={[styles.messageText, mine && { color: "#FFFFFF" }]}>{item.content}</Text>
+          </View>
+        </TouchableOpacity>
         <Text style={styles.meta}>{fmt(item.created_at)}</Text>
         {!!seenText && <Text style={styles.seen}>Đã xem bởi: {seenText}</Text>}
       </View>
@@ -400,18 +514,47 @@ export default function RoomChatScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={styles.header}>
-          <Text style={styles.room}>{roomName}</Text>
-          <Text style={styles.typing}>{typingText || " "}</Text>
+          <View style={styles.headerTopRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.room} numberOfLines={1}>
+                {roomName}
+              </Text>
+              <Text style={styles.typing} numberOfLines={1}>
+                {typingText || " "}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {notesPanel}
 
+        {!!pinnedMessage && (
+          <TouchableOpacity style={styles.pinnedBar} activeOpacity={0.85} onPress={scrollToPinned} onLongPress={() => void unpinMessage()}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pinnedTitle} numberOfLines={1}>
+                Tin nhắn đã ghim
+              </Text>
+              <Text style={styles.pinnedContent} numberOfLines={1}>
+                {pinnedMessage.sender_name ? `${pinnedMessage.sender_name}: ` : ""}
+                {pinnedMessage.content}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => void unpinMessage()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Bỏ ghim">
+              <Feather name="x" size={18} color="#64748B" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+
         <FlatList
+          ref={(r) => {
+            listRef.current = r;
+          }}
           style={styles.messageList}
           data={messages}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderMessage}
           contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
+          onScrollToIndexFailed={() => {}}
           onScroll={({ nativeEvent }) => {
             if (nativeEvent.contentOffset.y < 40) void loadOlder();
           }}
@@ -449,11 +592,13 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8FAFC" },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
+    paddingTop: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#E2E8F0",
     backgroundColor: "#FFFFFF",
   },
+  headerTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   room: { fontSize: 18, fontWeight: "800", color: "#0F172A" },
   typing: { marginTop: 3, color: "#64748B", fontSize: 12, minHeight: 16 },
   notesStickyOuter: {
@@ -480,6 +625,22 @@ const styles = StyleSheet.create({
   notesBackText: { fontSize: 12, fontWeight: "700", color: "#56328C", marginLeft: -2 },
   notesTitle: { flex: 1, fontSize: 15, fontWeight: "800", color: "#111827", textAlign: "center" },
   notesHeaderSpacer: { width: 88 },
+  pinnedBar: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 0,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  pinnedTitle: { fontSize: 11, fontWeight: "900", color: "#334155" },
+  pinnedContent: { marginTop: 2, fontSize: 12, fontWeight: "700", color: "#0F172A" },
   messageList: { flex: 1 },
   noteBtn: {
     backgroundColor: "#EDE9FE",

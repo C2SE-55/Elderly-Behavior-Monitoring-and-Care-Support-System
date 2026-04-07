@@ -20,6 +20,23 @@ export type NotificationLogEntry = {
 const STORAGE_KEY = "ebms.notificationLogs.v1";
 const MAX_LOGS = 200;
 
+type ChangeListener = () => void;
+const listeners = new Set<ChangeListener>();
+const emitChange = () => {
+  for (const cb of Array.from(listeners)) {
+    try {
+      cb();
+    } catch {
+      // ignore listener errors
+    }
+  }
+};
+
+export function subscribeNotificationLogChange(cb: ChangeListener): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
 const safeParse = (raw: string | null): NotificationLogEntry[] => {
   if (!raw) return [];
   try {
@@ -38,6 +55,7 @@ const safeParse = (raw: string | null): NotificationLogEntry[] => {
 
 const writeLogs = async (rows: NotificationLogEntry[]): Promise<void> => {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(0, MAX_LOGS)));
+  emitChange();
 };
 
 export async function getNotificationLogs(): Promise<NotificationLogEntry[]> {
@@ -47,6 +65,7 @@ export async function getNotificationLogs(): Promise<NotificationLogEntry[]> {
 
 export async function clearNotificationLogs(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY);
+  emitChange();
 }
 
 export async function appendNotificationLog(entry: Omit<NotificationLogEntry, "id" | "createdAt">): Promise<void> {
@@ -95,6 +114,37 @@ export async function markNotificationLogRead(id: string): Promise<void> {
   const updated = [...current];
   updated[idx] = { ...updated[idx], read: true };
   await writeLogs(updated);
+}
+
+/** Đánh dấu đã đọc cho cả nhóm dedupe (cùng type + cùng phút + cùng title/body). */
+export async function markNotificationLogsReadByGroupSignature(sig: {
+  type: NotificationLogEntry["type"];
+  createdAt: string;
+  title: string;
+  body?: string;
+}): Promise<void> {
+  const t = Date.parse(String(sig?.createdAt || ""));
+  if (!Number.isFinite(t)) return;
+  const minuteBucket = Math.floor(t / 60000);
+  const type = sig.type;
+  const title = String(sig.title || "");
+  const body = String(sig.body || "");
+
+  const current = await getNotificationLogs();
+  let changed = false;
+  const updated = current.map((it) => {
+    if (it.read) return it;
+    const itT = Date.parse(String(it.createdAt || ""));
+    if (!Number.isFinite(itT)) return it;
+    const itBucket = Math.floor(itT / 60000);
+    if (itBucket !== minuteBucket) return it;
+    if (it.type !== type) return it;
+    if (String(it.title || "") !== title) return it;
+    if (String(it.body || "") !== body) return it;
+    changed = true;
+    return { ...it, read: true };
+  });
+  if (changed) await writeLogs(updated);
 }
 
 export async function updateNotificationLog(

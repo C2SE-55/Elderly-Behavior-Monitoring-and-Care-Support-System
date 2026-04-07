@@ -7,6 +7,7 @@ export const toneForType = (type: NotificationLogEntry["type"]): NotificationSta
   if (type === "medication") return { bg: "#EEF2FF", border: "#C7D2FE", text: "#1D4ED8" }; // blue
   if (type === "weekly-schedule") return { bg: "#ECFDF5", border: "#A7F3D0", text: "#047857" }; // green
   if (type === "care-confirmation") return { bg: "#FFF7ED", border: "#FED7AA", text: "#9A3412" }; // orange
+  if (type === "room-message") return { bg: "#EEF2FF", border: "#C7D2FE", text: "#1D4ED8" }; // blue (chat)
   return { bg: "#F3F4F6", border: "#E5E7EB", text: "#374151" }; // gray
 };
 
@@ -14,6 +15,7 @@ export const labelForType = (type: NotificationLogEntry["type"]) => {
   if (type === "weekly-schedule") return "Quản lý lịch sinh hoạt";
   if (type === "medication") return "Nhắc nhở uống thuốc";
   if (type === "care-confirmation") return "Xác nhận chăm sóc";
+  if (type === "room-message") return "Tin nhắn phòng";
   return "Hệ thống";
 };
 

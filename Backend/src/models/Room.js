@@ -219,6 +219,8 @@ class Room {
            r.room_id,
            r.admin_user_id,
            r.host_user_id,
+           host_u.full_name AS host_full_name,
+           host_u.username AS host_username,
            r.admin_join_token,
            r.host_join_token,
            CASE
@@ -245,6 +247,7 @@ class Room {
            COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
+         LEFT JOIN users host_u ON host_u.id = r.host_user_id
          LEFT JOIN room_members rm
            ON rm.room_id = r.id
           AND rm.user_id = ?
@@ -255,6 +258,8 @@ class Room {
            r.room_id,
            r.admin_user_id,
            r.host_user_id,
+           host_u.full_name AS host_full_name,
+           host_u.username AS host_username,
            r.admin_join_token,
            r.host_join_token,
            CASE
@@ -281,6 +286,7 @@ class Room {
            COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
+         LEFT JOIN users host_u ON host_u.id = r.host_user_id
          LEFT JOIN room_members rm
            ON rm.room_id = r.id
           AND rm.user_id = ?
@@ -291,6 +297,8 @@ class Room {
            r.room_id,
            r.admin_user_id,
            r.host_user_id,
+           host_u.full_name AS host_full_name,
+           host_u.username AS host_username,
            r.admin_join_token,
            r.host_join_token,
            CASE
@@ -313,6 +321,7 @@ class Room {
            COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
+         LEFT JOIN users host_u ON host_u.id = r.host_user_id
          LEFT JOIN room_members rm
            ON rm.room_id = r.id
           AND rm.user_id = ?
@@ -323,6 +332,8 @@ class Room {
            r.room_id,
            r.admin_user_id,
            r.host_user_id,
+           host_u.full_name AS host_full_name,
+           host_u.username AS host_username,
            r.admin_join_token,
            r.host_join_token,
            CASE
@@ -345,6 +356,7 @@ class Room {
            COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
+         LEFT JOIN users host_u ON host_u.id = r.host_user_id
          LEFT JOIN room_members rm
            ON rm.room_id = r.id
           AND rm.user_id = ?

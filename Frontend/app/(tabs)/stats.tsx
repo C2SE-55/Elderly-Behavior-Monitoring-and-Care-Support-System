@@ -11,13 +11,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import dayjs from "dayjs";
 import {
   getMedicationIntakeStats,
+  getMedicationIntakeStatsRange,
   getMyRoom,
   MedicationIntakeStatItem,
   MedicationIntakeStatsResponse,
   MyRoomInfo,
 } from "@/services/api";
+import WeekRangeCalendarModal from "@/components/schedule/WeekRangeCalendarModal";
 
-type Period = "day" | "week" | "month";
+type Period = "day" | "week" | "month" | "range";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -48,6 +50,9 @@ export default function StatsScreen() {
   const [roomLoading, setRoomLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("week");
   const [anchor, setAnchor] = useState(localTodayYmd);
+  const [rangeVisible, setRangeVisible] = useState(false);
+  const [rangeStart, setRangeStart] = useState(localTodayYmd);
+  const [rangeEnd, setRangeEnd] = useState(localTodayYmd);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState("");
   const [statsData, setStatsData] = useState<MedicationIntakeStatsResponse | null>(null);
@@ -78,7 +83,10 @@ export default function StatsScreen() {
     setStatsLoading(true);
     setStatsError("");
     try {
-      const data = await getMedicationIntakeStats(room.id, { period, anchor });
+      const data =
+        period === "range"
+          ? await getMedicationIntakeStatsRange(room.id, { from: rangeStart, to: rangeEnd })
+          : await getMedicationIntakeStats(room.id, { period: period as any, anchor });
       setStatsData(data);
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Không tải được thống kê.";
@@ -87,7 +95,7 @@ export default function StatsScreen() {
     } finally {
       setStatsLoading(false);
     }
-  }, [room?.id, isHost, period, anchor]);
+  }, [room?.id, isHost, period, anchor, rangeEnd, rangeStart]);
 
   useEffect(() => {
     void loadStats();
@@ -167,19 +175,48 @@ export default function StatsScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
-
-      <View style={styles.navRow}>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setAnchor((a) => shiftAnchor(a, period, -1))}>
-          <Text style={styles.navBtnText}>◀</Text>
-        </TouchableOpacity>
+        <View style={{ flex: 1 }} />
         <TouchableOpacity style={styles.todayBtn} onPress={() => setAnchor(localTodayYmd())}>
           <Text style={styles.todayBtnText}>Hôm nay</Text>
         </TouchableOpacity>
-        <Text style={styles.anchorText}>{rangeLabel || anchor}</Text>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setAnchor((a) => shiftAnchor(a, period, 1))}>
-          <Text style={styles.navBtnText}>▶</Text>
-        </TouchableOpacity>
+      </View>
+
+      <View style={styles.navRow}>
+        {period === "range" ? (
+          <TouchableOpacity
+            style={styles.anchorTap}
+            activeOpacity={0.8}
+            onPress={() => setRangeVisible(true)}
+          >
+            <Text style={styles.anchorText} numberOfLines={1} ellipsizeMode="tail">
+              {dayjs(rangeStart).format("DD/MM/YYYY")} — {dayjs(rangeEnd).format("DD/MM/YYYY")}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.navBtn} onPress={() => setAnchor((a) => shiftAnchor(a, period as any, -1))}>
+              <Text style={styles.navBtnText}>◀</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.anchorTap}
+              activeOpacity={0.8}
+              onPress={() => {
+                const s = statsData?.range?.start ? String(statsData.range.start).slice(0, 10) : anchor;
+                const e = statsData?.range?.end ? String(statsData.range.end).slice(0, 10) : anchor;
+                setRangeStart(s);
+                setRangeEnd(e);
+                setRangeVisible(true);
+              }}
+            >
+              <Text style={styles.anchorText} numberOfLines={1} ellipsizeMode="tail">
+                {rangeLabel || anchor}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navBtn} onPress={() => setAnchor((a) => shiftAnchor(a, period as any, 1))}>
+              <Text style={styles.navBtnText}>▶</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {!!statsError && <Text style={styles.error}>{statsError}</Text>}
@@ -204,6 +241,25 @@ export default function StatsScreen() {
           contentContainerStyle={styles.listContent}
         />
       )}
+
+      <WeekRangeCalendarModal
+        visible={rangeVisible}
+        weekStart={dayjs(rangeStart)}
+        weekEnd={dayjs(rangeEnd)}
+        valueStart={dayjs(rangeStart)}
+        valueEnd={dayjs(rangeEnd)}
+        restrictToSameWeek={false}
+        showWeekHint={false}
+        onClose={() => setRangeVisible(false)}
+        onApply={(s, e) => {
+          const from = s.format("YYYY-MM-DD");
+          const to = e.format("YYYY-MM-DD");
+          setRangeStart(from);
+          setRangeEnd(to);
+          setPeriod("range");
+          setRangeVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -247,7 +303,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#F1F5F9",
   },
   todayBtnText: { fontWeight: "700", color: "#334155", fontSize: 13 },
-  anchorText: { flex: 1, textAlign: "center", fontWeight: "600", color: "#334155", fontSize: 13 },
+  anchorTap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  anchorText: { maxWidth: "100%", textAlign: "center", fontWeight: "600", color: "#334155", fontSize: 13 },
   error: { color: "#DC2626", marginTop: 8, fontSize: 13 },
   loadingBox: { paddingVertical: 32, alignItems: "center" },
   listContent: { paddingBottom: 32, paddingTop: 8 },

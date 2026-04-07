@@ -12,6 +12,11 @@ import { useRouter } from "expo-router";
 
 const roleLabel = (role: RoomMemberRole) => (role === "host" ? "Host" : "Caregiver");
 const safeName = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
+const stripDoneMarker = (v: string) =>
+  v
+    .replace(/\[\s*đã\s*xong\s*\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 const formatConfirmedRoles = (hostConfirmed: boolean, caregiverConfirmed: boolean) => {
   const roles: string[] = [];
   if (hostConfirmed) roles.push("Host");
@@ -64,6 +69,20 @@ export default function NotificationDetailModal({
     return getGenericConfirmationFromData(item.data);
   }, [item]);
 
+  const roomMessage = useMemo(() => {
+    if (!item) return null;
+    if (item.type !== "room-message") return null;
+    const d: any = item.data || {};
+    const roomId = Number(d?.room_id || 0) || null;
+    const roomName = safeName(d?.room_name) || (roomId ? `Room #${roomId}` : "");
+    return roomId
+      ? {
+          roomId,
+          roomName,
+        }
+      : null;
+  }, [item]);
+
   const safety = useMemo(() => {
     const d: any = item?.data || {};
     if (!item) return null;
@@ -92,6 +111,11 @@ export default function NotificationDetailModal({
         const me = getCurrentUser() as { id?: number; fullName?: string; username?: string } | null;
         const meName = safeName(me?.fullName || me?.username);
         const hostUserId = Number(room?.host_user_id || 0) || null;
+        const hostNameFromRoom =
+          safeName((room as any)?.host_full_name) ||
+          safeName((room as any)?.hostFullName) ||
+          safeName((room as any)?.host_name) ||
+          undefined;
 
         const caretaker =
           members.find((m) => m.member_role === "caretaker") ||
@@ -118,6 +142,7 @@ export default function NotificationDetailModal({
           hostName:
             safeName(care?.host_name) ||
             safeName(host?.fullName || host?.username) ||
+            hostNameFromRoom ||
             safeName(cached?.hostName) ||
             (hostUserId ? `Host #${hostUserId}` : undefined),
         };
@@ -177,6 +202,7 @@ export default function NotificationDetailModal({
   const canConfirmGeneric = useMemo(() => {
     if (!item) return false;
     if (item.type === "care-confirmation") return false;
+    if (item.type === "room-message") return false;
     if (!myRole) return false;
     const c = genericConfirmation;
     if (!c) return true;
@@ -263,12 +289,15 @@ export default function NotificationDetailModal({
                   <Text style={styles.metaLabel}>Tiêu đề</Text>
                   <Text style={styles.metaValue}>{item.title}</Text>
                 </View>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaLabel}>Nội dung</Text>
+                  <Text style={styles.metaValue}>{(safeName(item.body) ? stripDoneMarker(safeName(item.body)) : "") || "—"}</Text>
+                </View>
 
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Room</Text>
                   <Text style={styles.metaValue}>
                     {displayContext.room}
-                    {contextLoading ? " (đang tải...)" : ""}
                   </Text>
                 </View>
                 <View style={styles.metaRow}>
@@ -289,10 +318,25 @@ export default function NotificationDetailModal({
                     {safetyStatusText || (care ? statusText : genericStatusText)}
                   </Text>
                 </View>
-                {/* Nội dung (body) không hiển thị theo yêu cầu mới */}
               </ScrollView>
 
-              {safety?.eventId ? (
+              {roomMessage ? (
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={[styles.linkBtn]}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      onClose();
+                      router.push({
+                        pathname: "/(screens)/room-chat",
+                        params: { roomId: String(roomMessage.roomId), roomName: roomMessage.roomName },
+                      });
+                    }}
+                  >
+                    <Text style={styles.linkText}>Mở chat</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : safety?.eventId ? (
                 <View style={styles.actionsRow}>
                   <TouchableOpacity
                     style={[styles.linkBtn]}

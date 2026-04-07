@@ -301,6 +301,7 @@ let activeRoomId: number | null = (() => {
   return val > 0 ? val : null;
 })();
 const roomChangeListeners = new Set<(roomId: number | null) => void>();
+const authChangeListeners = new Set<(payload: { token: string | null; user: any | null }) => void>();
 
 if (currentToken) {
   api.defaults.headers.common.Authorization = `Bearer ${currentToken}`;
@@ -331,6 +332,14 @@ export const setAuth = (token: string | null, user?: any) => {
       void storageRemoveItem(AUTH_USER_KEY);
     }
   }
+
+  authChangeListeners.forEach((listener) => {
+    try {
+      listener({ token: currentToken, user: currentUser });
+    } catch {
+      // ignore
+    }
+  });
 };
 
 export const setActiveRoomId = (roomId: number | null) => {
@@ -405,6 +414,14 @@ export const logoutUser = () => {
 };
 
 export const getCurrentUser = () => currentUser;
+export const getCurrentToken = () => currentToken;
+
+export const subscribeAuthChange = (listener: (payload: { token: string | null; user: any | null }) => void) => {
+  authChangeListeners.add(listener);
+  return () => {
+    authChangeListeners.delete(listener);
+  };
+};
 
 export type AuthProfile = {
   id: number;

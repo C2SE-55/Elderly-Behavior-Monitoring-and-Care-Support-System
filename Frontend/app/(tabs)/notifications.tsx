@@ -6,6 +6,7 @@ import {
   getNotificationLogs,
   markAllNotificationLogsRead,
   markNotificationLogRead,
+  markNotificationLogsReadByGroupSignature,
   NotificationLogEntry,
 } from "@/services/notificationLog";
 import NotificationList from "@/components/notifications/NotificationList";
@@ -19,6 +20,12 @@ export default function NotificationsScreen() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [myRole, setMyRole] = useState<RoomMemberRole | null>(null);
   const mutatingRef = useRef(false);
+
+  const groupKeyOf = useCallback((it: NotificationLogEntry) => {
+    const t = Date.parse(String(it.createdAt || ""));
+    const minuteBucket = Number.isFinite(t) ? Math.floor(t / 60000) : 0;
+    return `${it.type}::${minuteBucket}::${it.title}::${it.body || ""}`;
+  }, []);
 
   const load = useCallback(async () => {
     if (mutatingRef.current) return;
@@ -53,8 +60,7 @@ export default function NotificationsScreen() {
     // Keep newest, but merge state so we don't lose confirmations/read.
     const map = new Map<string, NotificationLogEntry>();
     for (const it of logs) {
-      const minuteKey = dayjs(it.createdAt).isValid() ? dayjs(it.createdAt).format("YYYY-MM-DD HH:mm") : "";
-      const key = `${it.type}::${minuteKey}::${it.title}::${it.body || ""}`;
+      const key = groupKeyOf(it);
       const existing = map.get(key);
       if (!existing) {
         map.set(key, it);
@@ -62,8 +68,8 @@ export default function NotificationsScreen() {
       }
       const newer = Date.parse(it.createdAt) > Date.parse(existing.createdAt) ? it : existing;
       const older = newer === it ? existing : it;
-      // merge read (if any unread => unread)
-      const read = newer.read && older.read;
+      // merge read for UI: if user read ANY of the duplicates, hide unread dot for the group
+      const read = newer.read || older.read;
       // shallow merge data (prefer newer fields, but keep older if missing)
       const data = { ...(older.data || {}), ...(newer.data || {}) };
       map.set(key, { ...newer, read, data });
@@ -87,26 +93,31 @@ export default function NotificationsScreen() {
 
   const openDetail = useCallback(
     async (it: NotificationLogEntry) => {
+      const gk = groupKeyOf(it);
       // optimistic: reflect read state immediately in list + detail
-      if (!it.read) {
-        setLogs((prev) => prev.map((x) => (x.id === it.id ? { ...x, read: true } : x)));
-        setDetailItem({ ...it, read: true });
-      } else {
-        setDetailItem(it);
-      }
+      setLogs((prev) => prev.map((x) => (groupKeyOf(x) === gk ? { ...x, read: true } : x)));
+      setDetailItem({ ...it, read: true });
       setDetailVisible(true);
-      if (!it.read) {
-        // persist
-        mutatingRef.current = true;
-        try {
+      // persist (mark whole group so dot won't come back)
+      mutatingRef.current = true;
+      try {
+        if (!it.read) {
+          await markNotificationLogsReadByGroupSignature({
+            type: it.type,
+            createdAt: it.createdAt,
+            title: it.title,
+            body: it.body,
+          });
+        } else {
+          // fallback for old entries
           await markNotificationLogRead(it.id);
-        } finally {
-          mutatingRef.current = false;
         }
-        await load();
+      } finally {
+        mutatingRef.current = false;
       }
+      await load();
     },
-    [load]
+    [groupKeyOf, load]
   );
 
   const handleDelete = useCallback(
@@ -160,7 +171,14 @@ export default function NotificationsScreen() {
       </View>
       <NotificationList
         logs={dedupedLogs}
-        onOptimisticRead={(id) => setLogs((prev) => prev.map((x) => (x.id === id ? { ...x, read: true } : x)))}
+        onOptimisticRead={(id) =>
+          setLogs((prev) => {
+            const target = prev.find((x) => x.id === id);
+            if (!target) return prev;
+            const gk = groupKeyOf(target);
+            return prev.map((x) => (groupKeyOf(x) === gk ? { ...x, read: true } : x));
+          })
+        }
         onOpenDetail={(it) => void openDetail(it)}
         onMarkRead={(id) => void handleMarkOneRead(id)}
         onDelete={(id) => void handleDelete(id)}

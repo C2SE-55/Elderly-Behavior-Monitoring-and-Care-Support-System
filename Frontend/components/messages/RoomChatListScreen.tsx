@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, FlatList, RefreshControl, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { Alert, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import dayjs from "dayjs";
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
+import type { AxiosError } from "axios";
+import { Swipeable } from "react-native-gesture-handler";
 import {
   getCurrentUser,
   getMyRooms,
   getRoomChatNotificationPrefs,
   getRoomsUnreadSummary,
   MyRoomSummary,
+  logoutUser,
   RoomChatNotificationPrefItem,
   RoomUnreadSummaryItem,
   setActiveRoomId,
@@ -33,7 +36,19 @@ const fmtTime = (iso: string | null) => {
   if (!iso) return "";
   const d = dayjs(iso);
   if (!d.isValid()) return "";
-  return d.format("HH:mm DD/MM");
+  const now = dayjs();
+  if (d.isSame(now, "day")) return d.format("HH:mm");
+  if (d.isSame(now.subtract(1, "day"), "day")) return "Hôm qua";
+  return d.format("DD/MM");
+};
+
+const initialsOf = (name: string) => {
+  const s = String(name || "").trim();
+  if (!s) return "R";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = (parts[0] || "R").slice(0, 1).toUpperCase();
+  const b = (parts[1] || "").slice(0, 1).toUpperCase();
+  return (a + b).slice(0, 2);
 };
 
 export default function RoomChatListScreen() {
@@ -42,42 +57,56 @@ export default function RoomChatListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
+  const [q, setQ] = useState("");
   const chatNotifByRoomRef = useRef<Map<number, boolean>>(new Map());
+  const openSwipeRef = useRef<Swipeable | null>(null);
 
   const load = useCallback(async () => {
-    const [rooms, summary, notifPrefs] = await Promise.all([
-      getMyRooms(),
-      getRoomsUnreadSummary(),
-      getRoomChatNotificationPrefs().catch(() => [] as RoomChatNotificationPrefItem[]),
-    ]);
-    const summaryMap = new Map<number, RoomUnreadSummaryItem>();
-    summary.forEach((it) => summaryMap.set(Number(it.room_id), it));
-    const notifMap = new Map<number, boolean>();
-    notifPrefs.forEach((p) => notifMap.set(Number(p.room_id), p.chat_notifications_enabled));
-    const merged = (rooms || []).map((room: MyRoomSummary) => {
-      const sum = summaryMap.get(Number(room.id));
-      const rid = Number(room.id);
-      const notifEnabled = notifMap.has(rid) ? !!notifMap.get(rid) : true;
-      return {
-        room_id: rid,
-        room_name: room.room_id,
-        member_role: room.member_role,
-        unread_count: Number(sum?.unread_count || 0),
-        last_sender_name: sum?.last_sender_name ?? null,
-        last_content: sum?.last_content ?? null,
-        last_sent_at: sum?.last_sent_at ?? null,
-        chat_notifications_enabled: notifEnabled,
-      } as Row;
-    });
-    merged.sort((a, b) => {
-      const ta = a.last_sent_at ? dayjs(a.last_sent_at).valueOf() : 0;
-      const tb = b.last_sent_at ? dayjs(b.last_sent_at).valueOf() : 0;
-      return tb - ta;
-    });
-    setRows(merged);
-    const m = new Map<number, boolean>();
-    merged.forEach((r) => m.set(r.room_id, r.chat_notifications_enabled));
-    chatNotifByRoomRef.current = m;
+    try {
+      const [rooms, summary, notifPrefs] = await Promise.all([
+        getMyRooms(),
+        getRoomsUnreadSummary(),
+        getRoomChatNotificationPrefs().catch(() => [] as RoomChatNotificationPrefItem[]),
+      ]);
+      const summaryMap = new Map<number, RoomUnreadSummaryItem>();
+      summary.forEach((it) => summaryMap.set(Number(it.room_id), it));
+      const notifMap = new Map<number, boolean>();
+      notifPrefs.forEach((p) => notifMap.set(Number(p.room_id), p.chat_notifications_enabled));
+      const merged = (rooms || []).map((room: MyRoomSummary) => {
+        const sum = summaryMap.get(Number(room.id));
+        const rid = Number(room.id);
+        const notifEnabled = notifMap.has(rid) ? !!notifMap.get(rid) : true;
+        return {
+          room_id: rid,
+          room_name: room.room_id,
+          member_role: room.member_role,
+          unread_count: Number(sum?.unread_count || 0),
+          last_sender_name: sum?.last_sender_name ?? null,
+          last_content: sum?.last_content ?? null,
+          last_sent_at: sum?.last_sent_at ?? null,
+          chat_notifications_enabled: notifEnabled,
+        } as Row;
+      });
+      merged.sort((a, b) => {
+        const ta = a.last_sent_at ? dayjs(a.last_sent_at).valueOf() : 0;
+        const tb = b.last_sent_at ? dayjs(b.last_sent_at).valueOf() : 0;
+        return tb - ta;
+      });
+      setRows(merged);
+      const m = new Map<number, boolean>();
+      merged.forEach((r) => m.set(r.room_id, r.chat_notifications_enabled));
+      chatNotifByRoomRef.current = m;
+    } catch (e) {
+      const ax = e as AxiosError<any>;
+      const status = Number(ax?.response?.status || 0);
+      if (status === 401) {
+        logoutUser();
+        setRows([]);
+        chatNotifByRoomRef.current = new Map();
+        return;
+      }
+      // ignore transient network errors
+    }
   }, []);
 
   useEffect(() => {
@@ -190,8 +219,72 @@ export default function RoomChatListScreen() {
     return "Bạn chưa tham gia room nào.";
   }, [loading]);
 
+  const filteredRows = useMemo(() => {
+    const keyword = q.trim().toLowerCase();
+    if (!keyword) return rows;
+    return rows.filter((r) => {
+      const hay = `${r.room_name} ${r.last_sender_name || ""} ${r.last_content || ""}`.toLowerCase();
+      return hay.includes(keyword);
+    });
+  }, [q, rows]);
+
   const goHome = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace("/(tabs)");
+  };
+
+  const openRoom = (item: Row) => {
+    setActiveRoomId(item.room_id);
+    router.push({
+      pathname: "/(screens)/room-chat",
+      params: {
+        roomId: String(item.room_id),
+        roomName: item.room_name,
+      },
+    });
+  };
+
+  const openActions = (item: Row) => {
+    const enabled = item.chat_notifications_enabled !== false;
+    const nextLabel = enabled ? "Tắt thông báo" : "Bật thông báo";
+    Alert.alert(item.room_name, "Tùy chọn hội thoại", [
+      {
+        text: nextLabel,
+        onPress: () => void onToggleRoomNotifications(item.room_id, !enabled),
+      },
+      { text: "Mở chat", onPress: () => openRoom(item) },
+      { text: "Đóng", style: "cancel" },
+    ]);
+  };
+
+  const closeOpenSwipe = () => {
+    openSwipeRef.current?.close();
+    openSwipeRef.current = null;
+  };
+
+  const renderRightActions = (item: Row, swipeRef?: Swipeable | null) => {
+    const enabled = item.chat_notifications_enabled !== false;
+    return (
+      <View style={styles.swipeActions}>
+        <TouchableOpacity
+          style={[styles.swipeBtn, enabled ? styles.swipeBtnOff : styles.swipeBtnOn]}
+          activeOpacity={0.85}
+          onPress={() => {
+            if (swipeRef) swipeRef.close();
+            openSwipeRef.current = null;
+            void onToggleRoomNotifications(item.room_id, !enabled);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={enabled ? "Tắt thông báo" : "Bật thông báo"}
+        >
+          <Feather name={enabled ? "bell-off" : "bell"} size={18} color="#FFFFFF" />
+          <Text style={styles.swipeBtnText}>{enabled ? "Tắt" : "Bật"}</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   return (
@@ -203,58 +296,96 @@ export default function RoomChatListScreen() {
             <Text style={styles.homeBtnText}>Trang chủ</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.title}>Tin nhắn theo phòng</Text>
-        <Text style={styles.sub}>Mỗi room có hội thoại riêng</Text>
+        <Text style={styles.title}>Tin nhắn</Text>
+        <Text style={styles.sub}>Giống Messenger: tìm kiếm + hội thoại</Text>
+
+        <View style={styles.searchWrap}>
+          <Feather name="search" size={16} color="#64748B" />
+          <TextInput
+            value={q}
+            onChangeText={setQ}
+            placeholder="Tìm theo room hoặc nội dung..."
+            placeholderTextColor="#94A3B8"
+            style={styles.searchInput}
+          />
+          {!!q && (
+            <TouchableOpacity onPress={() => setQ("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm">
+              <Feather name="x" size={16} color="#64748B" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <FlatList
-        data={rows}
+        data={filteredRows}
         keyExtractor={(item) => String(item.room_id)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={<Text style={styles.empty}>{emptyText}</Text>}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => {
-                setActiveRoomId(item.room_id);
-                router.push({
-                  pathname: "/(screens)/room-chat",
-                  params: {
-                    roomId: String(item.room_id),
-                    roomName: item.room_name,
-                  },
-                });
+        renderItem={({ item }) => {
+          let swipeRef: Swipeable | null = null;
+          return (
+            <Swipeable
+              ref={(r) => {
+                swipeRef = r;
+              }}
+              renderRightActions={() => renderRightActions(item, swipeRef)}
+              rightThreshold={36}
+              overshootRight={false}
+              onSwipeableWillOpen={() => {
+                if (openSwipeRef.current && openSwipeRef.current !== swipeRef) openSwipeRef.current.close();
+                openSwipeRef.current = swipeRef;
+              }}
+              onSwipeableWillClose={() => {
+                if (openSwipeRef.current === swipeRef) openSwipeRef.current = null;
               }}
             >
-              <View style={styles.cardTop}>
-                <Text style={styles.roomName}>{item.room_name}</Text>
-                <Text style={styles.time}>{fmtTime(item.last_sent_at)}</Text>
-              </View>
-              <Text style={styles.preview} numberOfLines={1}>
-                {item.last_sender_name ? `${item.last_sender_name}: ` : ""}
-                {item.last_content || "Chưa có tin nhắn"}
-              </Text>
-              <View style={styles.metaRow}>
-                <Text style={styles.role}>{item.member_role === "host" ? "Host" : "Caregiver"}</Text>
-                {item.unread_count > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{item.unread_count > 99 ? "99+" : item.unread_count}</Text>
+              <TouchableOpacity
+                style={[styles.rowCard, item.unread_count > 0 && styles.rowCardUnread]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  closeOpenSwipe();
+                  openRoom(item);
+                }}
+                onLongPress={() => {
+                  closeOpenSwipe();
+                  openActions(item);
+                }}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initialsOf(item.room_name)}</Text>
+                </View>
+
+                <View style={styles.rowMain}>
+                  <View style={styles.rowTop}>
+                    <Text style={[styles.roomName, item.unread_count > 0 && styles.roomNameUnread]} numberOfLines={1}>
+                      {item.room_name}
+                    </Text>
+                    <Text style={styles.time}>{fmtTime(item.last_sent_at)}</Text>
                   </View>
-                )}
-              </View>
-            </TouchableOpacity>
-            <View style={styles.notifRow}>
-              <Text style={styles.notifLabel}>Thông báo tin nhắn</Text>
-              <Switch
-                value={item.chat_notifications_enabled}
-                onValueChange={(v) => void onToggleRoomNotifications(item.room_id, v)}
-                trackColor={{ false: "#CBD5E1", true: "#C4B5FD" }}
-                thumbColor={item.chat_notifications_enabled ? "#56328C" : "#F1F5F9"}
-              />
-            </View>
-          </View>
-        )}
+
+                  <View style={styles.rowBottom}>
+                    <Text style={[styles.preview, item.unread_count > 0 && styles.previewUnread]} numberOfLines={1}>
+                      {item.last_sender_name ? `${item.last_sender_name}: ` : ""}
+                      {item.last_content || "Chưa có tin nhắn"}
+                    </Text>
+
+                    {item.unread_count > 0 ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{item.unread_count > 99 ? "99+" : item.unread_count}</Text>
+                      </View>
+                    ) : (
+                      <Feather
+                        name={item.chat_notifications_enabled ? "bell" : "bell-off"}
+                        size={14}
+                        color={item.chat_notifications_enabled ? "#94A3B8" : "#CBD5E1"}
+                      />
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </Swipeable>
+          );
+        }}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
       />
     </SafeAreaView>
@@ -288,20 +419,50 @@ const styles = StyleSheet.create({
   homeBtnText: { fontSize: 13, fontWeight: "800", color: "#56328C" },
   title: { fontSize: 20, fontWeight: "800", color: "#0F172A" },
   sub: { marginTop: 4, fontSize: 12, color: "#64748B" },
-  empty: { marginTop: 18, textAlign: "center", color: "#64748B", fontSize: 14 },
-  card: {
-    backgroundColor: "#FFFFFF",
+  searchWrap: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 14,
-    padding: 14,
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  roomName: { fontSize: 16, fontWeight: "800", color: "#111827", flex: 1 },
-  time: { marginLeft: 8, fontSize: 11, color: "#64748B" },
-  preview: { marginTop: 8, color: "#334155", fontSize: 14 },
-  metaRow: { marginTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  role: { fontSize: 11, fontWeight: "700", color: "#7C3AED" },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: "600", color: "#0F172A" },
+  empty: { marginTop: 18, textAlign: "center", color: "#64748B", fontSize: 14 },
+  rowCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  rowCardUnread: { borderColor: "#C7D2FE", backgroundColor: "#EEF2FF" },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#EDE9FE",
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: "#56328C", fontWeight: "900", fontSize: 14 },
+  rowMain: { flex: 1, gap: 4 },
+  rowTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  roomName: { fontSize: 15, fontWeight: "800", color: "#111827", flex: 1 },
+  roomNameUnread: { color: "#0F172A" },
+  time: { fontSize: 11, color: "#64748B", fontWeight: "700" },
+  rowBottom: { flexDirection: "row", alignItems: "center", gap: 10 },
+  preview: { flex: 1, color: "#475569", fontSize: 13, fontWeight: "600" },
+  previewUnread: { color: "#0F172A", fontWeight: "800" },
   badge: {
     minWidth: 22,
     paddingHorizontal: 6,
@@ -312,14 +473,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: { color: "#FFFFFF", fontWeight: "800", fontSize: 11 },
-  notifRow: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+  swipeActions: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    alignItems: "stretch",
+    justifyContent: "flex-end",
+    marginLeft: 12,
   },
-  notifLabel: { fontSize: 13, fontWeight: "600", color: "#475569" },
+  swipeBtn: {
+    width: 86,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  swipeBtnOff: { backgroundColor: "#EF4444" },
+  swipeBtnOn: { backgroundColor: "#10B981" },
+  swipeBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
 });

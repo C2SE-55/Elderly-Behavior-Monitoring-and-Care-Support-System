@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+    Alert,
     SafeAreaView,
     View,
     Text,
@@ -10,7 +11,8 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
-import { getCurrentUser, logoutUser } from "../../services/api";
+import type { AxiosError } from "axios";
+import { getCurrentUser, logoutUser, refreshCurrentUserProfile } from "../../services/api";
 
 const { width } = Dimensions.get("window");
 
@@ -35,7 +37,29 @@ const OPTIONS: HomeOption[] = [
 
 const HomepageUserScreen = () => {
     const router = useRouter();
-    const user = getCurrentUser();
+    const [user, setUser] = useState(() => getCurrentUser());
+
+    useEffect(() => {
+        let cancelled = false;
+        const run = async () => {
+            try {
+                // If session expired, backend will 401 here.
+                await refreshCurrentUserProfile();
+                if (!cancelled) setUser(getCurrentUser());
+            } catch (e) {
+                const ax = e as AxiosError<any>;
+                const status = Number(ax?.response?.status || 0);
+                if (status === 401) {
+                    logoutUser();
+                    if (!cancelled) setUser(null);
+                }
+            }
+        };
+        void run();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const displayName =
         user?.fullName || user?.username || "A";
@@ -43,26 +67,43 @@ const HomepageUserScreen = () => {
 
     const handleLogout = () => {
         logoutUser();
-        router.replace("/(auths)/login");
+        setUser(null);
+        router.replace("/(tabs)");
     };
 
     return (
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <View style={styles.headerTextWrapper}>
-                    <Text style={styles.wave}>👋</Text>
-                    <Text style={styles.greeting}>Xin chào {displayName}</Text>
-                </View>
+                {user ? (
+                    <>
+                        <View style={styles.headerTextWrapper}>
+                            <Text style={styles.wave}>👋</Text>
+                            <Text style={styles.greeting}>Xin chào {displayName}</Text>
+                        </View>
 
-                <View style={styles.headerActions}>
-                    <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>{avatarLetter}</Text>
+                        <View style={styles.headerActions}>
+                            <View style={styles.avatar}>
+                                <Text style={styles.avatarText}>{avatarLetter}</Text>
+                            </View>
+                            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                                <Text style={styles.logoutText}>Đăng xuất</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                ) : (
+                    <View style={styles.headerLoggedOut}>
+                        <View style={{ flex: 1 }} />
+                        <TouchableOpacity
+                            style={styles.loginBtn}
+                            onPress={() => router.replace("/(auths)/login")}
+                            accessibilityRole="button"
+                            accessibilityLabel="Đăng nhập"
+                        >
+                            <Text style={styles.loginText}>Đăng nhập</Text>
+                        </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-                        <Text style={styles.logoutText}>Đăng xuất</Text>
-                    </TouchableOpacity>
-                </View>
+                )}
             </View>
 
             {/* List */}
@@ -73,6 +114,17 @@ const HomepageUserScreen = () => {
                 {OPTIONS.map((item) => {
                     const isComingSoon = false;
                     const handlePress = () => {
+                        if (!user) {
+                            Alert.alert(
+                                "Cần đăng nhập",
+                                "Bạn cần đăng nhập để có thể sử dụng chức năng này.",
+                                [
+                                    { text: "Đóng", style: "cancel" },
+                                    { text: "Đăng nhập", onPress: () => router.replace("/(auths)/login") },
+                                ]
+                            );
+                            return;
+                        }
                         if (item.id === "medicine-reminder") {
                             router.push("/(screens)/medicine-reminder");
                         } else if (item.id === "personal-info") {
@@ -91,7 +143,10 @@ const HomepageUserScreen = () => {
                     return (
                         <TouchableOpacity
                             key={item.id}
-                            style={[styles.card, isComingSoon && styles.cardDisabled]}
+                            style={[
+                                styles.card,
+                                isComingSoon && styles.cardDisabled,
+                            ]}
                             activeOpacity={0.85}
                             onPress={handlePress}
                         >
@@ -163,6 +218,26 @@ const styles = StyleSheet.create({
     headerActions: {
         alignItems: "center",
         gap: 6,
+    },
+    headerLoggedOut: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flex: 1,
+        paddingHorizontal: 6,
+    },
+    loginBtn: {
+        backgroundColor: "#EDE9FE",
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: "#C4B5FD",
+    },
+    loginText: {
+        color: "#56328C",
+        fontSize: scaleFont(12),
+        fontWeight: "800",
     },
     logoutBtn: {
         backgroundColor: "#FEE2E2",

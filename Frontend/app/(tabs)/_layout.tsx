@@ -1,11 +1,11 @@
 import { Tabs } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
 import { getMyRoom, subscribeActiveRoomChange } from "@/services/api";
 import { handleRemoteMedicationIntake } from "@/services/medicationIntakeSync";
-import { appendNotificationLog, getNotificationLogs } from "@/services/notificationLog";
+import { appendNotificationLog, getNotificationLogs, subscribeNotificationLogChange } from "@/services/notificationLog";
 import { connectRoomChatSocket } from "@/services/roomChatSocket";
 import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
@@ -16,7 +16,7 @@ export default function TabLayout() {
   const lastSigRef = useRef<{ sig: string; at: number } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const refreshUnreadCount = async () => {
+  const refreshUnreadCount = useCallback(async () => {
     try {
       const rows = await getNotificationLogs();
       const count = rows.reduce((acc, it) => acc + (it.read ? 0 : 1), 0);
@@ -24,13 +24,29 @@ export default function TabLayout() {
     } catch {
       setUnreadCount(0);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void refreshUnreadCount();
     const t = setInterval(() => void refreshUnreadCount(), 2000);
     return () => clearInterval(t);
-  }, []);
+  }, [refreshUnreadCount]);
+
+  useEffect(() => {
+    // Avoid updating tab state during router rehydration (can crash TabRouter on native).
+    // Schedule to next tick + guard mount.
+    let mounted = true;
+    const unsub = subscribeNotificationLogChange(() => {
+      setTimeout(() => {
+        if (!mounted) return;
+        void refreshUnreadCount();
+      }, 0);
+    });
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [refreshUnreadCount]);
 
   useEffect(() => {
     // Host-only: poll fall / left-safe-zone events and append into notification log.
