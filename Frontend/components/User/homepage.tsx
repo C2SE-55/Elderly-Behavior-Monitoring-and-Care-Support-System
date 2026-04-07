@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     ScrollView,
     Dimensions,
-    Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
@@ -72,7 +71,7 @@ const HomepageUserScreen = () => {
                 contentContainerStyle={styles.listContent}
             >
                 {OPTIONS.map((item) => {
-                    const isComingSoon = item.id === "family";
+                    const isComingSoon = false;
                     const handlePress = () => {
                         if (item.id === "medicine-reminder") {
                             router.push("/(screens)/medicine-reminder");
@@ -85,7 +84,7 @@ const HomepageUserScreen = () => {
                         } else if (item.id === "schedule") {
                             router.push("/(screens)/weekly-schedule");
                         } else if (item.id === "family") {
-                            Alert.alert("Đang phát triển", "Chức năng kết nối với người thân hiện chưa phát triển.");
+                            router.push("/(screens)/family-chat");
                         }
                     };
 

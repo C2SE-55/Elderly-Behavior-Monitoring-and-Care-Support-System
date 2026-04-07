@@ -178,9 +178,13 @@ CREATE TABLE medication_logs (
     taken_time DATETIME,
     status ENUM('taken','missed','skipped') DEFAULT 'taken',
     note TEXT,
+    acted_by_user_id INT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id) ON DELETE CASCADE
+    FOREIGN KEY (schedule_id) REFERENCES medication_schedules(id) ON DELETE CASCADE,
+    FOREIGN KEY (acted_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
+
+CREATE INDEX idx_medication_logs_acted_by_time ON medication_logs (acted_by_user_id, taken_time);
 
 -- 15 DAILY SCHEDULE
 CREATE TABLE daily_schedules (

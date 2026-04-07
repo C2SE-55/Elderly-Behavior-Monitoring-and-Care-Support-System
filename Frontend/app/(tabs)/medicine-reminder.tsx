@@ -5,6 +5,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,23 +19,30 @@ import {
   createMedication,
   createSchedules,
   deleteMedication,
-  deleteSchedule,
+  deleteSchedulesForSlot,
   getMyRoom,
   getMedications,
   getTodaySchedules,
-  markSkipped,
-  markTaken,
+  markMedicationSlotSkipped,
+  markMedicationSlotTaken,
   MedicationItem,
   MyRoomInfo,
   TodayScheduleItem,
   updateMedication,
+  updateMedicationDailyReminders,
   subscribeActiveRoomChange,
 } from "../../services/api";
 import { ensureNotificationPermission, rescheduleMedicationNotifications } from "@/services/medicationNotifications";
+import { dismissMedicationReminderLogsForMedicationSlot } from "@/services/notificationLog";
+import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
 type RepeatType = "once" | "daily";
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
+const localDateYmd = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
 const nowHHMM = () => {
   const now = new Date();
   return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
@@ -73,6 +81,8 @@ export default function MedicineReminderScreen() {
   const notifiedKeysRef = useRef<Record<string, true>>({});
   const noticeAnim = useRef(new Animated.Value(0)).current;
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noticeTimeRef = useRef("");
+  const noticeItemsRef = useRef<TodayScheduleItem[]>([]);
   const [noticeVisible, setNoticeVisible] = useState(false);
   const [noticeItems, setNoticeItems] = useState<TodayScheduleItem[]>([]);
   const [noticeTime, setNoticeTime] = useState("");
@@ -104,6 +114,11 @@ export default function MedicineReminderScreen() {
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [todaySchedules]);
+
+  const canMarkMedicationIntake = useMemo(() => {
+    if (!roomInfo) return false;
+    return roomInfo.member_role === "host" || !!roomInfo.can_receive_medication_notifications;
+  }, [roomInfo]);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -189,9 +204,12 @@ export default function MedicineReminderScreen() {
     void (async () => {
       const ok = await ensureNotificationPermission();
       if (!ok) return;
-      await rescheduleMedicationNotifications(todaySchedules);
+      const allowDaily =
+        roomInfo?.medication_daily_reminders_enabled !== false &&
+        roomInfo?.medication_daily_reminders_enabled !== 0;
+      await rescheduleMedicationNotifications(todaySchedules, { allowDaily });
     })();
-  }, [todaySchedules, canReceiveMedicationNotifications]);
+  }, [todaySchedules, canReceiveMedicationNotifications, roomInfo?.medication_daily_reminders_enabled]);
 
   useEffect(() => {
     return () => {
@@ -212,6 +230,8 @@ export default function MedicineReminderScreen() {
   const showDueNotice = useCallback((items: TodayScheduleItem[], time: string) => {
     setNoticeItems(items);
     setNoticeTime(time);
+    noticeTimeRef.current = time;
+    noticeItemsRef.current = items;
     setNoticeVisible(true);
     if (noticeTimerRef.current) {
       clearTimeout(noticeTimerRef.current);
@@ -239,7 +259,9 @@ export default function MedicineReminderScreen() {
         setTodaySchedules(schedules);
 
         const now = nowHHMM();
-        const dueItems = schedules.filter((item) => item.status === "pending" && item.alarm_time === now);
+        const dueItems = schedules.filter(
+          (item) => item.alarm_time === now && item.status !== "taken" && item.status !== "skipped"
+        );
         if (dueItems.length) {
           const idsKey = dueItems.map((item) => item.id).sort((a, b) => a - b).join("-");
           const key = `${new Date().toISOString().slice(0, 10)}-${now}-${idsKey}`;
@@ -251,7 +273,7 @@ export default function MedicineReminderScreen() {
       } catch {
         // Polling silently; lỗi đã hiển thị ở lần tải chính.
       }
-    }, 15000);
+    }, 5000);
 
     return () => clearInterval(timer);
   }, [canReadRoomData, canReceiveMedicationNotifications, showDueNotice, loadPermissions]);
@@ -262,6 +284,47 @@ export default function MedicineReminderScreen() {
       setNoticeItems([]);
     }
   }, [canReceiveMedicationNotifications, closeDueNotice]);
+
+  useEffect(() => {
+    noticeTimeRef.current = noticeTime;
+  }, [noticeTime]);
+
+  useEffect(() => {
+    noticeItemsRef.current = noticeItems;
+  }, [noticeItems]);
+
+  useEffect(() => {
+    if (!roomInfo?.id || !canReadRoomData) return;
+    const socket = connectRoomChatSocket();
+    if (!socket) return;
+    const rid = Number(roomInfo.id);
+    socket.emit("room:join", { roomId: rid });
+
+    const onIntake = (payload: any) => {
+      if (Number(payload?.roomId || 0) !== rid) return;
+      const rawIds = Array.isArray(payload?.schedule_ids) ? payload.schedule_ids : [];
+      const ids = rawIds.map((x: unknown) => Number(x)).filter((x: number) => x > 0);
+      if (!ids.length && payload?.schedule_id) ids.push(Number(payload.schedule_id));
+      const dateStr = String(payload?.date || localDateYmd()).slice(0, 10);
+      const al = String(payload?.alarm_time || "").slice(0, 5);
+      void dismissMedicationReminderLogsForMedicationSlot(dateStr, ids, al || undefined);
+      void loadAll();
+      const nt = String(noticeTimeRef.current || "").slice(0, 5);
+      const slotMatches =
+        (al && nt && al === nt) ||
+        (ids.length > 0 && noticeItemsRef.current.some((x) => ids.includes(x.id)));
+      if (slotMatches) {
+        closeDueNotice();
+        setNoticeItems([]);
+        noticeItemsRef.current = [];
+      }
+    };
+
+    socket.on("medication:intake", onIntake);
+    return () => {
+      getRoomChatSocket()?.off("medication:intake", onIntake);
+    };
+  }, [roomInfo?.id, canReadRoomData, loadAll, closeDueNotice]);
 
   const resetMedicationForm = () => {
     setMedicineName("");
@@ -371,41 +434,67 @@ export default function MedicineReminderScreen() {
     }
   };
 
-  const onMarkTaken = async (scheduleId: number) => {
-    if (!canManageMedication) {
-      setScreenError("Bạn không có quyền cập nhật trạng thái thuốc.");
-      return;
+  const onMarkSlotTaken = async (alarmTime: string, scheduleIdsFallback: number[]): Promise<boolean> => {
+    if (!canMarkMedicationIntake) {
+      setScreenError("Bạn không có quyền xác nhận uống thuốc.");
+      return false;
     }
+    const t = String(alarmTime || "").slice(0, 5);
+    if (!t) return false;
     try {
-      await markTaken(scheduleId);
+      setScreenError("");
+      const data = await markMedicationSlotTaken(t);
+      const ymd = String(data?.intake_date || localDateYmd()).slice(0, 10);
+      const ids =
+        Array.isArray(data?.schedule_ids) && data.schedule_ids.length
+          ? data.schedule_ids.map(Number)
+          : scheduleIdsFallback;
+      await dismissMedicationReminderLogsForMedicationSlot(ymd, ids, t);
       await loadAll();
+      return true;
     } catch (error) {
       const backendMessage = (error as any)?.response?.data?.message;
       setScreenError(backendMessage || "Không thể đánh dấu đã uống.");
+      return false;
     }
   };
 
-  const onMarkSkipped = async (scheduleId: number) => {
-    if (!canManageMedication) {
-      setScreenError("Bạn không có quyền cập nhật trạng thái thuốc.");
-      return;
+  const onMarkSlotSkipped = async (alarmTime: string, scheduleIdsFallback: number[]): Promise<boolean> => {
+    if (!canMarkMedicationIntake) {
+      setScreenError("Bạn không có quyền xác nhận uống thuốc.");
+      return false;
     }
+    const t = String(alarmTime || "").slice(0, 5);
+    if (!t) return false;
     try {
-      await markSkipped(scheduleId);
+      setScreenError("");
+      const data = await markMedicationSlotSkipped(t);
+      const ymd = String(data?.intake_date || localDateYmd()).slice(0, 10);
+      const ids =
+        Array.isArray(data?.schedule_ids) && data.schedule_ids.length
+          ? data.schedule_ids.map(Number)
+          : scheduleIdsFallback;
+      await dismissMedicationReminderLogsForMedicationSlot(ymd, ids, t);
       await loadAll();
+      return true;
     } catch (error) {
       const backendMessage = (error as any)?.response?.data?.message;
       setScreenError(backendMessage || "Không thể đánh dấu bỏ qua.");
+      return false;
     }
   };
 
-  const onDeleteSchedule = async (scheduleId: number) => {
+  const onDeleteSlot = async (alarmTime: string) => {
     if (!canManageMedication) {
       setScreenError("Bạn không có quyền xóa lịch thuốc.");
       return;
     }
+    const t = String(alarmTime || "").slice(0, 5);
+    if (!t) return;
     try {
-      await deleteSchedule(scheduleId);
+      setScreenError("");
+      await deleteSchedulesForSlot(t);
+      setSuccessMessage("Đã xóa toàn bộ lịch trong khung giờ này.");
       await loadAll();
     } catch (error) {
       const backendMessage = (error as any)?.response?.data?.message;
@@ -413,17 +502,15 @@ export default function MedicineReminderScreen() {
     }
   };
 
-  const handleNoticeAction = async (scheduleId: number, action: "taken" | "skipped") => {
-    if (action === "taken") {
-      await onMarkTaken(scheduleId);
-    } else {
-      await onMarkSkipped(scheduleId);
-    }
-    const remain = noticeItems.filter((item) => item.id !== scheduleId);
-    setNoticeItems(remain);
-    if (!remain.length) {
-      closeDueNotice();
-    }
+  const handleNoticeSlotAction = async (action: "taken" | "skipped") => {
+    const t = String(noticeTime || "").slice(0, 5);
+    const ids = noticeItems.map((x) => x.id);
+    const ok =
+      action === "taken" ? await onMarkSlotTaken(t, ids) : await onMarkSlotSkipped(t, ids);
+    if (!ok) return;
+    closeDueNotice();
+    setNoticeItems([]);
+    noticeItemsRef.current = [];
   };
 
   return (
@@ -453,32 +540,30 @@ export default function MedicineReminderScreen() {
       >
         <View style={styles.noticeCard}>
           <View style={styles.noticeHeader}>
-            <Text style={styles.noticeTitle}>Den gio uong thuoc - {noticeTime}</Text>
+            <Text style={styles.noticeTitle}>Đến giờ uống thuốc - {noticeTime}</Text>
             <TouchableOpacity onPress={closeDueNotice}>
               <Text style={styles.noticeClose}>x</Text>
             </TouchableOpacity>
           </View>
           {noticeItems.map((item) => (
             <View key={`notice-${item.id}`} style={styles.noticeItemRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.noticeItemName}>
-                  {item.name} {item.dosage ? `(${item.dosage})` : ""}
-                </Text>
-              </View>
-              {canManageMedication ? (
-                <>
-                  <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => handleNoticeAction(item.id, "taken")}>
-                    <Text style={styles.noticeTakenText}>Taken</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => handleNoticeAction(item.id, "skipped")}>
-                    <Text style={styles.noticeSkipText}>Skip</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <Text style={styles.noticeReadonly}>Chỉ xem</Text>
-              )}
+              <Text style={styles.noticeItemName}>
+                {item.name} {item.dosage ? `(${item.dosage})` : ""}
+              </Text>
             </View>
           ))}
+          {canMarkMedicationIntake ? (
+            <View style={styles.noticeActionsRow}>
+              <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => void handleNoticeSlotAction("taken")}>
+                <Text style={styles.noticeTakenText}>Taken</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => void handleNoticeSlotAction("skipped")}>
+                <Text style={styles.noticeSkipText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={styles.noticeReadonly}>Chỉ xem</Text>
+          )}
         </View>
       </Animated.View>
 
@@ -489,6 +574,40 @@ export default function MedicineReminderScreen() {
         {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
         {permissionLoading && <Text style={styles.loadingText}>Đang kiểm tra quyền trong room...</Text>}
         {!!roomInfo?.room_id && <Text style={styles.loadingText}>Room: {roomInfo.room_id}</Text>}
+
+        {roomInfo?.member_role === "host" && (
+          <View style={styles.card}>
+            <View style={styles.hostDailyRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.cardTitle}>Nhắc lặp hằng ngày (máy)</Text>
+                <Text style={styles.cardHint}>
+                  Tắt để không lên lịch thông báo OS cho lịch &quot;daily&quot; trong room (chỉ host).
+                </Text>
+              </View>
+              <Switch
+                value={
+                  roomInfo.medication_daily_reminders_enabled !== false &&
+                  roomInfo.medication_daily_reminders_enabled !== 0
+                }
+                onValueChange={(v) => {
+                  void (async () => {
+                    try {
+                      setScreenError("");
+                      await updateMedicationDailyReminders(v);
+                      await loadPermissions();
+                      await loadAll();
+                    } catch (error) {
+                      const backendMessage = (error as any)?.response?.data?.message;
+                      setScreenError(backendMessage || "Không cập nhật được cài đặt nhắc hằng ngày.");
+                    }
+                  })();
+                }}
+                trackColor={{ false: "#D1D5DB", true: "#A78BFA" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>1) Nhập thuốc</Text>
@@ -666,46 +785,54 @@ export default function MedicineReminderScreen() {
           ) : groupedSchedules.length === 0 ? (
             <Text style={styles.emptyText}>Chưa có lịch hôm nay.</Text>
           ) : (
-            groupedSchedules.map(([time, items]) => (
-              <View key={time} style={styles.groupCard}>
-                <Text style={styles.groupTime}>{time}</Text>
-                {items.map((item) => (
-                  <View key={item.id} style={styles.scheduleRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.medName}>
-                        - {item.name} {item.dosage ? `(${item.dosage})` : ""}
-                      </Text>
-                      <Text style={styles.medMeta}>[{String(item.status).toUpperCase()}]</Text>
-                    </View>
-                    {item.status === "pending" && (
-                      <>
-                        <TouchableOpacity
-                          style={[styles.takenBtn, !canManageMedication && { opacity: 0.6 }]}
-                          onPress={() => onMarkTaken(item.id)}
-                          disabled={!canManageMedication}
-                        >
-                          <Text style={styles.takenBtnText}>✔ Taken</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.skipBtn, !canManageMedication && { opacity: 0.6 }]}
-                          onPress={() => onMarkSkipped(item.id)}
-                          disabled={!canManageMedication}
-                        >
-                          <Text style={styles.skipBtnText}>Skip</Text>
-                        </TouchableOpacity>
-                      </>
+            groupedSchedules.map(([time, items]) => {
+              const slotNeedsAction = items.some((it) => it.status !== "taken" && it.status !== "skipped");
+              const slotIds = items.map((it) => it.id);
+              return (
+                <View key={time} style={styles.groupCard}>
+                  <View style={styles.groupHeaderRow}>
+                    <Text style={styles.groupTime}>{time}</Text>
+                    {canManageMedication && (
+                      <TouchableOpacity
+                        style={styles.deleteSlotBtn}
+                        onPress={() => void onDeleteSlot(time)}
+                        disabled={!canManageMedication}
+                      >
+                        <Text style={styles.deleteSlotBtnText}>Xóa cả khung giờ</Text>
+                      </TouchableOpacity>
                     )}
-                    <TouchableOpacity
-                      style={[styles.deleteBtn, !canManageMedication && { opacity: 0.6 }]}
-                      onPress={() => onDeleteSchedule(item.id)}
-                      disabled={!canManageMedication}
-                    >
-                      <Text style={styles.deleteBtnText}>X</Text>
-                    </TouchableOpacity>
                   </View>
-                ))}
-              </View>
-            ))
+                  {items.map((item) => (
+                    <View key={item.id} style={styles.scheduleRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.medName}>
+                          - {item.name} {item.dosage ? `(${item.dosage})` : ""}
+                        </Text>
+                        <Text style={styles.medMeta}>[{String(item.status).toUpperCase()}]</Text>
+                      </View>
+                    </View>
+                  ))}
+                  {slotNeedsAction && canMarkMedicationIntake && (
+                    <View style={styles.slotActionsRow}>
+                      <TouchableOpacity
+                        style={styles.takenBtn}
+                        onPress={() => void onMarkSlotTaken(time, slotIds)}
+                        disabled={!canMarkMedicationIntake}
+                      >
+                        <Text style={styles.takenBtnText}>✔ Taken (cả đơn)</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.skipBtn}
+                        onPress={() => void onMarkSlotSkipped(time, slotIds)}
+                        disabled={!canMarkMedicationIntake}
+                      >
+                        <Text style={styles.skipBtnText}>Skip (cả đơn)</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -761,7 +888,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   noticeSkipText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
-  noticeReadonly: { color: "#FDE68A", fontSize: 12, fontWeight: "700" },
+  noticeReadonly: { color: "#FDE68A", fontSize: 12, fontWeight: "700", marginTop: 8 },
+  noticeActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
   container: { flex: 1, backgroundColor: "#F6F7FB" },
   contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
   headerBar: {
@@ -786,6 +920,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 16, color: "#111827", fontWeight: "700" },
   cardHint: { fontSize: 12, color: "#6B7280" },
+  hostDailyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
   input: {
     borderWidth: 1,
     borderColor: "#D1D5DB",
@@ -898,8 +1038,30 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     gap: 6,
+    marginBottom: 10,
   },
-  groupTime: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  groupHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  groupTime: { fontSize: 20, fontWeight: "700", color: "#111827", flexShrink: 1 },
+  deleteSlotBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#FEE2E2",
+  },
+  deleteSlotBtnText: { color: "#B91C1C", fontWeight: "800", fontSize: 11 },
+  slotActionsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
   scheduleRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   takenBtn: {
     backgroundColor: "#DCFCE7",

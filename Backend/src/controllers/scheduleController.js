@@ -40,14 +40,10 @@ exports.getTodaySchedules = async (req, res) => {
       return sendFail(res, "Bạn không có quyền xem dữ liệu trong room", HTTP_STATUS.FORBIDDEN);
     }
     const rows = await MedicationSystem.getTodaySchedules(context.hostUserId, context.roomId);
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
     const data = rows.map((item) => {
       const alarm = String(item.alarm_time).slice(0, 5);
-      const [h, m] = alarm.split(":").map((x) => Number(x));
-      const alarmMinutes = (h || 0) * 60 + (m || 0);
-      const status = item.today_status || (alarmMinutes < nowMinutes ? "missed" : "pending");
+      const status = item.today_status ? String(item.today_status) : "pending";
 
       return {
         id: item.id,
@@ -95,6 +91,40 @@ exports.updateSchedule = async (req, res) => {
     }
     console.error("Lỗi cập nhật lịch uống:", error);
     return sendError(res, "Không thể cập nhật lịch uống", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+exports.deleteSchedulesForSlot = async (req, res) => {
+  try {
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canManageMedication || !context.hostUserId) {
+      return sendFail(
+        res,
+        "Bạn không có quyền chỉnh sửa dữ liệu nhắc thuốc trong room",
+        HTTP_STATUS.FORBIDDEN
+      );
+    }
+    const alarmTime = String(req.body?.alarm_time || "").trim();
+    if (!alarmTime) {
+      return sendFail(res, "alarm_time là bắt buộc (HH:mm)", HTTP_STATUS.BAD_REQUEST);
+    }
+    const result = await MedicationSystem.deleteSchedulesForSlot(
+      context.hostUserId,
+      context.roomId,
+      alarmTime
+    );
+    return sendSuccess(
+      res,
+      { deleted: result.deleted, schedule_ids: result.schedule_ids },
+      `Đã xóa ${result.deleted} lịch trong khung giờ`,
+      HTTP_STATUS.OK
+    );
+  } catch (error) {
+    if (error?.code === "INVALID_ALARM_TIME") {
+      return sendFail(res, "Giờ không hợp lệ (HH:mm)", HTTP_STATUS.BAD_REQUEST);
+    }
+    console.error("Lỗi xóa lịch theo khung giờ:", error);
+    return sendError(res, "Không thể xóa lịch uống thuốc", HTTP_STATUS.INTERNAL_ERROR);
   }
 };
 

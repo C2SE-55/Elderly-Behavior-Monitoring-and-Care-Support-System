@@ -21,6 +21,12 @@ const ensureNotificationHandler = async () => {
   });
 };
 
+const localDateYmd = (): string => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 const parseHHMM = (hhmm: string): { hour: number; minute: number } | null => {
   const raw = String(hhmm || "").slice(0, 5);
   const [h, m] = raw.split(":").map((x) => Number(x));
@@ -56,15 +62,29 @@ const buildContent = (time: string, items: TodayScheduleItem[]) => {
   const title = `Đến giờ uống thuốc (${time})`;
   const body =
     names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")}… (+${names.length - 3})`;
+  const schedule_ids = items.map((i) => Number(i.id)).filter((id) => id > 0);
   return {
     title,
     body: body || "Bạn có lịch uống thuốc.",
     sound: true as const,
-    data: { type: "medication", alarm_time: time },
+    data: {
+      type: "medication",
+      alarm_time: time,
+      schedule_ids,
+      date: localDateYmd(),
+    },
   };
 };
 
-export const rescheduleMedicationNotifications = async (schedules: TodayScheduleItem[]): Promise<void> => {
+export type RescheduleMedicationOptions = {
+  /** Khi false (HOST tắt trong room): không lên lịch trigger DAILY, chỉ còn lịch một lần trong ngày */
+  allowDaily?: boolean;
+};
+
+export const rescheduleMedicationNotifications = async (
+  schedules: TodayScheduleItem[],
+  opts?: RescheduleMedicationOptions
+): Promise<void> => {
   if (Platform.OS === "web") return;
 
   await ensureNotificationHandler();
@@ -72,7 +92,11 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
 
   await Notifications.cancelAllScheduledNotificationsAsync();
 
-  const pendingActive = schedules.filter((s) => s.status === "pending" && s.is_active);
+  const allowDaily = opts?.allowDaily !== false;
+  let pendingActive = schedules.filter((s) => s.status === "pending" && s.is_active);
+  if (!allowDaily) {
+    pendingActive = pendingActive.filter((s) => s.repeat_type !== "daily");
+  }
   const groups: Record<string, TodayScheduleItem[]> = {};
   for (const item of pendingActive) {
     const key = String(item.alarm_time || "").slice(0, 5);
@@ -102,7 +126,13 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
         type: "medication",
         title: "Đã lên lịch nhắc thuốc",
         body: `${time} • ${items.length} thuốc`,
-        data: { alarm_time: time, count: items.length, repeat: "daily" },
+        data: {
+          alarm_time: time,
+          count: items.length,
+          repeat: "daily",
+          schedule_ids: items.map((i) => Number(i.id)).filter((id) => id > 0),
+          date: localDateYmd(),
+        },
         read: false,
       }).catch(() => {});
       continue;
@@ -124,7 +154,13 @@ export const rescheduleMedicationNotifications = async (schedules: TodaySchedule
       type: "medication",
       title: "Đã lên lịch nhắc thuốc",
       body: `${time} • ${items.length} thuốc`,
-      data: { alarm_time: time, count: items.length, repeat: "once" },
+      data: {
+        alarm_time: time,
+        count: items.length,
+        repeat: "once",
+        schedule_ids: items.map((i) => Number(i.id)).filter((id) => id > 0),
+        date: localDateYmd(),
+      },
       read: false,
     }).catch(() => {});
   }

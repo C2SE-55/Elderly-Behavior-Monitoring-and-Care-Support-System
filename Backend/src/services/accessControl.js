@@ -173,6 +173,9 @@ async function resolveAccessContext(req, userId) {
     roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_schedule_notifications);
   const canReceiveMedicationNotifications =
     roomRole === ROOM_ROLE.HOST || (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_medication_notifications);
+  const canMarkMedicationIntake =
+    roomRole === ROOM_ROLE.HOST ||
+    (roomRole === ROOM_ROLE.CARETAKER && !!room?.can_receive_medication_notifications);
   const canViewLive =
     roomRole === ROOM_ROLE.HOST ||
     (roomRole === ROOM_ROLE.CARETAKER &&
@@ -192,6 +195,7 @@ async function resolveAccessContext(req, userId) {
     canManageMedication,
     canReceiveScheduleNotifications,
     canReceiveMedicationNotifications,
+    canMarkMedicationIntake,
     canViewLive,
   };
 }

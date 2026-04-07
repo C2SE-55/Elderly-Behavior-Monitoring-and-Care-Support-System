@@ -3,7 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
+import { getMyRoom, subscribeActiveRoomChange } from "@/services/api";
+import { handleRemoteMedicationIntake } from "@/services/medicationIntakeSync";
 import { appendNotificationLog, getNotificationLogs } from "@/services/notificationLog";
+import { connectRoomChatSocket } from "@/services/roomChatSocket";
 import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
 const PRIMARY = "#A78BFA";   // tím nhạt
@@ -98,6 +101,37 @@ export default function TabLayout() {
       cancelled = true;
       subReceived?.remove();
       subResponse?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const socket = connectRoomChatSocket();
+    if (!socket) return;
+
+    let cancelled = false;
+    const joinActiveRoom = async () => {
+      const room = await getMyRoom().catch(() => null);
+      const rid = room?.id;
+      if (cancelled || !rid) return;
+      socket.emit("room:join", { roomId: Number(rid) });
+    };
+
+    void joinActiveRoom();
+
+    const onIntake = (payload: unknown) => {
+      void handleRemoteMedicationIntake(payload);
+    };
+    socket.on("medication:intake", onIntake);
+
+    const unsubRoom = subscribeActiveRoomChange(() => {
+      void joinActiveRoom();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubRoom();
+      socket.off("medication:intake", onIntake);
     };
   }, []);
 

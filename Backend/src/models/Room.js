@@ -214,7 +214,7 @@ class Room {
 
   static async listRoomsByUser(userId) {
     const connection = await pool.getConnection();
-    const sqlWithLive = `SELECT
+    const sqlBaseWithLiveAndCamera = `SELECT
            r.id,
            r.room_id,
            r.admin_user_id,
@@ -242,6 +242,7 @@ class Room {
              ELSE COALESCE(rm.can_view_live, 1)
            END AS can_view_live,
            (SELECT c.id FROM cameras c WHERE c.room_id = r.id AND c.status = 'active' ORDER BY c.id ASC LIMIT 1) AS camera_id,
+           COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
          LEFT JOIN room_members rm
@@ -249,7 +250,43 @@ class Room {
           AND rm.user_id = ?
          WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
          ORDER BY r.id DESC`;
-    const sqlNoLive = `SELECT
+    const sqlBaseWithLiveNoCamera = `SELECT
+           r.id,
+           r.room_id,
+           r.admin_user_id,
+           r.host_user_id,
+           r.admin_join_token,
+           r.host_join_token,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_manage_medication
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_schedule_notifications
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_medication_notifications
+           END AS can_receive_medication_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE COALESCE(rm.can_view_live, 1)
+           END AS can_view_live,
+           NULL AS camera_id,
+           COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
+           r.created_at
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
+         ORDER BY r.id DESC`;
+    const sqlBaseNoLiveWithCamera = `SELECT
            r.id,
            r.room_id,
            r.admin_user_id,
@@ -273,6 +310,39 @@ class Room {
              ELSE rm.can_receive_medication_notifications
            END AS can_receive_medication_notifications,
            (SELECT c.id FROM cameras c WHERE c.room_id = r.id AND c.status = 'active' ORDER BY c.id ASC LIMIT 1) AS camera_id,
+           COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
+           r.created_at
+         FROM rooms r
+         LEFT JOIN room_members rm
+           ON rm.room_id = r.id
+          AND rm.user_id = ?
+         WHERE rm.user_id IS NOT NULL OR r.host_user_id = ?
+         ORDER BY r.id DESC`;
+    const sqlBaseNoLiveNoCamera = `SELECT
+           r.id,
+           r.room_id,
+           r.admin_user_id,
+           r.host_user_id,
+           r.admin_join_token,
+           r.host_join_token,
+           CASE
+             WHEN r.host_user_id = ? THEN 'host'
+             ELSE rm.member_role
+           END AS member_role,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_manage_medication
+           END AS can_manage_medication,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_schedule_notifications
+           END AS can_receive_schedule_notifications,
+           CASE
+             WHEN r.host_user_id = ? THEN 1
+             ELSE rm.can_receive_medication_notifications
+           END AS can_receive_medication_notifications,
+           NULL AS camera_id,
+           COALESCE(r.medication_daily_reminders_enabled, 1) AS medication_daily_reminders_enabled,
            r.created_at
          FROM rooms r
          LEFT JOIN room_members rm
@@ -282,14 +352,37 @@ class Room {
          ORDER BY r.id DESC`;
     const paramsWithLive = [userId, userId, userId, userId, userId, userId, userId];
     const paramsNoLive = [userId, userId, userId, userId, userId, userId];
+    const isMissingColumn = (error, columnName) =>
+      error?.code === "ER_BAD_FIELD_ERROR" && String(error.sqlMessage || "").includes(columnName);
     try {
       try {
-        const [rows] = await connection.execute(sqlWithLive, paramsWithLive);
+        const [rows] = await connection.execute(sqlBaseWithLiveAndCamera, paramsWithLive);
         return rows;
       } catch (e) {
-        if (e?.code === "ER_BAD_FIELD_ERROR" && String(e.sqlMessage || "").includes("can_view_live")) {
-          const [rows] = await connection.execute(sqlNoLive, paramsNoLive);
-          return rows.map((row) => ({ ...row, can_view_live: 1 }));
+        // DB cũ có thể thiếu can_view_live hoặc cameras.room_id; fallback từng trường hợp.
+        if (isMissingColumn(e, "can_view_live")) {
+          try {
+            const [rows] = await connection.execute(sqlBaseNoLiveWithCamera, paramsNoLive);
+            return rows.map((row) => ({ ...row, can_view_live: 1 }));
+          } catch (e2) {
+            if (isMissingColumn(e2, "c.room_id")) {
+              const [rows] = await connection.execute(sqlBaseNoLiveNoCamera, paramsNoLive);
+              return rows.map((row) => ({ ...row, can_view_live: 1, camera_id: null }));
+            }
+            throw e2;
+          }
+        }
+        if (isMissingColumn(e, "c.room_id")) {
+          try {
+            const [rows] = await connection.execute(sqlBaseWithLiveNoCamera, paramsWithLive);
+            return rows;
+          } catch (e2) {
+            if (isMissingColumn(e2, "can_view_live")) {
+              const [rows] = await connection.execute(sqlBaseNoLiveNoCamera, paramsNoLive);
+              return rows.map((row) => ({ ...row, can_view_live: 1, camera_id: null }));
+            }
+            throw e2;
+          }
         }
         throw e;
       }
@@ -546,6 +639,44 @@ class Room {
         const notAvailable = new Error("ROOM_PATIENT_NOT_AVAILABLE");
         notAvailable.code = "ROOM_PATIENT_NOT_AVAILABLE";
         throw notAvailable;
+      }
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async getMedicationDailyRemindersEnabled(roomId) {
+    const connection = await pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT medication_daily_reminders_enabled FROM rooms WHERE id = ? LIMIT 1",
+        [roomId]
+      );
+      if (!rows[0]) return true;
+      const v = rows[0].medication_daily_reminders_enabled;
+      return v === undefined || v === null ? true : !!Number(v);
+    } catch (error) {
+      if (error?.code === "ER_BAD_FIELD_ERROR") return true;
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async setMedicationDailyRemindersEnabled(roomId, enabled) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.execute("UPDATE rooms SET medication_daily_reminders_enabled = ? WHERE id = ?", [
+        enabled ? 1 : 0,
+        roomId,
+      ]);
+      return true;
+    } catch (error) {
+      if (error?.code === "ER_BAD_FIELD_ERROR") {
+        const err = new Error("MEDICATION_DAILY_COLUMN_MISSING");
+        err.code = "MEDICATION_DAILY_COLUMN_MISSING";
+        throw err;
       }
       throw error;
     } finally {

@@ -16,6 +16,27 @@ class MedicationSystem {
     return null;
   }
 
+  /** Ghi log uống thuốc; nếu DB chưa có cột acted_by_user_id thì INSERT không cột đó (không cần migration). */
+  static async insertMedicationLogRow(connection, scheduleId, status, note, actorUserId) {
+    try {
+      await connection.execute(
+        `INSERT INTO medication_logs (schedule_id, taken_time, status, note, acted_by_user_id)
+         VALUES (?, NOW(), ?, ?, ?)`,
+        [scheduleId, status, note, actorUserId]
+      );
+    } catch (e) {
+      if (e?.code === "ER_BAD_FIELD_ERROR") {
+        await connection.execute(
+          `INSERT INTO medication_logs (schedule_id, taken_time, status, note)
+           VALUES (?, NOW(), ?, ?)`,
+          [scheduleId, status, note]
+        );
+      } else {
+        throw e;
+      }
+    }
+  }
+
   static async createMedication(hostUserId, roomId, payload) {
     const connection = await pool.getConnection();
     try {
@@ -244,12 +265,30 @@ class MedicationSystem {
             SELECT ml.status
             FROM medication_logs ml
             WHERE ml.schedule_id = s.id AND DATE(ml.taken_time) = CURDATE()
-            ORDER BY ml.taken_time DESC
+            ORDER BY
+              CASE ml.status
+                WHEN 'taken' THEN 1
+                WHEN 'skipped' THEN 2
+                WHEN 'missed' THEN 3
+                ELSE 4
+              END ASC,
+              ml.taken_time DESC
             LIMIT 1
           ) AS today_status
         FROM medication_schedules s
         INNER JOIN medications m ON m.id = s.medication_id
-        WHERE m.profile_id = ? AND s.is_active = 1
+        WHERE m.profile_id = ?
+          AND (
+            s.is_active = 1
+            OR (
+              s.repeat_type = 'once'
+              AND EXISTS (
+                SELECT 1 FROM medication_logs ml0
+                WHERE ml0.schedule_id = s.id
+                  AND DATE(ml0.taken_time) = CURDATE()
+              )
+            )
+          )
         ORDER BY s.alarm_time ASC, s.id ASC
       `;
       const [rows] = await connection.execute(query, [profileId]);
@@ -358,29 +397,350 @@ class MedicationSystem {
     }
   }
 
-  static async markSchedule(hostUserId, roomId, scheduleId, status) {
+  static async deleteSchedulesForSlot(hostUserId, roomId, alarmTimeRaw) {
+    const normalizedTime = this.normalizeAlarmTime(alarmTimeRaw);
+    if (!normalizedTime) {
+      const error = new Error("INVALID_ALARM_TIME");
+      error.code = "INVALID_ALARM_TIME";
+      throw error;
+    }
+    const connection = await pool.getConnection();
+    try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
+      const [schedules] = await connection.execute(
+        `SELECT s.id, s.medication_id
+         FROM medication_schedules s
+         INNER JOIN medications m ON m.id = s.medication_id
+         WHERE m.profile_id = ?
+           AND TIME_FORMAT(s.alarm_time, '%H:%i') = TIME_FORMAT(?, '%H:%i')`,
+        [profileId, normalizedTime]
+      );
+      if (!schedules.length) {
+        return { deleted: 0, schedule_ids: [] };
+      }
+
+      await connection.beginTransaction();
+      try {
+        for (const row of schedules) {
+          const scheduleId = row.id;
+          const medId = row.medication_id;
+          await connection.execute("DELETE FROM medication_logs WHERE schedule_id = ?", [scheduleId]);
+          await connection.execute("DELETE FROM medication_schedules WHERE id = ?", [scheduleId]);
+          const [remain] = await connection.execute(
+            "SELECT COUNT(*) AS total FROM medication_schedules WHERE medication_id = ?",
+            [medId]
+          );
+          if ((remain[0]?.total || 0) === 0) {
+            await connection.execute("DELETE FROM medications WHERE id = ?", [medId]);
+          }
+        }
+        await connection.commit();
+      } catch (e) {
+        await connection.rollback();
+        throw e;
+      }
+      return {
+        deleted: schedules.length,
+        schedule_ids: schedules.map((r) => Number(r.id)),
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async markSlot(hostUserId, roomId, alarmTimeRaw, status, actorUserId, dateYmdOpt) {
+    const normalizedTime = this.normalizeAlarmTime(alarmTimeRaw);
+    if (!normalizedTime) {
+      return { ok: false, code: "INVALID_ALARM_TIME" };
+    }
+    const targetDate =
+      dateYmdOpt && /^\d{4}-\d{2}-\d{2}$/.test(String(dateYmdOpt).trim().slice(0, 10))
+        ? String(dateYmdOpt).trim().slice(0, 10)
+        : null;
+
+    const connection = await pool.getConnection();
+    try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
+
+      const [schedules] = await connection.execute(
+        `SELECT s.id, s.repeat_type
+         FROM medication_schedules s
+         INNER JOIN medications m ON m.id = s.medication_id
+         WHERE m.profile_id = ?
+           AND TIME_FORMAT(s.alarm_time, '%H:%i') = TIME_FORMAT(?, '%H:%i')`,
+        [profileId, normalizedTime]
+      );
+
+      if (!schedules.length) {
+        return { ok: false, code: "SLOT_NOT_FOUND" };
+      }
+
+      const allIds = schedules.map((r) => Number(r.id));
+
+      const needsMark = [];
+      for (const row of schedules) {
+        const sql = targetDate
+          ? `SELECT 1 AS ok FROM medication_logs
+             WHERE schedule_id = ? AND DATE(taken_time) = ? AND status IN ('taken','skipped') LIMIT 1`
+          : `SELECT 1 AS ok FROM medication_logs
+             WHERE schedule_id = ? AND DATE(taken_time) = CURDATE() AND status IN ('taken','skipped') LIMIT 1`;
+        const params = targetDate ? [row.id, targetDate] : [row.id];
+        const [done] = await connection.execute(sql, params);
+        if (!done[0]) needsMark.push(row);
+      }
+
+      const [drow] = targetDate
+        ? await connection.execute("SELECT ? AS d", [targetDate])
+        : await connection.execute("SELECT DATE(NOW()) AS d", []);
+      const intakeDate = String(drow[0]?.d || "").slice(0, 10);
+
+      const [urows] = await connection.execute(
+        "SELECT COALESCE(full_name, username) AS nm FROM users WHERE id = ? LIMIT 1",
+        [actorUserId]
+      );
+      const actedByName = urows[0]?.nm ? String(urows[0].nm) : `User #${actorUserId}`;
+
+      if (!needsMark.length) {
+        const placeholders = allIds.map(() => "?").join(",");
+        const sql = targetDate
+          ? `SELECT ml.status
+             FROM medication_logs ml
+             WHERE ml.schedule_id IN (${placeholders})
+               AND DATE(ml.taken_time) = ?
+               AND ml.status IN ('taken','skipped')
+             ORDER BY ml.taken_time DESC
+             LIMIT 1`
+          : `SELECT ml.status
+             FROM medication_logs ml
+             WHERE ml.schedule_id IN (${placeholders})
+               AND DATE(ml.taken_time) = CURDATE()
+               AND ml.status IN ('taken','skipped')
+             ORDER BY ml.taken_time DESC
+             LIMIT 1`;
+        const params = targetDate ? [...allIds, targetDate] : allIds;
+        const [st] = await connection.execute(sql, params);
+        return {
+          ok: true,
+          inserted: false,
+          schedule_ids: allIds,
+          status: st[0] ? String(st[0].status) : status,
+          intake_date: intakeDate,
+          acted_by_user_id: null,
+          acted_by_name: null,
+          alarm_time: normalizedTime.slice(0, 5),
+        };
+      }
+
+      await connection.beginTransaction();
+      try {
+        for (const row of needsMark) {
+          await this.insertMedicationLogRow(
+            connection,
+            row.id,
+            status,
+            `Cập nhật từ app (slot): ${status}`,
+            actorUserId
+          );
+          if (row.repeat_type === "once") {
+            await connection.execute("UPDATE medication_schedules SET is_active = 0 WHERE id = ?", [row.id]);
+          }
+        }
+        await connection.commit();
+      } catch (e) {
+        await connection.rollback();
+        throw e;
+      }
+
+      return {
+        ok: true,
+        inserted: true,
+        schedule_ids: allIds,
+        status,
+        intake_date: intakeDate,
+        acted_by_user_id: actorUserId,
+        acted_by_name: actedByName,
+        alarm_time: normalizedTime.slice(0, 5),
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
+  static resolveMedicationStatsRange(period, anchorYmd) {
+    const raw = String(anchorYmd || "").trim().slice(0, 10);
+    const parts = raw.split("-").map((x) => Number(x));
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+    const [y, mo, d] = parts;
+    const anchor = new Date(y, mo - 1, d);
+    if (Number.isNaN(anchor.getTime())) return null;
+    const pad = (n) => String(n).padStart(2, "0");
+    const toYmd = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+
+    const p = String(period || "day").toLowerCase();
+    if (p === "day") {
+      const s = toYmd(anchor);
+      return { start: s, end: s, period: "day" };
+    }
+    if (p === "week") {
+      const day = anchor.getDay();
+      const offset = day === 0 ? -6 : 1 - day;
+      const start = new Date(anchor);
+      start.setDate(start.getDate() + offset);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      return { start: toYmd(start), end: toYmd(end), period: "week" };
+    }
+    if (p === "month") {
+      const start = new Date(y, mo - 1, 1);
+      const end = new Date(y, mo, 0);
+      return { start: toYmd(start), end: toYmd(end), period: "month" };
+    }
+    return null;
+  }
+
+  static async listMedicationIntakeStats(hostUserId, roomId, period, anchorYmd) {
+    const range = this.resolveMedicationStatsRange(period, anchorYmd);
+    if (!range) {
+      const err = new Error("INVALID_STATS_RANGE");
+      err.code = "INVALID_STATS_RANGE";
+      throw err;
+    }
+    const connection = await pool.getConnection();
+    try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
+      const params = [profileId, range.start, range.end];
+      const sqlWithActor = `SELECT
+           ml.id AS log_id,
+           ml.taken_time,
+           ml.status,
+           ml.acted_by_user_id,
+           COALESCE(u.full_name, u.username) AS acted_by_name,
+           s.id AS schedule_id,
+           TIME_FORMAT(s.alarm_time, '%H:%i') AS alarm_time,
+           m.name AS medication_name
+         FROM medication_logs ml
+         INNER JOIN medication_schedules s ON s.id = ml.schedule_id
+         INNER JOIN medications m ON m.id = s.medication_id
+         LEFT JOIN users u ON u.id = ml.acted_by_user_id
+         WHERE m.profile_id = ?
+           AND ml.status IN ('taken', 'skipped')
+           AND DATE(ml.taken_time) >= ?
+           AND DATE(ml.taken_time) <= ?
+         ORDER BY ml.taken_time DESC`;
+      const sqlNoActor = `SELECT
+           ml.id AS log_id,
+           ml.taken_time,
+           ml.status,
+           s.id AS schedule_id,
+           TIME_FORMAT(s.alarm_time, '%H:%i') AS alarm_time,
+           m.name AS medication_name
+         FROM medication_logs ml
+         INNER JOIN medication_schedules s ON s.id = ml.schedule_id
+         INNER JOIN medications m ON m.id = s.medication_id
+         WHERE m.profile_id = ?
+           AND ml.status IN ('taken', 'skipped')
+           AND DATE(ml.taken_time) >= ?
+           AND DATE(ml.taken_time) <= ?
+         ORDER BY ml.taken_time DESC`;
+      let rows;
+      try {
+        [rows] = await connection.execute(sqlWithActor, params);
+      } catch (e) {
+        if (e?.code === "ER_BAD_FIELD_ERROR") {
+          [rows] = await connection.execute(sqlNoActor, params);
+        } else {
+          throw e;
+        }
+      }
+      return {
+        range: { start: range.start, end: range.end, period: range.period },
+        items: rows.map((row) => ({
+          log_id: Number(row.log_id),
+          taken_time: row.taken_time,
+          status: String(row.status || ""),
+          schedule_id: Number(row.schedule_id),
+          alarm_time: String(row.alarm_time || "").slice(0, 5),
+          medication_name: row.medication_name ? String(row.medication_name) : "",
+          acted_by_user_id: row.acted_by_user_id != null ? Number(row.acted_by_user_id) : null,
+          acted_by_name: row.acted_by_name ? String(row.acted_by_name) : null,
+        })),
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async markSchedule(hostUserId, roomId, scheduleId, status, actorUserId) {
     const connection = await pool.getConnection();
     try {
       const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
       const [rows] = await connection.execute(
-        `SELECT s.id, s.repeat_type
+        `SELECT s.id, s.repeat_type, m.name AS medication_name
          FROM medication_schedules s
          INNER JOIN medications m ON m.id = s.medication_id
          WHERE s.id = ? AND m.profile_id = ?
          LIMIT 1`,
         [scheduleId, profileId]
       );
-      if (!rows[0]) return false;
+      if (!rows[0]) return { ok: false };
 
-      await connection.execute(
-        "INSERT INTO medication_logs (schedule_id, taken_time, status, note) VALUES (?, NOW(), ?, ?)",
-        [scheduleId, status, `Cập nhật từ app: ${status}`]
+      const [dup] = await connection.execute(
+        `SELECT ml.status
+         FROM medication_logs ml
+         WHERE ml.schedule_id = ?
+           AND DATE(ml.taken_time) = CURDATE()
+           AND ml.status IN ('taken', 'skipped')
+         ORDER BY ml.taken_time DESC
+         LIMIT 1`,
+        [scheduleId]
+      );
+
+      const [drow] = await connection.execute("SELECT DATE(NOW()) AS d");
+      const intakeDate = String(drow[0]?.d || "").slice(0, 10);
+
+      if (dup[0]) {
+        return {
+          ok: true,
+          inserted: false,
+          duplicate: true,
+          schedule_id: scheduleId,
+          status: String(dup[0].status),
+          intake_date: intakeDate,
+          acted_by_user_id: null,
+          acted_by_name: null,
+          medication_name: rows[0].medication_name ? String(rows[0].medication_name) : "",
+        };
+      }
+
+      const [urows] = await connection.execute(
+        "SELECT COALESCE(full_name, username) AS nm FROM users WHERE id = ? LIMIT 1",
+        [actorUserId]
+      );
+      const actedByName = urows[0]?.nm ? String(urows[0].nm) : `User #${actorUserId}`;
+
+      await this.insertMedicationLogRow(
+        connection,
+        scheduleId,
+        status,
+        `Cập nhật từ app: ${status}`,
+        actorUserId
       );
 
       if (rows[0].repeat_type === "once") {
         await connection.execute("UPDATE medication_schedules SET is_active = 0 WHERE id = ?", [scheduleId]);
       }
-      return true;
+
+      return {
+        ok: true,
+        inserted: true,
+        duplicate: false,
+        schedule_id: scheduleId,
+        status,
+        intake_date: intakeDate,
+        acted_by_user_id: actorUserId,
+        acted_by_name: actedByName,
+        medication_name: rows[0].medication_name ? String(rows[0].medication_name) : "",
+      };
     } finally {
       connection.release();
     }

@@ -30,6 +30,7 @@ export default function RootLayout() {
           <Stack.Screen name="(admin)" options={{ gestureEnabled: false }} />
           <Stack.Screen name="(auths)" />
           <Stack.Screen name="(homepages)" />
+          <Stack.Screen name="(screens)" />
           <Stack.Screen name="(healths)" />
           <Stack.Screen name="(profiles)" />
           <Stack.Screen

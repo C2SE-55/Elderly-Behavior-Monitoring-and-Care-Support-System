@@ -1,6 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type NotificationLogType = "weekly-schedule" | "medication" | "system" | "care-confirmation";
+export type NotificationLogType =
+  | "weekly-schedule"
+  | "medication"
+  | "system"
+  | "care-confirmation"
+  | "room-message";
 
 export type NotificationLogEntry = {
   id: string;
@@ -119,5 +124,57 @@ export async function deleteNotificationLog(id: string): Promise<void> {
   const updated = current.filter((x) => x.id !== id);
   if (updated.length === current.length) return;
   await writeLogs(updated);
+}
+
+/** Đánh đã đọc các log nhắc thuốc liên quan tới một lịch + ngày (đồng bộ khi ai đó Taken/Skip). */
+export async function dismissMedicationReminderLogsForIntake(
+  scheduleId: number,
+  dateYmd: string
+): Promise<void> {
+  if (!scheduleId || !dateYmd) return;
+  const day = String(dateYmd).slice(0, 10);
+  const current = await getNotificationLogs();
+  let changed = false;
+  const updated = current.map((it) => {
+    if (it.type !== "medication" || it.read) return it;
+    const d = it.data || {};
+    const ids = Array.isArray(d.schedule_ids) ? d.schedule_ids.map((x: unknown) => Number(x)) : [];
+    const single = Number(d.schedule_id || 0);
+    const matchesSchedule =
+      (single > 0 && single === scheduleId) || ids.includes(scheduleId);
+    if (!matchesSchedule) return it;
+    const logDate = d.date != null ? String(d.date).slice(0, 10) : "";
+    if (logDate && logDate !== day) return it;
+    changed = true;
+    return { ...it, read: true };
+  });
+  if (changed) await writeLogs(updated);
+}
+
+/** Gộp theo khung giờ: đánh đã đọc log có cùng alarm_time / schedule_ids (sau mark-slot). */
+export async function dismissMedicationReminderLogsForMedicationSlot(
+  dateYmd: string,
+  scheduleIds: number[],
+  alarmTime?: string
+): Promise<void> {
+  const day = String(dateYmd).slice(0, 10);
+  const idSet = new Set(scheduleIds.filter((x) => Number(x) > 0));
+  const t = alarmTime ? String(alarmTime).slice(0, 5) : "";
+  const current = await getNotificationLogs();
+  let changed = false;
+  const updated = current.map((it) => {
+    if (it.type !== "medication" || it.read) return it;
+    const d = it.data || {};
+    const logDate = d.date != null ? String(d.date).slice(0, 10) : "";
+    if (logDate && logDate !== day) return it;
+    const ids = Array.isArray(d.schedule_ids) ? d.schedule_ids.map((x: unknown) => Number(x)) : [];
+    const logAlarm = String(d.alarm_time || "").slice(0, 5);
+    const hit =
+      (idSet.size > 0 && ids.some((x) => idSet.has(x))) || (Boolean(t) && logAlarm === t);
+    if (!hit) return it;
+    changed = true;
+    return { ...it, read: true };
+  });
+  if (changed) await writeLogs(updated);
 }
 

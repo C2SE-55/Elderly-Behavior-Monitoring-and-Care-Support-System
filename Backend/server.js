@@ -1,11 +1,14 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const http = require("http");
 const routes = require("./src/routes");
 const errorHandler = require("./src/middleware/errorHandler");
 const { startMedicationReminderJob } = require("./src/jobs/medicationReminderJob");
+const { initSocketServer } = require("./src/services/socketServer");
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -33,7 +36,8 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Khởi động server
-app.listen(PORT, () => {
+initSocketServer(server);
+server.listen(PORT, () => {
   console.log(`\n✓ Server đang chạy trên cổng ${PORT}`);
   console.log(`✓ Môi trường: ${process.env.NODE_ENV || "development"}`);
   console.log(`✓ API Health: http://localhost:${PORT}/health\n`);

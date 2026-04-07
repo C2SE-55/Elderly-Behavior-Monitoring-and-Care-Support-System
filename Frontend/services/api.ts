@@ -526,6 +526,8 @@ export type MyRoomInfo = {
   can_view_live?: boolean;
   /** cameras.id gắn room — dùng lọc lịch sử / thông báo an toàn */
   camera_id?: number | null;
+  /** HOST: bật/tắt lịch OS lặp theo ngày cho cả room (thiếu field = bật) */
+  medication_daily_reminders_enabled?: boolean | number;
 };
 
 export type MyRoomSummary = {
@@ -600,6 +602,13 @@ export const getMyRoom = async (): Promise<MyRoomInfo | null> => {
     params: roomId ? { room_id: roomId } : {},
   });
   return res.data?.data ?? null;
+};
+
+export const updateMedicationDailyReminders = async (
+  enabled: boolean
+): Promise<{ medication_daily_reminders_enabled: number }> => {
+  const res = await api.put("/rooms/medication-daily-reminders", { enabled });
+  return (res.data?.data ?? {}) as { medication_daily_reminders_enabled: number };
 };
 
 export const getMyRooms = async (): Promise<MyRoomSummary[]> => {
@@ -1066,12 +1075,94 @@ export const deleteSchedule = async (id: number): Promise<void> => {
   await api.delete(`/schedules/${id}`);
 };
 
-export const markTaken = async (scheduleId: number): Promise<void> => {
-  await api.patch("/logs/mark-taken", { schedule_id: scheduleId });
+export type MedicationMarkResult = {
+  schedule_id: number;
+  status: string;
+  inserted?: boolean;
+  intake_date?: string;
+  acted_by_user_id?: number | null;
+  acted_by_name?: string | null;
 };
 
-export const markSkipped = async (scheduleId: number): Promise<void> => {
-  await api.patch("/logs/mark-skipped", { schedule_id: scheduleId });
+export const markTaken = async (scheduleId: number): Promise<MedicationMarkResult> => {
+  const res = await api.patch("/logs/mark-taken", { schedule_id: scheduleId });
+  return (res.data?.data ?? {}) as MedicationMarkResult;
+};
+
+export const markSkipped = async (scheduleId: number): Promise<MedicationMarkResult> => {
+  const res = await api.patch("/logs/mark-skipped", { schedule_id: scheduleId });
+  return (res.data?.data ?? {}) as MedicationMarkResult;
+};
+
+export type MedicationSlotMarkResult = {
+  schedule_ids: number[];
+  alarm_time: string;
+  status: string;
+  inserted?: boolean;
+  intake_date?: string;
+  acted_by_user_id?: number | null;
+  acted_by_name?: string | null;
+};
+
+export const markMedicationSlotTaken = async (
+  alarmTime: string,
+  date?: string
+): Promise<MedicationSlotMarkResult> => {
+  const res = await api.patch("/logs/mark-slot-taken", {
+    alarm_time: alarmTime,
+    ...(date ? { date } : {}),
+  });
+  return (res.data?.data ?? {}) as MedicationSlotMarkResult;
+};
+
+export const markMedicationSlotSkipped = async (
+  alarmTime: string,
+  date?: string
+): Promise<MedicationSlotMarkResult> => {
+  const res = await api.patch("/logs/mark-slot-skipped", {
+    alarm_time: alarmTime,
+    ...(date ? { date } : {}),
+  });
+  return (res.data?.data ?? {}) as MedicationSlotMarkResult;
+};
+
+export const deleteSchedulesForSlot = async (alarmTime: string): Promise<{ deleted: number }> => {
+  const res = await api.delete("/schedules/slot", { data: { alarm_time: alarmTime } });
+  const d = res.data?.data ?? {};
+  return { deleted: Number(d.deleted || 0) };
+};
+
+export type MedicationIntakeStatItem = {
+  log_id: number;
+  taken_time: string;
+  status: string;
+  schedule_id: number;
+  alarm_time: string;
+  medication_name: string;
+  acted_by_user_id: number | null;
+  acted_by_name: string | null;
+};
+
+export type MedicationIntakeStatsResponse = {
+  range: { start: string; end: string; period: string };
+  items: MedicationIntakeStatItem[];
+};
+
+export const getMedicationIntakeStats = async (
+  roomId: number,
+  params: { period: "day" | "week" | "month"; anchor?: string }
+): Promise<MedicationIntakeStatsResponse> => {
+  const res = await api.get(`/rooms/${roomId}/medication-intake-stats`, {
+    params: { period: params.period, ...(params.anchor ? { anchor: params.anchor } : {}) },
+  });
+  const data = res.data?.data;
+  if (!data || typeof data !== "object") {
+    return { range: { start: "", end: "", period: params.period }, items: [] };
+  }
+  return {
+    range: data.range || { start: "", end: "", period: params.period },
+    items: Array.isArray(data.items) ? data.items : [],
+  };
 };
 
 export type DailyScheduleType = "exercise" | "meal" | "rest" | "other";
@@ -1123,5 +1214,152 @@ export const deleteDailySchedule = async (id: number): Promise<void> => {
 export const getServerTime = async (): Promise<string> => {
   const res = await api.get("/server-time");
   return String(res.data?.data?.now || new Date().toISOString());
+};
+
+export type RoomMessageSeenBy = {
+  user_id: number;
+  user_name: string;
+  read_at: string;
+};
+
+export type RoomChatMessage = {
+  id: number;
+  room_id: number;
+  sender_user_id: number;
+  sender_name: string;
+  content: string;
+  created_at: string;
+  seen_by: RoomMessageSeenBy[];
+  is_mine?: boolean;
+};
+
+export type RoomChatPage = {
+  items: RoomChatMessage[];
+  has_more: boolean;
+  next_before_id: number | null;
+};
+
+export type RoomUnreadSummaryItem = {
+  room_id: number;
+  room_name: string;
+  unread_count: number;
+  last_message_id: number | null;
+  last_sender_user_id: number | null;
+  last_sender_name: string | null;
+  last_content: string | null;
+  last_sent_at: string | null;
+};
+
+export type RoomNote = {
+  id: number;
+  room_id: number;
+  created_by_user_id: number;
+  created_by_name: string;
+  title: string;
+  content: string;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export const getRoomMessages = async (
+  roomId: number,
+  params?: { limit?: number; before_id?: number }
+): Promise<RoomChatPage> => {
+  const res = await api.get(`/rooms/${roomId}/messages`, {
+    params: {
+      limit: params?.limit ?? 100,
+      ...(params?.before_id ? { before_id: params.before_id } : {}),
+    },
+  });
+  const data = res.data?.data ?? {};
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    has_more: !!data.has_more,
+    next_before_id: Number(data.next_before_id || 0) || null,
+  };
+};
+
+export const sendRoomMessage = async (roomId: number, content: string): Promise<RoomChatMessage> => {
+  const res = await api.post(`/rooms/${roomId}/messages`, { content });
+  return res.data?.data as RoomChatMessage;
+};
+
+export const markRoomMessagesRead = async (
+  roomId: number,
+  payload: { message_ids?: number[]; read_until_id?: number }
+): Promise<{
+  read_count: number;
+  seen_updates: Array<{ message_id: number; seen_by: RoomMessageSeenBy[] }>;
+}> => {
+  const res = await api.post(`/rooms/${roomId}/messages/read`, payload);
+  return (
+    res.data?.data ?? {
+      read_count: 0,
+      seen_updates: [],
+    }
+  );
+};
+
+export const getRoomUnreadCount = async (roomId: number): Promise<number> => {
+  const res = await api.get(`/rooms/${roomId}/messages/unread-count`);
+  return Number(res.data?.data?.unread_count || 0);
+};
+
+export const getRoomsUnreadSummary = async (): Promise<RoomUnreadSummaryItem[]> => {
+  const res = await api.get("/rooms/messages/unread-summary");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export type RoomChatNotificationPrefItem = {
+  room_id: number;
+  chat_notifications_enabled: boolean;
+};
+
+export const getRoomChatNotificationPrefs = async (): Promise<RoomChatNotificationPrefItem[]> => {
+  const res = await api.get("/rooms/chat-notification-prefs");
+  const rows = res.data?.data;
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r: any) => ({
+    room_id: Number(r.room_id),
+    chat_notifications_enabled: r.chat_notifications_enabled !== false && r.chat_notifications_enabled !== 0,
+  }));
+};
+
+export const setRoomChatNotificationPref = async (
+  roomId: number,
+  enabled: boolean
+): Promise<{ chat_notifications_enabled: boolean }> => {
+  const res = await api.put(`/rooms/${roomId}/chat-notification-pref`, { enabled });
+  const d = res.data?.data ?? {};
+  return {
+    chat_notifications_enabled: !!d.chat_notifications_enabled,
+  };
+};
+
+export const getRoomNotes = async (roomId: number): Promise<RoomNote[]> => {
+  const res = await api.get(`/rooms/${roomId}/notes`);
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+};
+
+export const createRoomNote = async (
+  roomId: number,
+  payload: { title?: string; content: string; is_pinned?: boolean }
+): Promise<RoomNote> => {
+  const res = await api.post(`/rooms/${roomId}/notes`, payload);
+  return res.data?.data as RoomNote;
+};
+
+export const updateRoomNote = async (
+  roomId: number,
+  noteId: number,
+  payload: { title?: string; content?: string; is_pinned?: boolean }
+): Promise<RoomNote> => {
+  const res = await api.put(`/rooms/${roomId}/notes/${noteId}`, payload);
+  return res.data?.data as RoomNote;
+};
+
+export const deleteRoomNote = async (roomId: number, noteId: number): Promise<void> => {
+  await api.delete(`/rooms/${roomId}/notes/${noteId}`);
 };
 

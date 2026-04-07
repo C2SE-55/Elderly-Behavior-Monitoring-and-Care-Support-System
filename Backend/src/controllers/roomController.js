@@ -1,6 +1,7 @@
 const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const { Room } = require("../models/Room");
+const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
 
 exports.adminCreateRoom = async (req, res) => {
@@ -267,5 +268,71 @@ exports.updateRoomPatient = async (req, res) => {
     }
     console.error("Lỗi cập nhật thông tin bệnh nhân room:", error);
     return sendError(res, "Không thể cập nhật thông tin bệnh nhân", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+exports.updateMedicationDailyReminders = async (req, res) => {
+  try {
+    const context = await resolveAccessContext(req, req.userId);
+    if (context.roomRole !== "host" || !context.roomId) {
+      return sendFail(res, "Chỉ HOST mới bật/tắt nhắc thuốc lặp hằng ngày", HTTP_STATUS.FORBIDDEN);
+    }
+    const raw = req.body?.enabled;
+    if (raw === undefined || raw === null) {
+      return sendFail(res, "enabled là bắt buộc (true/false)", HTTP_STATUS.BAD_REQUEST);
+    }
+    const on = raw === true || raw === 1 || raw === "1" || raw === "true";
+    await Room.setMedicationDailyRemindersEnabled(context.roomId, on);
+    return sendSuccess(
+      res,
+      { medication_daily_reminders_enabled: on ? 1 : 0 },
+      on ? "Đã bật nhắc thuốc hằng ngày trên thiết bị" : "Đã tắt nhắc thuốc hằng ngày trên thiết bị",
+      HTTP_STATUS.OK
+    );
+  } catch (error) {
+    if (error?.code === "MEDICATION_DAILY_COLUMN_MISSING") {
+      return sendFail(
+        res,
+        "CSDL chưa có cột cài đặt. Chạy migration 006_rooms_medication_daily_reminders.sql.",
+        HTTP_STATUS.BAD_REQUEST
+      );
+    }
+    console.error("Lỗi cập nhật nhắc thuốc hằng ngày:", error);
+    return sendError(res, "Không thể cập nhật cài đặt", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+exports.getMedicationIntakeStats = async (req, res) => {
+  try {
+    const roomId = Number(req.params.roomId);
+    if (!roomId || Number.isNaN(roomId)) {
+      return sendFail(res, "roomId không hợp lệ", HTTP_STATUS.BAD_REQUEST);
+    }
+    const period = String(req.query.period || "day").toLowerCase();
+    if (!["day", "week", "month"].includes(period)) {
+      return sendFail(res, "period phải là day, week hoặc month", HTTP_STATUS.BAD_REQUEST);
+    }
+
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.roomId || Number(context.roomId) !== roomId) {
+      return sendFail(res, "Room không khớp với ngữ cảnh tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+    if (context.roomRole !== "host") {
+      return sendFail(res, "Chỉ người thân (host) xem được thống kê", HTTP_STATUS.FORBIDDEN);
+    }
+
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    const defaultAnchor = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    const anchor = String(req.query.anchor || defaultAnchor).trim().slice(0, 10);
+
+    const data = await MedicationSystem.listMedicationIntakeStats(req.userId, roomId, period, anchor);
+    return sendSuccess(res, data, "Lấy thống kê uống thuốc thành công", HTTP_STATUS.OK);
+  } catch (error) {
+    if (error?.code === "INVALID_STATS_RANGE") {
+      return sendFail(res, "Tham số anchor hoặc period không hợp lệ", HTTP_STATUS.BAD_REQUEST);
+    }
+    console.error("Lỗi thống kê uống thuốc:", error);
+    return sendError(res, "Không thể lấy thống kê uống thuốc", HTTP_STATUS.INTERNAL_ERROR);
   }
 };
