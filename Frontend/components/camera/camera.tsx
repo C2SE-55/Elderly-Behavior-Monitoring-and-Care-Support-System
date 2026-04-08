@@ -72,6 +72,24 @@ function getEventNote(event?: CameraHistoryEvent | null) {
   return "Cảnh báo té ngã";
 }
 
+function isFallOrLeftSafeZoneEvent(event?: CameraHistoryEvent | null): boolean {
+  if (!event) return false;
+  const st = event.source_type;
+  // Backward-compat: if the backend doesn't send source_type, treat it as "fall".
+  return st === "left_safe_zone_event" || st === "fall_event" || !st;
+}
+
+type SafetyFilter = "all" | "fall" | "left_safe_zone";
+
+function safetyKindOf(event?: CameraHistoryEvent | null): "fall" | "left_safe_zone" | null {
+  if (!event) return null;
+  const st = event.source_type;
+  if (st === "left_safe_zone_event") return "left_safe_zone";
+  // Backward-compat: missing source_type => treat as fall.
+  if (st === "fall_event" || !st) return "fall";
+  return null;
+}
+
 function toAbsoluteImageUrl(imageUrl?: string | null) {
   if (!imageUrl) return null;
   if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
@@ -94,6 +112,7 @@ export default function CameraLiveScreen() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [safetyFilter, setSafetyFilter] = useState<SafetyFilter>("all");
   const [previewVisible, setPreviewVisible] = useState(false);
   const [liveAccess, setLiveAccess] = useState<CameraLiveAccessResponse | null | "loading">("loading");
   const [liveAccessError, setLiveAccessError] = useState<string | null>(null);
@@ -246,13 +265,14 @@ export default function CameraLiveScreen() {
       try {
         const items = await getCameraEventHistory(20, cameraIdForHistory);
         if (!mounted) return;
-        setHistory(items);
+        const safetyItems = items.filter(isFallOrLeftSafeZoneEvent);
+        setHistory(safetyItems);
         setHistoryError(null);
         setSelectedEventId((prev) => {
           // If coming from notification with eventId, prefer that.
-          if (requestedEventId && items.some((x) => x.id === requestedEventId)) return requestedEventId;
-          if (prev && items.some((item) => item.id === prev)) return prev;
-          return items[0]?.id ?? null;
+          if (requestedEventId && safetyItems.some((x) => x.id === requestedEventId)) return requestedEventId;
+          if (prev && safetyItems.some((item) => item.id === prev)) return prev;
+          return safetyItems[0]?.id ?? null;
         });
       } catch {
         if (!mounted) return;
@@ -271,10 +291,33 @@ export default function CameraLiveScreen() {
     };
   }, [activeRoom, liveAccess, requestedEventId]);
 
+  const fallHistory = useMemo(() => history.filter((ev) => safetyKindOf(ev) === "fall"), [history]);
+  const leftSafeZoneHistory = useMemo(
+    () => history.filter((ev) => safetyKindOf(ev) === "left_safe_zone"),
+    [history]
+  );
+  const flatDisplayHistory = useMemo(() => {
+    if (safetyFilter === "fall") return fallHistory;
+    if (safetyFilter === "left_safe_zone") return leftSafeZoneHistory;
+    return history;
+  }, [fallHistory, history, leftSafeZoneHistory, safetyFilter]);
+
+  // Keep selected event visible when user changes filter.
+  useEffect(() => {
+    setSelectedEventId((prev) => {
+      if (prev != null && flatDisplayHistory.some((x) => x.id === prev)) return prev;
+      return flatDisplayHistory[0]?.id ?? null;
+    });
+  }, [flatDisplayHistory]);
+
   useEffect(() => {
     if (!requestedEventId) return;
     if (!history.length) return;
     if (!history.some((x) => x.id === requestedEventId)) return;
+    const ev = history.find((x) => x.id === requestedEventId) ?? null;
+    const kind = safetyKindOf(ev);
+    if (kind === "fall") setSafetyFilter("fall");
+    else if (kind === "left_safe_zone") setSafetyFilter("left_safe_zone");
     setSelectedEventId(requestedEventId);
     setPreviewVisible(true);
   }, [history, requestedEventId]);
@@ -392,8 +435,6 @@ export default function CameraLiveScreen() {
         </View>
 
         <View style={styles.controlRow}>
-          <Ionicons name="videocam-outline" size={22} color="#444" />
-          <Ionicons name="camera-outline" size={22} color="#444" />
           <TouchableOpacity onPress={openFullscreen} hitSlop={12}>
             <Ionicons name="expand-outline" size={22} color="#444" />
           </TouchableOpacity>
@@ -422,39 +463,147 @@ export default function CameraLiveScreen() {
 
           {historyError ? <Text style={styles.historyErrorText}>{historyError}</Text> : null}
 
-          {!historyLoading &&
-            history.map((item, index) => {
-              const isActive = item.id === selectedEvent?.id;
-              const eventTime = formatEventDateTime(item.created_at);
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.historyItem}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    setSelectedEventId(item.id);
-                    setPreviewVisible(true);
-                  }}
-                >
-                  <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
+          {!historyLoading && history.length > 0 ? (
+            <View style={styles.filterRow}>
+              <TouchableOpacity
+                style={[styles.filterBtn, safetyFilter === "all" && styles.filterBtnActive]}
+                onPress={() => setSafetyFilter("all")}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.filterBtnText, safetyFilter === "all" && styles.filterBtnTextActive]}>Tất cả</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterBtn, safetyFilter === "fall" && styles.filterBtnActive]}
+                onPress={() => setSafetyFilter("fall")}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.filterBtnText, safetyFilter === "fall" && styles.filterBtnTextActive]}>Té ngã</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterBtn, safetyFilter === "left_safe_zone" && styles.filterBtnActive]}
+                onPress={() => setSafetyFilter("left_safe_zone")}
+                activeOpacity={0.9}
+              >
+                <Text style={[styles.filterBtnText, safetyFilter === "left_safe_zone" && styles.filterBtnTextActive]}>
+                  Rời vùng an toàn
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
-                  <View style={styles.historyTimelineColumn}>
-                    <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
-                      <Ionicons name="person-outline" size={12} color="#6D5EF7" />
+          {!historyLoading && flatDisplayHistory.length === 0 && history.length > 0 ? (
+            <View style={styles.emptyHistoryBox}>
+              <Ionicons name="filter-outline" size={22} color="#9CA3AF" />
+              <Text style={styles.emptyHistoryText}>Không có dữ liệu phù hợp bộ lọc.</Text>
+            </View>
+          ) : null}
+
+          {!historyLoading && safetyFilter === "all" ? (
+            <>
+              <Text style={styles.filterSectionTitle}>Té ngã</Text>
+              {fallHistory.map((item, index) => {
+                const isActive = item.id === selectedEvent?.id;
+                const eventTime = formatEventDateTime(item.created_at);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyItem}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSelectedEventId(item.id);
+                      setPreviewVisible(true);
+                    }}
+                  >
+                    <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
+
+                    <View style={styles.historyTimelineColumn}>
+                      <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
+                        <Ionicons name="person-outline" size={12} color="#6D5EF7" />
+                      </View>
+                      {index !== fallHistory.length - 1 ? <View style={styles.historyLine} /> : null}
                     </View>
-                    {index !== history.length - 1 ? <View style={styles.historyLine} /> : null}
-                  </View>
 
-                  <View style={styles.historyTextBox}>
-                    <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
-                      {item.title || "Phát hiện chuyển động!"}
-                    </Text>
-                    <Text style={styles.historySubText}>{eventTime.time}</Text>
-                    <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                    <View style={styles.historyTextBox}>
+                      <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
+                        {item.title || getEventNote(item)}
+                      </Text>
+                      <Text style={styles.historySubText}>{eventTime.time}</Text>
+                      <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={[styles.filterSectionTitle, { marginTop: 10 }]}>Rời khỏi vùng an toàn</Text>
+              {leftSafeZoneHistory.map((item, index) => {
+                const isActive = item.id === selectedEvent?.id;
+                const eventTime = formatEventDateTime(item.created_at);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyItem}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSelectedEventId(item.id);
+                      setPreviewVisible(true);
+                    }}
+                  >
+                    <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
+
+                    <View style={styles.historyTimelineColumn}>
+                      <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
+                        <Ionicons name="person-outline" size={12} color="#6D5EF7" />
+                      </View>
+                      {index !== leftSafeZoneHistory.length - 1 ? <View style={styles.historyLine} /> : null}
+                    </View>
+
+                    <View style={styles.historyTextBox}>
+                      <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
+                        {item.title || getEventNote(item)}
+                      </Text>
+                      <Text style={styles.historySubText}>{eventTime.time}</Text>
+                      <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          ) : null}
+
+          {!historyLoading && safetyFilter !== "all"
+            ? flatDisplayHistory.map((item, index) => {
+                const isActive = item.id === selectedEvent?.id;
+                const eventTime = formatEventDateTime(item.created_at);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyItem}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setSelectedEventId(item.id);
+                      setPreviewVisible(true);
+                    }}
+                  >
+                    <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
+
+                    <View style={styles.historyTimelineColumn}>
+                      <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
+                        <Ionicons name="person-outline" size={12} color="#6D5EF7" />
+                      </View>
+                      {index !== flatDisplayHistory.length - 1 ? <View style={styles.historyLine} /> : null}
+                    </View>
+
+                    <View style={styles.historyTextBox}>
+                      <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
+                        {item.title || getEventNote(item)}
+                      </Text>
+                      <Text style={styles.historySubText}>{eventTime.time}</Text>
+                      <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            : null}
         </View>
       </ScrollView>
 
@@ -667,6 +816,41 @@ const styles = StyleSheet.create({
   emptyHistoryText: {
     fontSize: 13,
     color: "#6B7280",
+  },
+  filterRow: {
+    flexDirection: "row",
+    paddingVertical: 5,
+    paddingHorizontal: 2,
+    gap: 8,
+  },
+  filterBtn: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterBtnActive: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#C7D2FE",
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#6B7280",
+  },
+  filterBtnTextActive: {
+    color: "#4F46E5",
+  },
+  filterSectionTitle: {
+    marginTop: 7,
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 6,
   },
   historyErrorText: {
     color: "#B91C1C",
