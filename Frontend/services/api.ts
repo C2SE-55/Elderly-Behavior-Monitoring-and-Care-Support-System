@@ -600,17 +600,30 @@ export const joinRoomByAdminCode = async (roomId: string): Promise<{
   role_in_room: "host";
   host_join_token: string;
   host_qr_payload: string;
+  already_in_room?: boolean;
+  serverMessage?: string;
 }> => {
   const res = await api.post("/rooms/join/admin-room", { room_id: roomId });
-  return res.data?.data;
+  const data = (res.data?.data ?? {}) as Record<string, unknown>;
+  return {
+    ...(data as any),
+    serverMessage: typeof res.data?.message === "string" ? res.data.message : undefined,
+  };
 };
 
 export const joinRoomByHostQr = async (hostJoinToken: string): Promise<{
   room_id: string;
-  role_in_room: "caretaker";
+  role_in_room: "caretaker" | "host";
+  already_in_room?: boolean;
+  already_host?: boolean;
+  serverMessage?: string;
 }> => {
   const res = await api.post("/rooms/join/host-qr", { host_join_token: hostJoinToken });
-  return res.data?.data;
+  const data = (res.data?.data ?? {}) as Record<string, unknown>;
+  return {
+    ...(data as any),
+    serverMessage: typeof res.data?.message === "string" ? res.data.message : undefined,
+  };
 };
 
 export const getMyRoom = async (): Promise<MyRoomInfo | null> => {

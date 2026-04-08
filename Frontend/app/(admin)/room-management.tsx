@@ -245,14 +245,21 @@ export default function AdminRoomManagementScreen() {
             </View>
             {!!room.admin_qr_payload && (
               <View style={styles.qrWrap}>
-                <Text style={styles.meta}>QR Admin (scan để join FAMILY):</Text>
+                <Text style={styles.meta}>QR Admin (scan để join FAMILY / HOST):</Text>
                 <Image source={{ uri: getQrImageUrl(room.admin_qr_payload) }} style={styles.qrImage} />
+                <Text style={styles.qrHint}>
+                  Nội dung mã chỉ là chuỗi «QR payload» phía trên (dạng ADMIN_JOIN:…). Nếu bạn tự tạo QR bằng app
+                  khác, hãy nhập đúng chuỗi đó — không dán link ảnh https://api.qrserver.com/…
+                </Text>
               </View>
             )}
             {!!room.host_qr_payload && (
               <View style={styles.qrWrap}>
                 <Text style={styles.meta}>QR Host (scan để join CAREGIVER):</Text>
                 <Image source={{ uri: getQrImageUrl(room.host_qr_payload) }} style={styles.qrImage} />
+                <Text style={styles.qrHint}>
+                  Tương tự: chỉ mã HOST_JOIN:… trong «QR payload» host — không dùng URL trang tạo ảnh QR.
+                </Text>
               </View>
             )}
             <TouchableOpacity style={styles.deleteBtn} onPress={() => onDeleteRoom(room)}>
@@ -324,6 +331,7 @@ const styles = StyleSheet.create({
   },
   copyTxt: { color: "#1D4ED8", fontWeight: "800", fontSize: 12 },
   qrWrap: { marginTop: 4, gap: 6 },
+  qrHint: { color: "#64748B", fontSize: 11, lineHeight: 16 },
   qrImage: { width: 220, height: 220, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFF" },
   deleteBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 4 },
   deleteTxt: { color: "#991B1B", textAlign: "center", fontWeight: "700", fontSize: 13 },

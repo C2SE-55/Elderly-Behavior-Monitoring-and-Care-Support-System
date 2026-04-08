@@ -89,7 +89,12 @@ export default function RoomAccessScreen() {
         setActiveRoomId(matched.id);
         setActiveRoom(matched.id);
       }
-      setSuccess("Join room thành công. Bạn đã trở thành HOST.");
+      setSuccess(
+        joined.serverMessage ||
+          (joined.already_in_room
+            ? "Bạn đã là chủ phòng (HOST) của phòng này rồi."
+            : "Join room thành công. Bạn đã trở thành HOST.")
+      );
       setAdminRoomCode("");
     } catch (e: any) {
       setError(e?.response?.data?.message || "Không thể join room bằng room_id.");
@@ -115,7 +120,14 @@ export default function RoomAccessScreen() {
         setActiveRoomId(matched.id);
         setActiveRoom(matched.id);
       }
-      setSuccess("Join room thành công. Bạn đã trở thành CAREGIVER.");
+      setSuccess(
+        joined.serverMessage ||
+          (joined.already_in_room
+            ? joined.already_host
+              ? "Bạn là chủ phòng (HOST) của phòng này rồi — không cần quét mã người chăm sóc."
+              : "Bạn đã có sẵn trong phòng này (vai trò người chăm sóc)."
+            : "Join room thành công. Bạn đã trở thành CAREGIVER.")
+      );
       setHostToken("");
     } catch (e: any) {
       setError(e?.response?.data?.message || "Không thể join room bằng QR host.");
@@ -215,6 +227,15 @@ export default function RoomAccessScreen() {
             {normalizedRole !== "admin" && (
               <View style={styles.card}>
                 <Text style={styles.sectionTitle}>1) Nhập room_id của Admin để thành HOST trong room đó</Text>
+                <TouchableOpacity
+                  style={styles.scanQrBtn}
+                  onPress={() => router.push("/(screens)/room-qr-scan")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quét mã QR admin hoặc mã phòng"
+                >
+                  <Ionicons name="qr-code-outline" size={20} color="#1D4ED8" />
+                  <Text style={styles.scanQrBtnTxt}>Quét mã (admin / mã phòng RM…)</Text>
+                </TouchableOpacity>
                 <TextInput
                   value={adminRoomCode}
                   onChangeText={setAdminRoomCode}
@@ -231,10 +252,19 @@ export default function RoomAccessScreen() {
             {normalizedRole !== "admin" && (
               <View style={styles.card}>
                 <Text style={styles.sectionTitle}>2) Quét QR của HOST để thành CAREGIVER trong room đó</Text>
+                <TouchableOpacity
+                  style={styles.scanQrBtn}
+                  onPress={() => router.push("/(screens)/room-qr-scan")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mở camera quét mã QR"
+                >
+                  <Ionicons name="qr-code-outline" size={20} color="#1D4ED8" />
+                  <Text style={styles.scanQrBtnTxt}>Quét mã bằng camera</Text>
+                </TouchableOpacity>
                 <TextInput
                   value={hostToken}
                   onChangeText={setHostToken}
-                  placeholder="Dán host_join_token từ QR"
+                  placeholder="Hoặc dán host_join_token từ QR"
                   style={styles.input}
                 />
                 <TouchableOpacity style={styles.primaryBtn} onPress={onJoinByHostQr} disabled={joining}>
@@ -322,6 +352,19 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#F9FAFB",
   },
+  scanQrBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  scanQrBtnTxt: { color: "#1D4ED8", fontWeight: "700", fontSize: 13 },
   primaryBtn: { backgroundColor: "#2563EB", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   primaryTxt: { color: "#FFF", fontWeight: "700", fontSize: 13, textAlign: "center" },
   secondaryBtn: { backgroundColor: "#EEF2FF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },

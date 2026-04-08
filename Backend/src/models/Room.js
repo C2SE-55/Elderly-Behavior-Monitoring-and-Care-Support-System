@@ -6,6 +6,8 @@ const createRoomCode = () =>
 
 const createQrToken = (prefix) => `${prefix}_${crypto.randomBytes(16).toString("hex")}`;
 
+const normalizeMemberRole = (role) => String(role || "").toLowerCase().trim();
+
 class Room {
   static async createByAdmin(adminUserId) {
     const connection = await pool.getConnection();
@@ -120,14 +122,91 @@ class Room {
         error.code = "ROOM_NOT_FOUND";
         throw error;
       }
-      if (room.host_user_id) {
+      if (room.host_user_id && Number(room.host_user_id) !== Number(userId)) {
         const error = new Error("ROOM_ALREADY_HAS_HOST");
         error.code = "ROOM_ALREADY_HAS_HOST";
         throw error;
       }
 
+      if (room.host_user_id && Number(room.host_user_id) === Number(userId)) {
+        await connection.commit();
+        return {
+          room_id: room.room_id,
+          host_join_token: room.host_join_token,
+          already_host: true,
+        };
+      }
+
       const existing = await Room.getMemberByRoomAndUser(room.id, userId, connection);
-      if (existing && existing.member_role === "caretaker") {
+      const exRole = normalizeMemberRole(existing?.member_role);
+      if (existing && exRole === "caretaker") {
+        await connection.execute(
+          `UPDATE room_members
+           SET member_role = 'host',
+               can_manage_medication = 1,
+               can_receive_schedule_notifications = 1,
+               can_receive_medication_notifications = 1,
+               can_view_live = 1
+           WHERE room_id = ? AND user_id = ?`,
+          [room.id, userId]
+        );
+      } else if (!existing) {
+        await connection.execute(
+          `INSERT INTO room_members
+           (room_id, user_id, member_role, can_manage_medication, can_receive_schedule_notifications, can_receive_medication_notifications, can_view_live)
+           VALUES (?, ?, 'host', 1, 1, 1, 1)`,
+          [room.id, userId]
+        );
+      }
+      const hostJoinToken = createQrToken("HOST");
+      await connection.execute("UPDATE rooms SET host_user_id = ?, host_join_token = ? WHERE id = ?", [
+        userId,
+        hostJoinToken,
+        room.id,
+      ]);
+      await connection.commit();
+      return { room_id: room.room_id, host_join_token: hostJoinToken };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /** Join làm HOST khi quét QR admin (payload ADMIN_JOIN:token), không cần nhập mã RM... */
+  static async promoteUserToHostByAdminJoinToken(userId, adminJoinToken) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rooms] = await connection.execute(
+        "SELECT * FROM rooms WHERE admin_join_token = ? LIMIT 1 FOR UPDATE",
+        [adminJoinToken]
+      );
+      const room = rooms[0];
+      if (!room) {
+        const error = new Error("ROOM_NOT_FOUND");
+        error.code = "ROOM_NOT_FOUND";
+        throw error;
+      }
+      if (room.host_user_id && Number(room.host_user_id) !== Number(userId)) {
+        const error = new Error("ROOM_ALREADY_HAS_HOST");
+        error.code = "ROOM_ALREADY_HAS_HOST";
+        throw error;
+      }
+
+      if (room.host_user_id && Number(room.host_user_id) === Number(userId)) {
+        await connection.commit();
+        return {
+          room_id: room.room_id,
+          host_join_token: room.host_join_token,
+          already_host: true,
+        };
+      }
+
+      const existing = await Room.getMemberByRoomAndUser(room.id, userId, connection);
+      const exRole = normalizeMemberRole(existing?.member_role);
+      if (existing && exRole === "caretaker") {
         await connection.execute(
           `UPDATE room_members
            SET member_role = 'host',
@@ -181,13 +260,19 @@ class Room {
         error.code = "ROOM_HAS_NO_HOST";
         throw error;
       }
-      if (room.host_user_id === userId) {
-        const error = new Error("HOST_CANNOT_JOIN_SELF");
-        error.code = "HOST_CANNOT_JOIN_SELF";
-        throw error;
+      if (Number(room.host_user_id) === Number(userId)) {
+        await connection.commit();
+        return {
+          room_id: room.room_id,
+          host_user_id: room.host_user_id,
+          already_member: true,
+          already_host: true,
+        };
       }
 
       const existing = await Room.getMemberByRoomAndUser(room.id, userId, connection);
+      const exRole = normalizeMemberRole(existing?.member_role);
+      let alreadyMember = false;
       if (!existing) {
         await connection.execute(
           `INSERT INTO room_members
@@ -195,15 +280,19 @@ class Room {
            VALUES (?, ?, 'caretaker', 0, 1, 1, 1)`,
           [room.id, userId]
         );
-      } else if (existing.member_role === "caretaker") {
-        // already caretaker in this room
+      } else if (exRole === "caretaker") {
+        alreadyMember = true;
+      } else if (exRole === "host") {
+        const error = new Error("ALREADY_HOST_IN_ROOM");
+        error.code = "ALREADY_HOST_IN_ROOM";
+        throw error;
       } else {
         const error = new Error("ALREADY_HOST_IN_ROOM");
         error.code = "ALREADY_HOST_IN_ROOM";
         throw error;
       }
       await connection.commit();
-      return { room_id: room.room_id, host_user_id: room.host_user_id };
+      return { room_id: room.room_id, host_user_id: room.host_user_id, already_member: alreadyMember };
     } catch (error) {
       await connection.rollback();
       throw error;

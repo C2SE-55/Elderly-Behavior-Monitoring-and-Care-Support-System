@@ -3,9 +3,11 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +17,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import {
   getMyRoom,
   getRoomMembers,
@@ -29,6 +32,9 @@ const TOGGLE_TRACK_H = 30;
 const TOGGLE_THUMB = 26;
 const TOGGLE_PAD = 2;
 const TOGGLE_TRAVEL = TOGGLE_TRACK_W - TOGGLE_THUMB - TOGGLE_PAD * 2;
+
+const getHostQrImageUrl = (payload: string) =>
+  `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}`;
 
 /** Toggle tự vẽ: tránh ScrollView “cướp” cử chỉ ngang của Switch RN; chạm = trượt có spring. */
 function PermissionToggle({
@@ -100,6 +106,7 @@ export default function RoomPermissionsScreen() {
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const togglePendingRef = useRef<Set<number>>(new Set());
 
   const loadAll = useCallback(async (opts?: { silent?: boolean }) => {
@@ -127,6 +134,12 @@ export default function RoomPermissionsScreen() {
       }
     }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAll({ silent: true });
+    setRefreshing(false);
+  }, [loadAll]);
 
   useEffect(() => {
     loadAll();
@@ -164,6 +177,30 @@ export default function RoomPermissionsScreen() {
     } finally {
       togglePendingRef.current.delete(member.user_id);
       setUpdatingId(null);
+    }
+  };
+
+  const hostQrPayload =
+    room?.member_role === "host" && String(room?.host_join_token || "").trim()
+      ? `HOST_JOIN:${String(room.host_join_token).trim()}`
+      : "";
+
+  const copyQrPayload = async () => {
+    const txt = hostQrPayload;
+    if (!txt) return;
+    try {
+      await Clipboard.setStringAsync(txt);
+      if (Platform.OS === "web") {
+        alert("Đã copy nội dung mã QR.");
+      } else {
+        Alert.alert("Đã copy", "Người chăm sóc có thể dán vào app hoặc dùng mã quét trong app.");
+      }
+    } catch {
+      if (Platform.OS === "web") {
+        alert("Không thể copy.");
+      } else {
+        Alert.alert("Lỗi", "Không thể copy.");
+      }
     }
   };
 
@@ -220,6 +257,7 @@ export default function RoomPermissionsScreen() {
           contentContainerStyle={styles.wrap}
           keyboardShouldPersistTaps="always"
           contentInsetAdjustmentBehavior="automatic"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         >
         {room?.member_role !== "host" ? (
           <View style={styles.card}>
@@ -232,6 +270,38 @@ export default function RoomPermissionsScreen() {
             <View style={styles.card}>
               <Text style={styles.roomText}>room_id: {room?.room_id || "-"}</Text>
               <Text style={styles.roomMeta}>Tổng thành viên: {members.length}</Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Mã QR mời người chăm sóc (CAREGIVER)</Text>
+              <Text style={styles.qrIntro}>
+                Người dùng chỉ cần quét mã này trong app để vào phòng — không cần mã QR từ admin. Chỉ dùng cho
+                người chăm sóc, không dùng thay mã admin để lên HOST.
+              </Text>
+              {hostQrPayload ? (
+                <>
+                  <Text style={styles.roomMeta}>Nội dung mã (HOST_JOIN):</Text>
+                  <View style={styles.copyRow}>
+                    <Text style={styles.tokenText} selectable numberOfLines={3}>
+                      {hostQrPayload}
+                    </Text>
+                    <TouchableOpacity style={styles.copyBtn} onPress={() => void copyQrPayload()}>
+                      <Text style={styles.copyTxt}>Copy</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.qrWrap}>
+                    <Image source={{ uri: getHostQrImageUrl(hostQrPayload) }} style={styles.qrImage} />
+                  </View>
+                  <Text style={styles.qrHint}>
+                    Khi tự tạo QR ở app khác, chỉ nhập đúng chuỗi «HOST_JOIN:…» ở trên — không dán link ảnh
+                    https://api.qrserver.com/…
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.warn}>
+                  Chưa có mã mời. Kéo xuống để làm mới trang, hoặc mở mục Phân quyền trong room từ Cài đặt.
+                </Text>
+              )}
             </View>
 
             {members.map((member) => {
@@ -311,6 +381,32 @@ const styles = StyleSheet.create({
   warn: { color: "#92400E", fontWeight: "600", fontSize: 13 },
   roomText: { color: "#111827", fontWeight: "700", fontSize: 14 },
   roomMeta: { color: "#6B7280", fontSize: 12 },
+  sectionTitle: { color: "#111827", fontWeight: "700", fontSize: 14 },
+  qrIntro: { color: "#4B5563", fontSize: 12, lineHeight: 18 },
+  copyRow: { flexDirection: "row", alignItems: "stretch", gap: 8 },
+  tokenText: {
+    flex: 1,
+    color: "#0F172A",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 11,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  copyBtn: {
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  copyTxt: { color: "#1D4ED8", fontWeight: "800", fontSize: 12 },
+  qrWrap: { alignItems: "center", marginTop: 4 },
+  qrImage: { width: 220, height: 220, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFF" },
+  qrHint: { color: "#64748B", fontSize: 11, lineHeight: 16 },
   name: { color: "#111827", fontWeight: "700", fontSize: 14 },
   toggleRow: {
     flexDirection: "row",

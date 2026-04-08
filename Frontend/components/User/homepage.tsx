@@ -10,6 +10,7 @@ import {
     Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
 import type { AxiosError } from "axios";
 import { getCurrentUser, logoutUser, refreshCurrentUserProfile } from "../../services/api";
@@ -105,6 +106,19 @@ const HomepageUserScreen = () => {
                     </View>
                 )}
             </View>
+
+            {user ? (
+                <TouchableOpacity
+                    style={styles.scanRoomBtn}
+                    onPress={() => router.push("/(screens)/room-qr-scan")}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel="Quét mã vào phòng"
+                >
+                    <Ionicons name="qr-code-outline" size={22} color="#1D4ED8" />
+                    <Text style={styles.scanRoomBtnText}>Quét mã vào phòng</Text>
+                </TouchableOpacity>
+            ) : null}
 
             {/* List */}
             <ScrollView
@@ -237,6 +251,27 @@ const styles = StyleSheet.create({
     loginText: {
         color: "#56328C",
         fontSize: scaleFont(12),
+        fontWeight: "800",
+    },
+    scanRoomBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        alignSelf: "center",
+        width: "86%",
+        maxWidth: 320,
+        paddingVertical: 14,
+        paddingHorizontal: 18,
+        marginBottom: 18,
+        borderRadius: 14,
+        backgroundColor: "#EEF2FF",
+        borderWidth: 1.5,
+        borderColor: "#C7D2FE",
+    },
+    scanRoomBtnText: {
+        color: "#1D4ED8",
+        fontSize: scaleFont(16),
         fontWeight: "800",
     },
     logoutBtn: {

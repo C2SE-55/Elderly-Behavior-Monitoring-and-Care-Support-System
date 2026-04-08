@@ -7,7 +7,7 @@ import pymysql
 def _get_conn():
     return pymysql.connect(
         host=os.getenv("sDB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "")),
+        port=int(os.getenv("DB_PORT", "3300")),
         user=os.getenv("DB_USER", "root"),
         password=os.getenv("DB_PASSWORD", ""),
         database=os.getenv("DB_NAME", "data_ecms"),

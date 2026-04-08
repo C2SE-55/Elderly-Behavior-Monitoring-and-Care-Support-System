@@ -4,6 +4,24 @@ const { Room } = require("../models/Room");
 const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
 
+/**
+ * Chuẩn hoá nội dung từ QR / OCR (dấu hai chấm Unicode, BOM, khoảng trắng quanh ":").
+ * Tránh: ADMIN_JOIN：... không khớp regex ASCII → nhánh startsWith("ADMIN_") gửi nhầm cả chuỗi vào CSDL.
+ */
+const normalizeRoomJoinPayload = (raw) => {
+  let s = String(raw || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\u200b/g, "")
+    .replace(/\r|\n/g, "")
+    .trim()
+    .replace(/[\uFF1A\uFE55\u02F8]/g, ":");
+  s = s.replace(/\s*:\s*/g, ":");
+  return s.trim();
+};
+
+/** Token lưu trong DB: ADMIN_<hex> — không dùng startsWith("ADMIN_") vì trùng tiền tố "ADMIN_JOIN". */
+const isBareAdminJoinToken = (s) => /^ADMIN_[a-f0-9]+$/i.test(s);
+
 exports.adminCreateRoom = async (req, res) => {
   try {
     if (req.userRole !== "admin") {
@@ -69,12 +87,25 @@ exports.adminDeleteRoom = async (req, res) => {
 
 exports.joinByAdminRoomCode = async (req, res) => {
   try {
-    const roomId = String(req.body?.room_id || "").trim();
-    if (!roomId) {
+    const raw = normalizeRoomJoinPayload(String(req.body?.room_id || ""));
+    if (!raw) {
       return sendFail(res, "room_id là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const result = await Room.promoteUserToHostByAdminRoomCode(req.userId, roomId);
+    const adminJoinFromQr = raw.match(/^ADMIN_JOIN:(.+)$/i);
+    let result;
+    if (adminJoinFromQr) {
+      const token = normalizeRoomJoinPayload(String(adminJoinFromQr[1] || ""));
+      if (!token) {
+        return sendFail(res, "Mã QR admin không hợp lệ", HTTP_STATUS.BAD_REQUEST);
+      }
+      result = await Room.promoteUserToHostByAdminJoinToken(req.userId, token);
+    } else if (isBareAdminJoinToken(raw)) {
+      result = await Room.promoteUserToHostByAdminJoinToken(req.userId, raw);
+    } else {
+      result = await Room.promoteUserToHostByAdminRoomCode(req.userId, raw);
+    }
+    const alreadyHost = result.already_host === true;
     return sendSuccess(
       res,
       {
@@ -82,23 +113,30 @@ exports.joinByAdminRoomCode = async (req, res) => {
         role_in_room: "host",
         host_join_token: result.host_join_token,
         host_qr_payload: `HOST_JOIN:${result.host_join_token}`,
+        already_in_room: alreadyHost,
       },
-      "Join room thành công, tài khoản đã nâng cấp thành HOST",
+      alreadyHost
+        ? "Bạn đã là chủ phòng (HOST) của phòng này rồi."
+        : "Join room thành công, tài khoản đã nâng cấp thành HOST",
       HTTP_STATUS.OK
     );
   } catch (error) {
     if (error?.code === "ROOM_NOT_FOUND") {
-      return sendFail(res, "room_id không hợp lệ", HTTP_STATUS.NOT_FOUND);
+      const raw = normalizeRoomJoinPayload(String(req.body?.room_id || ""));
+      const isAdminQr = /^ADMIN_JOIN:/i.test(raw) || isBareAdminJoinToken(raw);
+      return sendFail(
+        res,
+        isAdminQr
+          ? "Mã QR admin không đúng hoặc phòng đã bị xóa. Hãy nhờ admin làm mới QR."
+          : "room_id không hợp lệ hoặc không tồn tại trên hệ thống.",
+        HTTP_STATUS.NOT_FOUND
+      );
     }
     if (error?.code === "ROOM_ALREADY_HAS_HOST") {
       return sendFail(res, "Room này đã có HOST", HTTP_STATUS.CONFLICT);
     }
     if (error?.code === "ER_DUP_ENTRY") {
-      return sendFail(
-        res,
-        "CSDL hiện tại còn ràng buộc UNIQUE theo user ở room_members/rooms. Vui lòng cập nhật schema để cho phép 1 user ở nhiều room.",
-        HTTP_STATUS.CONFLICT
-      );
+      return sendFail(res, "Bạn đã có trong phòng này rồi.", HTTP_STATUS.CONFLICT);
     }
     console.error("Lỗi join room bằng room_id admin:", error);
     return sendError(res, "Không thể join room", HTTP_STATUS.INTERNAL_ERROR);
@@ -107,19 +145,33 @@ exports.joinByAdminRoomCode = async (req, res) => {
 
 exports.joinByHostQr = async (req, res) => {
   try {
-    const hostJoinToken = String(req.body?.host_join_token || "").trim();
+    let hostJoinToken = normalizeRoomJoinPayload(String(req.body?.host_join_token || ""));
+    const fromQr = hostJoinToken.match(/^HOST_JOIN:(.+)$/i);
+    if (fromQr) {
+      hostJoinToken = normalizeRoomJoinPayload(String(fromQr[1] || ""));
+    }
     if (!hostJoinToken) {
       return sendFail(res, "host_join_token là bắt buộc", HTTP_STATUS.BAD_REQUEST);
     }
 
     const result = await Room.joinAsCaretakerByHostToken(req.userId, hostJoinToken);
+    const alreadyIn = result.already_member === true || result.already_host === true;
+    const asHost = result.already_host === true;
+    let message = "Join room thành công, tài khoản đã trở thành CARETAKER";
+    if (asHost) {
+      message = "Bạn là chủ phòng (HOST) của phòng này rồi — không cần quét mã dành cho người chăm sóc.";
+    } else if (result.already_member === true) {
+      message = "Bạn đã có sẵn trong phòng này (vai trò người chăm sóc).";
+    }
     return sendSuccess(
       res,
       {
         room_id: result.room_id,
-        role_in_room: "caretaker",
+        role_in_room: asHost ? "host" : "caretaker",
+        already_in_room: alreadyIn,
+        already_host: asHost,
       },
-      "Join room thành công, tài khoản đã trở thành CARETAKER",
+      message,
       HTTP_STATUS.OK
     );
   } catch (error) {
@@ -130,17 +182,17 @@ exports.joinByHostQr = async (req, res) => {
       return sendFail(res, "Room chưa có HOST", HTTP_STATUS.CONFLICT);
     }
     if (error?.code === "HOST_CANNOT_JOIN_SELF") {
-      return sendFail(res, "HOST không thể tự quét QR của chính mình", HTTP_STATUS.BAD_REQUEST);
+      return sendFail(res, "Bạn là chủ phòng này rồi — không cần quét mã dành cho người chăm sóc.", HTTP_STATUS.BAD_REQUEST);
     }
     if (error?.code === "ALREADY_HOST_IN_ROOM") {
-      return sendFail(res, "Bạn đã là HOST trong room này", HTTP_STATUS.CONFLICT);
-    }
-    if (error?.code === "ER_DUP_ENTRY") {
       return sendFail(
         res,
-        "CSDL hiện tại còn ràng buộc UNIQUE theo user ở room_members/rooms. Vui lòng cập nhật schema để cho phép 1 user ở nhiều room.",
+        "Bạn đã có trong phòng này với vai trò chủ phòng (HOST). Không cần quét mã người chăm sóc.",
         HTTP_STATUS.CONFLICT
       );
+    }
+    if (error?.code === "ER_DUP_ENTRY") {
+      return sendFail(res, "Bạn đã có trong phòng này rồi.", HTTP_STATUS.CONFLICT);
     }
     console.error("Lỗi join room bằng host QR:", error);
     return sendError(res, "Không thể join room", HTTP_STATUS.INTERNAL_ERROR);
