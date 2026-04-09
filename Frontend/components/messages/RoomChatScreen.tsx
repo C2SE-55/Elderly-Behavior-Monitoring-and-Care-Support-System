@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import type { AxiosError } from "axios";
@@ -22,6 +24,7 @@ import {
   deleteRoomNote,
   getCurrentUser,
   getMyRoom,
+  getMyRooms,
   getRoomMessages,
   getRoomNotes,
   markRoomMessagesRead,
@@ -53,6 +56,7 @@ const pinnedKeyFor = (roomId: number) => `ebms.roomchat.pinnedMessage.v1.${Strin
 
 export default function RoomChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ roomId?: string; roomName?: string }>();
   const roomId = Number(params.roomId || 0);
   const roomName = String(params.roomName || `Room #${roomId}`);
@@ -68,16 +72,40 @@ export default function RoomChatScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [draft, setDraft] = useState("");
   const [typingText, setTypingText] = useState("");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [notePinned, setNotePinned] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [showComposer, setShowComposer] = useState(false);
   const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
+  const [noteDetailVisible, setNoteDetailVisible] = useState(false);
 
   const beforeIdRef = useRef<number | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<FlatList<RoomChatMessage> | null>(null);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const subShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const subHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const subShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const subHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,16 +152,21 @@ export default function RoomChatScreen() {
     setLoading(true);
     try {
       setActiveRoomId(roomId);
-      const [page, noteRows, roomInfo] = await Promise.all([
+      const [page, noteRows, roomInfo, roomList] = await Promise.all([
         getRoomMessages(roomId, { limit: 100 }),
         getRoomNotes(roomId),
         getMyRoom(),
+        getMyRooms().catch(() => []),
       ]);
       setMessages(page.items || []);
       setHasMore(!!page.has_more);
       beforeIdRef.current = page.next_before_id;
       setNotes(noteRows);
-      setRole(roomInfo?.member_role ?? null);
+      const byCurrentRoom = Array.isArray(roomList)
+        ? roomList.find((r) => Number(r?.id || 0) === Number(roomId))?.member_role
+        : null;
+      const resolvedRole = String(byCurrentRoom || roomInfo?.member_role || "").toLowerCase();
+      setRole((resolvedRole as any) || null);
       const latestId = Number(page.items?.[page.items.length - 1]?.id || 0);
       if (latestId > 0) {
         await markRoomMessagesRead(roomId, { read_until_id: latestId });
@@ -167,7 +200,6 @@ export default function RoomChatScreen() {
   }, [loadInitial]);
 
   useEffect(() => {
-    // Messenger-like: always keep newest visible (best-effort).
     if (!messages.length) return;
     const t = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: true });
@@ -280,32 +312,46 @@ export default function RoomChatScreen() {
     await sendRoomMessage(roomId, content);
   };
 
+  const roleKey = String(role || "").toLowerCase();
+  const canEditNotes = roleKey === "host";
+
   const submitNote = async () => {
-    if (!roomId || role !== "host") return;
+    if (!roomId || !canEditNotes) return;
     if (!noteContent.trim()) {
       Alert.alert("Thiếu nội dung", "Vui lòng nhập nội dung note.");
       return;
     }
-    if (editingNoteId) {
-      await updateRoomNote(roomId, editingNoteId, {
-        title: noteTitle.trim(),
-        content: noteContent.trim(),
-        is_pinned: notePinned,
-      });
-    } else {
-      await createRoomNote(roomId, {
-        title: noteTitle.trim(),
-        content: noteContent.trim(),
-        is_pinned: notePinned,
-      });
+    const payload = {
+      title: noteTitle.trim(),
+      content: noteContent.trim(),
+      is_pinned: notePinned,
+    };
+    try {
+      const latest = [...notes].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+      const targetId = editingNoteId || latest?.id || 0;
+      if (targetId) {
+        await updateRoomNote(roomId, targetId, payload);
+      } else {
+        await createRoomNote(roomId, payload);
+      }
+
+      setEditingNoteId(null);
+      setNoteTitle("");
+      setNoteContent("");
+      setNotePinned(false);
+      setShowComposer(false);
+      const rows = await getRoomNotes(roomId);
+      setNotes(rows);
+    } catch (e) {
+      const ax = e as AxiosError<{ message?: string }>;
+      const status = Number(ax?.response?.status || 0);
+      const msg =
+        (typeof ax.response?.data === "object" && ax.response?.data?.message) ||
+        (status === 403
+          ? "Bạn chưa có quyền sửa ghi chú trong phòng này."
+          : "Không lưu được ghi chú. Vui lòng thử lại.");
+      showErr("Lỗi lưu ghi chú", String(msg));
     }
-    setEditingNoteId(null);
-    setNoteTitle("");
-    setNoteContent("");
-    setNotePinned(false);
-    setShowComposer(false);
-    const rows = await getRoomNotes(roomId);
-    setNotes(rows);
   };
 
   const onEditNote = (note: RoomNote) => {
@@ -429,48 +475,73 @@ export default function RoomChatScreen() {
     );
   };
 
-  const sortedNotes = useMemo(() => {
-    const pinned = notes.filter((n) => n.is_pinned);
-    const rest = notes.filter((n) => !n.is_pinned);
-    return [...pinned, ...rest];
+  const latestNote = useMemo(() => {
+    if (!notes.length) return null;
+    const rows = [...notes].sort((a, b) => {
+      const ta = Date.parse(a.updated_at || a.created_at || "");
+      const tb = Date.parse(b.updated_at || b.created_at || "");
+      return tb - ta;
+    });
+    return rows[0] || null;
   }, [notes]);
+
+  useEffect(() => {
+    setNoteDetailVisible(false);
+  }, [latestNote?.id, latestNote?.updated_at]);
 
   const notesPanel = (
     <View style={styles.notesStickyOuter}>
       <View style={styles.notesSection}>
         <View style={styles.notesHeader}>
-          <TouchableOpacity style={styles.notesBackBtn} onPress={goBackToRoomList} accessibilityRole="button">
-            <Feather name="chevron-left" size={22} color="#56328C" />
-            <Text style={styles.notesBackText}>Danh sách phòng</Text>
-          </TouchableOpacity>
-          <Text style={styles.notesTitle}>Ghi chú</Text>
-          {role === "host" ? (
-            <TouchableOpacity style={styles.noteBtn} onPress={() => setShowComposer((v) => !v)}>
-              <Text style={styles.noteBtnText}>{showComposer ? "Đóng" : "Tạo note"}</Text>
+          <View style={styles.notesHeaderSide}>
+            <TouchableOpacity style={styles.notesBackBtn} onPress={goBackToRoomList} accessibilityRole="button">
+              <Feather name="chevron-left" size={22} color="#56328C" />
             </TouchableOpacity>
-          ) : (
-            <View style={styles.notesHeaderSpacer} />
-          )}
+          </View>
+          <Text style={styles.notesTitle}>Ghi chú</Text>
+          <View style={styles.notesHeaderSide}>
+            {canEditNotes ? (
+              <TouchableOpacity
+                style={styles.noteBtn}
+                onPress={() => {
+                  if (latestNote) {
+                    onEditNote(latestNote);
+                    return;
+                  }
+                  setEditingNoteId(null);
+                  setNoteTitle("");
+                  setNoteContent("");
+                  setNotePinned(false);
+                  setShowComposer((v) => !v);
+                }}
+              >
+                <Text style={styles.noteBtnText}>{showComposer ? "Đóng" : latestNote ? "Sửa note" : "Tạo note"}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.notesHeaderSpacer} />
+            )}
+          </View>
         </View>
 
-        {showComposer && role === "host" && (
+        {showComposer && canEditNotes && (
           <View style={styles.noteComposer}>
             <TextInput
               value={noteTitle}
               onChangeText={setNoteTitle}
-              placeholder="Tiêu đề (tuỳ chọn)"
+              placeholder="Tiêu đề"
+              placeholderTextColor="#111827"
               style={styles.noteInput}
             />
             <TextInput
               value={noteContent}
               onChangeText={setNoteContent}
               placeholder="Nội dung note..."
-              style={[styles.noteInput, { minHeight: 72 }]}
+              placeholderTextColor="#111827"
+              style={[styles.noteInput, styles.noteContentInput]}
               multiline
+              scrollEnabled
+              textAlignVertical="top"
             />
-            <TouchableOpacity style={styles.pinBtn} onPress={() => setNotePinned((v) => !v)}>
-              <Text style={styles.pinText}>{notePinned ? "Đang ghim đầu khung chat" : "Ghim lên đầu khung chat"}</Text>
-            </TouchableOpacity>
             <TouchableOpacity style={styles.submitNoteBtn} onPress={() => void submitNote()}>
               <Text style={styles.submitNoteText}>{editingNoteId ? "Cập nhật" : "Lưu"}</Text>
             </TouchableOpacity>
@@ -481,38 +552,60 @@ export default function RoomChatScreen() {
           style={styles.notesScroll}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={sortedNotes.length > 2}
+          showsVerticalScrollIndicator={false}
         >
-          {sortedNotes.map((n) => (
-            <View key={n.id} style={[styles.noteCard, n.is_pinned && styles.noteCardPinned]}>
+          {latestNote ? (
+            <View key={latestNote.id} style={[styles.noteCard, latestNote.is_pinned && styles.noteCardPinned]}>
               <View style={styles.noteCardTop}>
-                <Text style={styles.noteTitleText}>{n.title || "Không tiêu đề"}</Text>
-                {n.is_pinned && <Text style={styles.pinBadge}>GHIM</Text>}
+                <Text style={styles.noteTitleText}>{latestNote.title || "Ghi chú truyền đạt"}</Text>
+                {latestNote.is_pinned && <Text style={styles.pinBadge}>GHIM</Text>}
               </View>
-              <Text style={styles.noteContent}>{n.content}</Text>
+              {(() => {
+                const raw = String(latestNote.content || "");
+                const text = raw.trim();
+                const lineCount = text ? text.split(/\r?\n/).length : 0;
+                // Show "Xem chi tiết" when note likely over 3 visible lines
+                // (explicit newlines or long content that can wrap).
+                const longNote = lineCount > 3 || text.length > 80;
+                return (
+                  <>
+                    <Text style={styles.noteContent} numberOfLines={3}>
+                      {text}
+                    </Text>
+                    {longNote ? (
+                      <TouchableOpacity onPress={() => setNoteDetailVisible(true)} activeOpacity={0.85}>
+                        <Text style={styles.noteDetailText}>Xem chi tiết</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </>
+                );
+              })()}
               <Text style={styles.noteMeta}>
-                {n.created_by_name} · {fmt(n.updated_at)}
+                Cập nhật lần gần nhất: {fmt(latestNote.updated_at)} · {latestNote.created_by_name}
               </Text>
-              {role === "host" && (
+              {canEditNotes && (
                 <View style={styles.noteActions}>
-                  <TouchableOpacity onPress={() => onEditNote(n)}>
+                  <TouchableOpacity onPress={() => onEditNote(latestNote)}>
                     <Text style={styles.editText}>Sửa</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => onDeleteNote(n)}>
-                    <Text style={styles.deleteText}>Xóa</Text>
                   </TouchableOpacity>
                 </View>
               )}
             </View>
-          ))}
+          ) : (
+            <Text style={styles.noteMeta}>Chưa có ghi chú truyền đạt cho người thân trong room này.</Text>
+          )}
         </ScrollView>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+        style={{ flex: 1 }}
+      >
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1 }}>
@@ -553,7 +646,7 @@ export default function RoomChatScreen() {
           data={messages}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderMessage}
-          contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: 18 }}
           onScrollToIndexFailed={() => {}}
           onScroll={({ nativeEvent }) => {
             if (nativeEvent.contentOffset.y < 40) void loadOlder();
@@ -571,10 +664,11 @@ export default function RoomChatScreen() {
           }
         />
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: keyboardVisible ? 10 : Math.max(insets.bottom, 10) }]}>
           <TextInput
             style={styles.input}
             placeholder="Nhập tin nhắn..."
+            placeholderTextColor="#111827"
             value={draft}
             onChangeText={onDraftChange}
             multiline
@@ -583,6 +677,31 @@ export default function RoomChatScreen() {
             <Text style={styles.sendText}>Gửi</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal
+          visible={noteDetailVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setNoteDetailVisible(false)}
+        >
+          <View style={styles.noteDetailBackdrop}>
+            <View style={styles.noteDetailCard}>
+              <View style={styles.noteDetailHeader}>
+                <Text style={styles.noteDetailTitle}>{latestNote?.title || "Ghi chú truyền đạt"}</Text>
+                <TouchableOpacity onPress={() => setNoteDetailVisible(false)} hitSlop={10}>
+                  <Text style={styles.noteDetailClose}>Đóng</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.noteDetailScroll} showsVerticalScrollIndicator>
+                <Text style={styles.noteDetailBody}>{latestNote?.content || ""}</Text>
+              </ScrollView>
+              <Text style={styles.noteMeta}>
+                Cập nhật lần gần nhất: {latestNote ? fmt(latestNote.updated_at) : ""} ·{" "}
+                {latestNote?.created_by_name || ""}
+              </Text>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -615,10 +734,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 6,
   },
+  notesHeaderSide: {
+    width: 104,
+    flexDirection: "row",
+    justifyContent: "flex-start",
+  },
   notesBackBtn: {
     flexDirection: "row",
     alignItems: "center",
-    maxWidth: "38%",
     paddingVertical: 4,
     paddingRight: 4,
   },
@@ -662,6 +785,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginBottom: 8,
   },
+  noteContentInput: {
+    height: 96,
+    maxHeight: 96,
+  },
   pinBtn: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#F1F5F9" },
   pinText: { color: "#334155", fontWeight: "600", fontSize: 12 },
   submitNoteBtn: { marginTop: 8, alignSelf: "flex-start", backgroundColor: "#4F46E5", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
@@ -682,7 +809,31 @@ const styles = StyleSheet.create({
   noteTitleText: { fontWeight: "700", color: "#111827", flex: 1, marginRight: 8 },
   pinBadge: { fontSize: 10, fontWeight: "800", color: "#FFFFFF", backgroundColor: "#8B5CF6", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999 },
   noteContent: { color: "#334155", marginTop: 6 },
+  noteDetailText: { marginTop: 6, color: "#4F46E5", fontSize: 12, fontWeight: "700" },
   noteMeta: { marginTop: 6, color: "#64748B", fontSize: 11 },
+  noteDetailBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  noteDetailCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    maxHeight: "80%",
+  },
+  noteDetailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 8,
+  },
+  noteDetailTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: "#111827" },
+  noteDetailClose: { fontSize: 13, fontWeight: "800", color: "#4F46E5" },
+  noteDetailScroll: { maxHeight: 360 },
+  noteDetailBody: { fontSize: 15, lineHeight: 22, color: "#111827" },
   noteActions: { marginTop: 8, flexDirection: "row", gap: 12 },
   editText: { color: "#4F46E5", fontWeight: "700" },
   deleteText: { color: "#DC2626", fontWeight: "700" },
@@ -699,10 +850,6 @@ const styles = StyleSheet.create({
   empty: { marginTop: 16, textAlign: "center", color: "#64748B" },
   loadingMore: { textAlign: "center", color: "#64748B", fontSize: 12, marginVertical: 10 },
   composer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
     backgroundColor: "#FFFFFF",

@@ -142,24 +142,6 @@ export default function RoomChatListScreen() {
       if (!roomId || !msg) return;
       setRows((prev) => {
         const roomName = prev.find((r) => r.room_id === roomId)?.room_name || `Room #${roomId}`;
-        if (Number(msg.sender_user_id || 0) !== myUserId) {
-          const notifOn = chatNotifByRoomRef.current.get(roomId) !== false;
-          if (notifOn) {
-            void appendNotificationLog({
-              type: "room-message",
-              title: `Phòng ${roomName} có tin nhắn mới`,
-              body: `${msg.sender_name}: ${msg.content} (${fmtTime(msg.created_at || null)})`,
-              data: {
-                room_id: roomId,
-                room_name: roomName,
-                sender_name: msg.sender_name,
-                content: msg.content,
-                sent_at: msg.created_at,
-              },
-              read: false,
-            });
-          }
-        }
         return prev
           .map((x) =>
             x.room_id === roomId

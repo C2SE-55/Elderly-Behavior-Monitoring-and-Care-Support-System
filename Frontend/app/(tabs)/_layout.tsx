@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Platform, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
-import { getMyRoom, subscribeActiveRoomChange } from "@/services/api";
+import { getCurrentUser, getMyRoom, getRoomChatNotificationPrefs, subscribeActiveRoomChange } from "@/services/api";
 import { handleRemoteMedicationIntake } from "@/services/medicationIntakeSync";
 import { appendNotificationLog, getNotificationLogs, subscribeNotificationLogChange } from "@/services/notificationLog";
 import { connectRoomChatSocket } from "@/services/roomChatSocket";
@@ -15,6 +15,7 @@ const ACTIVE = "#56328C";    // tím đậm
 export default function TabLayout() {
   const lastSigRef = useRef<{ sig: string; at: number } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const chatNotifByRoomRef = useRef<Map<number, boolean>>(new Map());
 
   const refreshUnreadCount = useCallback(async () => {
     try {
@@ -88,6 +89,8 @@ export default function TabLayout() {
               ? "weekly-schedule"
               : data?.type === "care-confirmation"
                 ? "care-confirmation"
+                : data?.type === "room-message"
+                  ? "room-message"
                 : "system";
         const title = content.title || "Thông báo";
         const body = content.body || "";
@@ -125,7 +128,20 @@ export default function TabLayout() {
     const socket = connectRoomChatSocket();
     if (!socket) return;
 
+    const me = getCurrentUser() as { id?: number; fullName?: string; username?: string } | null;
+    const myUserId = Number(me?.id || 0);
+
     let cancelled = false;
+    const refreshChatPrefs = async () => {
+      try {
+        const rows = await getRoomChatNotificationPrefs();
+        const next = new Map<number, boolean>();
+        rows.forEach((r) => next.set(Number(r.room_id), r.chat_notifications_enabled !== false));
+        chatNotifByRoomRef.current = next;
+      } catch {
+        // best-effort: keep previous map
+      }
+    };
     const joinActiveRoom = async () => {
       const room = await getMyRoom().catch(() => null);
       const rid = room?.id;
@@ -133,12 +149,80 @@ export default function TabLayout() {
       socket.emit("room:join", { roomId: Number(rid) });
     };
 
+    void refreshChatPrefs();
     void joinActiveRoom();
+    const prefTimer = setInterval(() => void refreshChatPrefs(), 20_000);
 
     const onIntake = (payload: unknown) => {
       void handleRemoteMedicationIntake(payload);
     };
     socket.on("medication:intake", onIntake);
+
+    const onMessageNew = (payload: any) => {
+      const msg = payload?.message;
+      const roomId = Number(payload?.roomId || msg?.room_id || 0);
+      if (!roomId || !msg) return;
+      if (myUserId && Number(msg.sender_user_id || 0) === myUserId) return;
+
+      // Respect per-room notification preference (default ON if missing).
+      if (chatNotifByRoomRef.current.get(roomId) === false) return;
+
+      const roomName = String(msg.room_id || `Room #${roomId}`);
+      const content = String(msg.content || "").trim();
+      const sender = String(msg.sender_name || "").trim();
+      const preview = content.length > 80 ? `${content.slice(0, 77)}…` : content;
+
+      const title = `Phòng ${roomName} có tin nhắn mới`;
+      const body = sender ? `${sender}: ${preview}` : preview || "Có tin nhắn mới trong phòng.";
+
+      // Local push notification (works even when user is outside chat screen).
+      void (async () => {
+        try {
+          const Notifications = await import("expo-notifications");
+          const perms = await Notifications.getPermissionsAsync();
+          if (!perms.granted) {
+            const req = await Notifications.requestPermissionsAsync();
+            if (!req.granted) return;
+          }
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title,
+              body,
+              sound: true,
+              data: {
+                type: "room-message",
+                room_id: roomId,
+                room_name: roomName,
+                sender_name: sender || null,
+                content,
+                sent_at: msg.created_at,
+              },
+            },
+            trigger: null,
+          });
+        } catch {
+          // ignore
+        }
+      })();
+
+      void appendNotificationLog({
+        type: "room-message",
+        title,
+        body,
+        data: {
+          type: "room-message",
+          room_id: roomId,
+          room_name: roomName,
+          sender_name: sender || null,
+          content,
+          sent_at: msg.created_at,
+        },
+        read: false,
+      })
+        .then(() => refreshUnreadCount())
+        .catch(() => {});
+    };
+    socket.on("message:new", onMessageNew);
 
     const unsubRoom = subscribeActiveRoomChange(() => {
       void joinActiveRoom();
@@ -147,9 +231,11 @@ export default function TabLayout() {
     return () => {
       cancelled = true;
       unsubRoom();
+      clearInterval(prefTimer);
       socket.off("medication:intake", onIntake);
+      socket.off("message:new", onMessageNew);
     };
-  }, []);
+  }, [refreshUnreadCount]);
 
   const notificationBadge = useMemo(() => {
     if (!unreadCount) return undefined;

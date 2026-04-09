@@ -233,6 +233,12 @@ export default function NotificationDetailModal({
     return safety.safetyType === "left_safe_zone" ? "Rời khỏi vùng an toàn" : "Té ngã";
   }, [safety]);
 
+  const roomMessageStatusText = useMemo(() => {
+    if (!item) return null;
+    if (item.type !== "room-message") return null;
+    return item.read ? "Đã đọc" : "Chưa đọc";
+  }, [item]);
+
   const handleConfirm = async () => {
     if (!item || !myRole) return;
     if (!canConfirm) return;
@@ -315,7 +321,7 @@ export default function NotificationDetailModal({
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Trạng thái</Text>
                   <Text style={styles.metaValue}>
-                    {safetyStatusText || (care ? statusText : genericStatusText)}
+                    {safetyStatusText || roomMessageStatusText || (care ? statusText : genericStatusText)}
                   </Text>
                 </View>
               </ScrollView>

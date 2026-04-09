@@ -184,9 +184,6 @@ export default function RoomAccessScreen() {
         <View style={styles.card}>
           <Text style={styles.label}>Vai trò hệ thống hiện tại</Text>
           <Text style={styles.badge}>{roleBadge}</Text>
-          <Text style={styles.meta}>
-            Room role: {room?.member_role ? room.member_role.toUpperCase() : "CHƯA THAM GIA ROOM"}
-          </Text>
           {!!room?.room_id && <Text style={styles.meta}>room_id: {room.room_id}</Text>}
         </View>
 
