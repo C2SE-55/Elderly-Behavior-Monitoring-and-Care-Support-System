@@ -19,9 +19,9 @@ Nguồn video:
     + YOLO_IMGSZ=320          -> kích thước input YOLO (mặc định 416), nhỏ hơn = nhanh hơn
     + YOLO_HALF=auto          -> FP16 trên GPU (mặc định auto); YOLO_HALF=0 tắt
   Phát hiện té (bbox + spread keypoint + vai–hông; mặc định không kiểm tra “sàn”):
-    + FALL_REQUIRE_FLOOR=1       -> bật kiểm tra gần sàn (mặc định tắt để dễ đếm té trên video)
-    + FALL_TORSO_MIN_RATIO=0.45  -> heuristic vai–hông (mặc định ~0.52); nhỏ hơn = dễ bắt
-    + FALL_KP_LYING_ASPECT=0.72  -> spread keypoint ngang/dọc (mặc định ~0.78)
+    + FALL_REQUIRE_FLOOR=1       -> bật kiểm tra gần sàn (mặc định tắt)
+    + FALL_LEG_VETO=0            -> tắt lọc “chân dưới hông” nếu cần tinh chỉnh
+    + FALL_FB1_MIN_STREAK=5      -> số frame liên tiếp mới cho fallback keypoint đếm +1
   Ví dụ (Windows): set VIDEO_SOURCE=D:\\videos\\room1.mp4
   Ví dụ (Linux):   export VIDEO_SOURCE=/path/to/video.mp4
 
@@ -37,6 +37,8 @@ Endpoint:
 Nhận diện khuôn mặt (người cần giám sát từ Quản lý thông tin sức khỏe):
   - Backend cung cấp GET /api/health-metrics/face-references (danh sách ảnh face_image_url).
   - Camera Service gọi API đó khi khởi động; biến môi trường BACKEND_URL (vd: http://localhost:5000).
+  - FACE_MATCH_TOLERANCE (mặc định 0.65), FACE_RECOGNITION_INTERVAL (N frame), FACE_TARGET_PROFILE_IDS (CSV id),
+    FACE_REFS_REFRESH_SECONDS (0=chỉ lúc start), FACE_SINGLE_PERSON_FALLBACK=0 (1=1 người+1 ref thì gán tên khi chưa khớp mặt).
 
 Ghi nhận sự kiện té (bảng fall_events) qua Backend:
   - Khi phát hiện té, Camera Service gửi ảnh JPEG lên Backend POST /api/fall-events.
@@ -149,6 +151,10 @@ stream_state = {
     "ready": False,
     "target_visible": False,
     "person_count": 0,
+    "matched_profile_id": None,
+    "matched_name": "",
+    "face_references_count": 0,
+    "face_recognition_active": False,
     "person_in_zone": False,
     "supervisor_missing": False,
     "any_person": False,
@@ -260,6 +266,10 @@ def fall_status():
         "source": source_label,
         "target_visible": stream_state.get("target_visible", False),
         "person_count": stream_state.get("person_count", 0),
+        "matched_profile_id": stream_state.get("matched_profile_id"),
+        "matched_name": stream_state.get("matched_name", "") or "",
+        "face_references_count": stream_state.get("face_references_count", 0),
+        "face_recognition_active": stream_state.get("face_recognition_active", False),
         "person_in_zone": stream_state.get("person_in_zone", False),
         "supervisor_missing": stream_state.get("supervisor_missing", False),
         "any_person": stream_state.get("any_person", False),

@@ -164,6 +164,88 @@ def _bbox_center_in_polygon(box, poly_norm, w_img, h_img):
     return point_in_polygon(cx, cy, poly_norm)
 
 
+def _pose_xyxy_clip(ann, w_img, h_img):
+    x_, y_, bw, bh = ann.bbox()
+    return _clip_bbox_xyxy((float(x_), float(y_), float(x_ + bw), float(y_ + bh)), w_img, h_img)
+
+
+def _bbox_overlap_ratio_pose_yolo(pose_xyxy, ybox):
+    ax1, ay1, ax2, ay2 = pose_xyxy
+    bx1, by1, bx2, by2 = ybox
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    a_area = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+    return inter / a_area
+
+
+def _yolo_boxes_for_primary_pose(primary_idx, preds, yolo_boxes, w_img, h_img):
+    if primary_idx is None or not preds or primary_idx >= len(preds) or not yolo_boxes:
+        return []
+    try:
+        pose_xyxy = _pose_xyxy_clip(preds[primary_idx], w_img, h_img)
+    except Exception:
+        return []
+    min_ol = max(0.05, pipeline_config.POSE_YOLO_MIN_OVERLAP * 0.5)
+    out = [yb for yb in yolo_boxes if _bbox_overlap_ratio_pose_yolo(pose_xyxy, yb) >= min_ol]
+    return out if out else []
+
+
+def _primary_subject_bbox(primary_idx, preds, yolo_boxes, w_img, h_img):
+    """BBox người được giám sát (pose + ưu tiên YOLO chồng lên pose)."""
+    if primary_idx is None or not preds or primary_idx >= len(preds):
+        return None
+    pose_xyxy = _pose_xyxy_clip(preds[primary_idx], w_img, h_img)
+    if yolo_boxes:
+        yb_list = _yolo_boxes_for_primary_pose(primary_idx, preds, yolo_boxes, w_img, h_img)
+        if yb_list:
+            return max(
+                yb_list,
+                key=lambda b: max(0.0, float(b[2] - b[0])) * max(0.0, float(b[3] - b[1])),
+            )
+    return pose_xyxy
+
+
+def _resolve_primary_subject(texts_to_use, preds, face_refs):
+    """Trả về (pose_index, profile_id, tên) cho người khớp ảnh tham chiếu."""
+    if not face_refs or not preds:
+        return None, None, None
+    if not texts_to_use:
+        return None, None, None
+    ref_by_name = {}
+    for name, pid, _enc in face_refs:
+        key = (name or "").strip()
+        if key:
+            ref_by_name[key] = (name, pid)
+    for i, t in enumerate(texts_to_use):
+        if t is None:
+            continue
+        tstrip = str(t).strip()
+        if not tstrip:
+            continue
+        if tstrip in ref_by_name:
+            name, pid = ref_by_name[tstrip]
+            return i, pid, name
+        if len(face_refs) == 1:
+            return i, face_refs[0][1], face_refs[0][0]
+    return None, None, None
+
+
+def _pose_highlight_colors(preds, primary_idx):
+    """Màu tab20: primary nổi bật, người khác nhạt hơn."""
+    if not preds or primary_idx is None:
+        return None
+    secondary = 2
+    primary_c = 18
+    return [primary_c if i == primary_idx else secondary for i in range(len(preds))]
+
+
 def cli():  # pylint: disable=too-many-statements,too-many-branches
     parser = argparse.ArgumentParser(
         prog='python3 -m openpifpaf.video',
@@ -265,13 +347,13 @@ def processor_factory(args):
 def _configure_webcam_capture(capture):
     """Yêu cầu độ phân giải + buffer nhỏ (iVCam / webcam ảo hay mặc định 640x480 → nhòe khi scale).
 
-    Biến môi trường: WEBCAM_WIDTH, WEBCAM_HEIGHT (mặc định 1280x720). Đặt 0 để không ép.
+    Biến môi trường: WEBCAM_WIDTH, WEBCAM_HEIGHT (mặc định 960x540, nhẹ hơn 720p). Đặt 0 để không ép.
     """
     try:
-        w = int(os.environ.get("WEBCAM_WIDTH", "1280"))
-        h = int(os.environ.get("WEBCAM_HEIGHT", "720"))
+        w = int(os.environ.get("WEBCAM_WIDTH", "960"))
+        h = int(os.environ.get("WEBCAM_HEIGHT", "540"))
     except ValueError:
-        w, h = 1280, 720
+        w, h = 960, 540
     if w > 0 and h > 0:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(w))
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(h))
@@ -345,6 +427,8 @@ def inference(args, stream, stream_state=None):
 
     last_loop = time.time()
     output_fps = 0
+    # FPS thực tế của vòng lặp (để FallDetector/tracker khớp lịch sử, tránh dùng input_fps=30 giả)
+    prev_output_fps = 8.0
     droppedFrames = 0
     old_fallcount = 0
     last_preds = []
@@ -371,6 +455,8 @@ def inference(args, stream, stream_state=None):
 
     # Cạnh “có người → không người” + (tùy chọn) thiếu người kéo dài → ghi left_safe_zone_events
     prev_any_person_for_snapshot = None
+    prev_target_visible = None
+    last_face_refetch_ts = 0.0
     last_no_person_snapshot_ts = 0.0
     no_person_snapshot_run = 0
 
@@ -443,6 +529,22 @@ def inference(args, stream, stream_state=None):
             last_yolo_boxes = yolo_detector.detect_person_boxes(
                 image, conf=pipeline_config.YOLO_CONF
             )
+
+        if (
+            pipeline_config.FACE_REFS_REFRESH_SECONDS > 0
+            and getattr(face_recognizer, "HAS_FACE_RECOGNITION", False)
+        ):
+            now_ref = time.time()
+            if now_ref - last_face_refetch_ts >= pipeline_config.FACE_REFS_REFRESH_SECONDS:
+                last_face_refetch_ts = now_ref
+                face_refs = face_recognizer.load_face_references()
+                if face_refs and safe_zone is None:
+                    safe_zone = SafeZoneTracker(
+                        out_seconds=pipeline_config.OUT_OF_ZONE_SECONDS,
+                        alert_cooldown=pipeline_config.OUT_OF_ZONE_ALERT_COOLDOWN,
+                    )
+                LOG.info("Làm mới ảnh tham chiếu: %d embedding.", len(face_refs))
+
         # Nhận diện khuôn mặt từ DB (health_profiles.face_image_url) để gắn tên người cần giám sát
         if face_refs and (frame_i % pipeline_config.FACE_RECOGNITION_INTERVAL == 0):
             try:
@@ -457,20 +559,25 @@ def inference(args, stream, stream_state=None):
             texts_to_use = (last_face_texts + [""] * max(0, len(preds) - len(last_face_texts)))[:len(preds)]
         else:
             texts_to_use = None
-        # Nếu chỉ 1 người và 1 ảnh tham chiếu: luôn gắn tên (fallback khi face recognition chưa khớp)
-        if face_refs and len(preds) == 1 and (texts_to_use is None or not any(texts_to_use)):
-            first_name = face_refs[0][0] if face_refs else ""
+        if (
+            face_refs
+            and pipeline_config.FACE_SINGLE_PERSON_FALLBACK
+            and len(preds) == 1
+            and len(face_refs) == 1
+            and (texts_to_use is None or not any(texts_to_use))
+        ):
+            first_name = face_refs[0][0]
             if first_name:
                 texts_to_use = [first_name]
 
+        h_img, w_img = image.shape[:2]
+        primary_pose_index, matched_profile_id, matched_name = _resolve_primary_subject(
+            texts_to_use, preds, face_refs
+        )
+
         target_visible = False
         if face_refs:
-            if texts_to_use and any(texts_to_use):
-                target_visible = True
-            elif last_face_matches and any(getattr(m, "name", None) for m in last_face_matches):
-                target_visible = True
-            elif len(preds) == 1 and len(face_refs) == 1:
-                target_visible = True
+            target_visible = primary_pose_index is not None
             if pipeline_config.STRICT_EMPTY_ROOM and not last_yolo_boxes:
                 target_visible = False
         if safe_zone is not None:
@@ -481,21 +588,40 @@ def inference(args, stream, stream_state=None):
                     buf = io.BytesIO()
                     animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
                     buf.seek(0)
-                    pid = face_refs[0][1] if len(face_refs) == 1 else None
+                    pid_alert = matched_profile_id
+                    if pid_alert is None and len(face_refs) == 1:
+                        pid_alert = face_refs[0][1]
                     fall_event_client.send_out_of_zone_snapshot(
-                        buf.getvalue(), pipeline_config.CAMERA_ID, profile_id=pid
+                        buf.getvalue(), pipeline_config.CAMERA_ID, profile_id=pid_alert
                     )
                     LOG.warning("Cảnh báo: không thấy người được giám sát trong khung hình (đủ lâu).")
                 except Exception as e:
                     LOG.warning("Gửi cảnh báo rời vùng quan sát thất bại: %s", e)
 
+        fall_restrict = bool(face_refs)
+        yolo_motion = None
+        if fall_restrict:
+            yolo_motion = (
+                _yolo_boxes_for_primary_pose(
+                    primary_pose_index, preds, last_yolo_boxes, w_img, h_img
+                )
+                if primary_pose_index is not None
+                else []
+            )
+        highlight_colors = _pose_highlight_colors(preds, primary_pose_index) if face_refs else None
+
+        fall_fps = max(1.5, min(float(input_fps), float(prev_output_fps)))
         fallcount = annotation_painter.annotations(
             ax,
             preds,
             ID,
-            input_fps,
+            fall_fps,
             texts=texts_to_use,
             yolo_boxes=last_yolo_boxes,
+            colors=highlight_colors,
+            primary_annotation_index=primary_pose_index,
+            restrict_fall_to_primary=fall_restrict,
+            yolo_boxes_motion=yolo_motion,
         )
         if fallcount is not None:
             if fallcount > old_fallcount and animation.fig is not None:
@@ -503,39 +629,48 @@ def inference(args, stream, stream_state=None):
                     buf = io.BytesIO()
                     animation.fig.savefig(buf, format="jpeg", dpi=72, bbox_inches="tight", pad_inches=0.02)
                     buf.seek(0)
-                    profile_id = None
-                    if face_refs and len(face_refs) == 1:
-                        profile_id = face_refs[0][1]
+                    profile_id_fall = matched_profile_id
+                    if profile_id_fall is None and len(face_refs) == 1:
+                        profile_id_fall = face_refs[0][1]
                     fall_event_client.send_fall_image_to_backend(
                         buf.getvalue(),
                         camera_id=pipeline_config.CAMERA_ID,
-                        profile_id=profile_id,
+                        profile_id=profile_id_fall,
                         severity_level="high",
                     )
                 except Exception as e:
                     LOG.warning("Gửi ảnh té lên Backend thất bại: %s", e)
             old_fallcount = fallcount
 
-        # Vùng giám sát: khung chữ nhật bám bbox người (kích thước thay đổi theo người); không người → báo ngay
-        h_img, w_img = image.shape[:2]
         any_person = _any_person_in_frame(last_yolo_boxes, preds)
         primary_bbox = None
         person_in_zone = False
         supervisor_missing = False
         if pipeline_config.SUPERVISOR_ZONE_ENABLED:
-            supervisor_missing = not any_person
-            if any_person:
-                primary_bbox = _primary_person_bbox(
-                    last_yolo_boxes, preds, w_img, h_img
-                )
-                if primary_bbox is not None and zone_poly:
-                    person_in_zone = _bbox_center_in_polygon(
-                        primary_bbox, zone_poly, w_img, h_img
+            if face_refs:
+                supervisor_missing = not target_visible
+                if target_visible:
+                    primary_bbox = _primary_subject_bbox(
+                        primary_pose_index, preds, last_yolo_boxes, w_img, h_img
                     )
-                elif zone_poly:
-                    person_in_zone = _any_person_in_supervisor_zone(
-                        last_yolo_boxes, preds, w_img, h_img, zone_poly
+                    if primary_bbox is not None and zone_poly:
+                        person_in_zone = _bbox_center_in_polygon(
+                            primary_bbox, zone_poly, w_img, h_img
+                        )
+            else:
+                supervisor_missing = not any_person
+                if any_person:
+                    primary_bbox = _primary_person_bbox(
+                        last_yolo_boxes, preds, w_img, h_img
                     )
+                    if primary_bbox is not None and zone_poly:
+                        person_in_zone = _bbox_center_in_polygon(
+                            primary_bbox, zone_poly, w_img, h_img
+                        )
+                    elif zone_poly:
+                        person_in_zone = _any_person_in_supervisor_zone(
+                            last_yolo_boxes, preds, w_img, h_img, zone_poly
+                        )
 
         if getattr(ax, "_supervisor_zone_patch", None) is not None:
             try:
@@ -566,10 +701,15 @@ def inference(args, stream, stream_state=None):
             ax._supervisor_zone_patch = patch
 
         if pipeline_config.SUPERVISOR_ZONE_ENABLED and supervisor_missing:
+            sup_msg = (
+                "Không phát hiện người được giám sát"
+                if face_refs
+                else "Không phát hiện người"
+            )
             ax._supervisor_msg = ax.text(
                 0.5,
                 0.5,
-                "Không phát hiện người",
+                sup_msg,
                 fontsize=15,
                 color="white",
                 ha="center",
@@ -588,14 +728,23 @@ def inference(args, stream, stream_state=None):
         if max_fps > 0 and loop_time < 1.0 / max_fps:
             time.sleep(1.0 / max_fps - loop_time)
             loop_time = time.time() - last_loop
-        output_fps = 1.0 / loop_time
-        
-        ax.text(0, 0.95, "FPS: {}".format(output_fps), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
-        # Nhãn tên người cần giám sát (luôn hiện khi có ảnh tham chiếu)
-        if face_refs and len(face_refs) > 0:
-            label_name = face_refs[0][0]
-            ax.text(0.5, 0.02, "Người cần giám sát: {}".format(label_name), fontsize=14, color='white',
-                    transform=ax.transAxes, ha='center', bbox={'facecolor': '#4B2E83', 'alpha': 0.9, 'linewidth': 0, 'pad': 0.3})
+        output_fps = 1.0 / max(loop_time, 1e-6)
+        prev_output_fps = max(0.8, output_fps)
+
+        ax.text(0, 0.95, "FPS: {:.1f}".format(output_fps), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
+        if face_refs:
+            names_lbl = ", ".join(sorted({(r[0] or "").strip() for r in face_refs if (r[0] or "").strip()}))
+            status_lbl = " — đang thấy: {}".format(matched_name) if matched_name else ""
+            ax.text(
+                0.5,
+                0.02,
+                "Người cần giám sát: {}{}".format(names_lbl or "N/A", status_lbl),
+                fontsize=14,
+                color="white",
+                transform=ax.transAxes,
+                ha="center",
+                bbox={"facecolor": "#4B2E83", "alpha": 0.9, "linewidth": 0, "pad": 0.3},
+            )
         if fallcount is not None:
             ax.text(0, 0.9, "Fall Count: {}".format(fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
             old_fallcount = fallcount
@@ -611,8 +760,9 @@ def inference(args, stream, stream_state=None):
         # POST left_safe_zone_events: (1) cạnh có người → mất, hoặc (2) không người liên tục đủ lâu
         # (trường hợp YOLO/pose không bao giờ báo có người — UI vẫn báo đỏ nhưng DB không có nếu chỉ dùng cạnh)
         should_snapshot_edge = (
-            prev_any_person_for_snapshot is True
-            and supervisor_missing
+            (prev_target_visible is True and not target_visible)
+            if face_refs
+            else (prev_any_person_for_snapshot is True and supervisor_missing)
         )
         should_snapshot_sustained = (
             pipeline_config.SUPERVISOR_NO_PERSON_SUSTAINED_SNAPSHOT
@@ -679,7 +829,11 @@ def inference(args, stream, stream_state=None):
                 stream_state['fps'] = output_fps
                 stream_state['ready'] = True
                 stream_state['target_visible'] = target_visible
-                stream_state['person_count'] = len(last_yolo_boxes)
+                stream_state['person_count'] = max(len(last_yolo_boxes), len(preds))
+                stream_state['matched_profile_id'] = matched_profile_id
+                stream_state['matched_name'] = matched_name or ""
+                stream_state['face_references_count'] = len(face_refs)
+                stream_state['face_recognition_active'] = bool(face_refs)
                 stream_state['person_in_zone'] = person_in_zone
                 stream_state['supervisor_missing'] = supervisor_missing
                 stream_state['any_person'] = any_person
@@ -687,12 +841,22 @@ def inference(args, stream, stream_state=None):
                 LOG.debug('stream_state savefig: %s', e)
 
         if stream_state is not None:
+            stream_state["target_visible"] = target_visible
+            stream_state["person_count"] = max(len(last_yolo_boxes), len(preds))
+            stream_state["matched_profile_id"] = matched_profile_id
+            stream_state["matched_name"] = matched_name or ""
+            stream_state["face_references_count"] = len(face_refs)
+            stream_state["face_recognition_active"] = bool(face_refs)
+            stream_state["fallcount"] = old_fallcount
+            stream_state["fps"] = output_fps
             stream_state["person_in_zone"] = person_in_zone
             stream_state["supervisor_missing"] = supervisor_missing
             stream_state["any_person"] = any_person
 
         if pipeline_config.SUPERVISOR_ZONE_ENABLED:
             prev_any_person_for_snapshot = any_person
+            if face_refs:
+                prev_target_visible = target_visible
 
         last_loop = time.time()
 

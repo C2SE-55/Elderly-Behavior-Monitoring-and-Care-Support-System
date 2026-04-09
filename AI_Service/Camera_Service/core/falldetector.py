@@ -60,19 +60,68 @@ def torso_shoulder_hip_horizontal(kps: np.ndarray) -> bool:
     return dx >= pipeline_config.FALL_TORSO_MIN_RATIO * dy
 
 
+def _visible_kp_count(arr: np.ndarray) -> int:
+    if arr is None or arr.ndim != 2 or arr.shape[1] < 3:
+        return 0
+    return int(np.count_nonzero(arr[:, 2] > 0))
+
+
+def legs_suggest_standing(kps: np.ndarray) -> bool:
+    """Gối/mắt cá nằm rõ phía dưới hông (trục y ảnh tăng xuống) → thường là đứng/cúi, không phải nằm ngang."""
+    if not pipeline_config.FALL_LEG_VETO or kps is None or len(kps) < 17:
+        return False
+    hip_y = []
+    for i in (11, 12):
+        if kps[i, 2] > 0:
+            hip_y.append(float(kps[i, 1]))
+    if not hip_y:
+        return False
+    hip_mid = float(np.mean(hip_y))
+    ys = kps[:, 1][kps[:, 2] > 0]
+    span_y = float(np.max(ys) - np.min(ys)) if ys.size > 1 else 80.0
+    margin = max(18.0, 0.07 * span_y)
+
+    def y_below_hip(idx: int) -> bool:
+        if kps[idx, 2] <= 0:
+            return False
+        return float(kps[idx, 1]) > hip_mid + margin
+
+    below = sum(1 for i in (13, 14, 15, 16) if y_below_hip(i))
+    if below >= 2:
+        return True
+    # Một chân đủ dài: đầu gối rồi mắt cá cùng phía, cả hai dưới hông
+    for knee, ankle in ((13, 15), (14, 16)):
+        if kps[knee, 2] <= 0 or kps[ankle, 2] <= 0:
+            continue
+        ky, ay = float(kps[knee, 1]), float(kps[ankle, 1])
+        if ay > ky > hip_mid + margin * 0.5:
+            return True
+    return False
+
+
 def lying_hint_from_keypoints(kps) -> bool:
-    """True nếu spread ngang đủ hoặc đoạn vai–hông nằm ngang trong khung."""
+    """True nếu spread ngang đủ hoặc đoạn vai–hông nằm ngang (trừ trường hợp cúi có chân đứng)."""
     if kps is None:
         return False
     arr = np.asarray(kps)
     if arr.ndim != 2 or arr.shape[1] < 3:
         return False
+
+    wk, hk = keypoint_span_wh(arr)
+    keypoints_look_horizontal = False
+    if wk is not None and hk is not None and hk > 1e-6 and wk >= 1.02 * hk:
+        keypoints_look_horizontal = True
+
+    # Cúi/đứng: chân dưới hông nhưng bbox kéo dọc — chặn FP. Không chặn khi keypoint đã rộng ngang (nằm thật).
+    if legs_suggest_standing(arr) and not keypoints_look_horizontal:
+        return False
+
     if pipeline_config.FALL_USE_KEYPOINT_SPREAD:
-        wk, hk = keypoint_span_wh(arr)
-        if wk is not None and hk is not None and hk > 1e-6:
-            min_h = max(8.0, float(pipeline_config.FALL_KP_MIN_SPAN_H))
-            if hk >= min_h and wk >= pipeline_config.FALL_KP_LYING_ASPECT * hk:
-                return True
+        if _visible_kp_count(arr) >= pipeline_config.FALL_KP_MIN_COUNT_SPREAD:
+            if wk is not None and hk is not None and hk > 1e-6:
+                min_h = max(8.0, float(pipeline_config.FALL_KP_MIN_SPAN_H))
+                if hk >= min_h and wk >= pipeline_config.FALL_KP_LYING_ASPECT * hk:
+                    return True
     if torso_shoulder_hip_horizontal(arr):
         return True
     return False

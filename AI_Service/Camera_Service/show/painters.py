@@ -48,7 +48,9 @@ class AnnotationPainter:
         }
 
     def annotations(self, ax, annotations, ID, fps, *,
-                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None):
+                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None,
+                    primary_annotation_index=None, restrict_fall_to_primary=False,
+                    yolo_boxes_motion=None):
         fallcount = None
         by_classname = defaultdict(list)
         for ann_i, ann in enumerate(annotations):
@@ -67,6 +69,10 @@ class AnnotationPainter:
             )
             if classname == 'Annotation':
                 kwargs["yolo_boxes"] = yolo_boxes
+                kwargs["annotation_source_indices"] = [i for i, _ in i_anns]
+                kwargs["primary_annotation_index"] = primary_annotation_index
+                kwargs["restrict_fall_to_primary"] = restrict_fall_to_primary
+                kwargs["yolo_boxes_motion"] = yolo_boxes_motion
             fallcount = self.painters[classname].annotations(ax, anns, ID, fps, **kwargs)
 
         return fallcount
@@ -196,6 +202,7 @@ class KeypointPainter:
         self._global_cooldown = pipeline_config.FALL_GLOBAL_COOLDOWN_FRAMES
         self._fall_streak = defaultdict(int)
         self._last_global_fall_frame = -999
+        self._fb1_streak = 0  # fallback keypoint: cần nhiều frame liên tiếp, tránh FP khi cúi/người thưa kp
 
         self.ct = core.CentroidTracker()
         self.falls = core.FallDetector()
@@ -299,19 +306,26 @@ class KeypointPainter:
                     line_styles.append('solid')
                 else:
                     line_styles.append('dashed')
-        ax.add_collection(matplotlib.collections.LineCollection(
-            lines, colors=line_colors,
-            linewidths=kwargs.get('linewidth', self.linewidth),
-            linestyles=kwargs.get('linestyle', line_styles),
-            capstyle='round',
-        ))
+        if lines:
+            lw = max(3.0, float(kwargs.get('linewidth', self.linewidth)))
+            lc = matplotlib.collections.LineCollection(
+                lines, colors=line_colors,
+                linewidths=lw,
+                linestyles=kwargs.get('linestyle', line_styles),
+                capstyle='round',
+                zorder=5,
+            )
+            lc.set_alpha(0.95)
+            ax.add_collection(lc)
 
         # joints
+        ms = max(self.markersize, 4)
         ax.scatter(
-            x[v > 0.0], y[v > 0.0], s=self.markersize**2, marker='.',
+            x[v > 0.0], y[v > 0.0], s=ms**2, marker='o',
             color='white' if self.color_connections else color,
-            edgecolor='k' if self.highlight_invisible else None,
-            zorder=2,
+            edgecolors='#111111',
+            linewidths=0.6,
+            zorder=6,
         )
 
         # highlight joints
@@ -321,10 +335,11 @@ class KeypointPainter:
             highlight_v = np.logical_and(v, highlight_v)
 
             ax.scatter(
-                x[highlight_v], y[highlight_v], s=self.markersize**2, marker='.',
+                x[highlight_v], y[highlight_v], s=ms**2, marker='o',
                 color='white' if self.color_connections else color,
-                edgecolor='k' if self.highlight_invisible else None,
-                zorder=2,
+                edgecolors='#111111',
+                linewidths=0.6,
+                zorder=6,
             )
 
     def keypoints(self, ax, keypoint_sets, *,
@@ -434,16 +449,32 @@ class KeypointPainter:
         ax.text(0, 0.9, "Fall Count: {}".format(fallcount), fontsize=16, color='black', transform=ax.transAxes, bbox={'facecolor': 'white', 'alpha': 0.5, 'linewidth': 0, 'pad': 0.1})
         
     def annotations(self, ax, annotations, stream, fps, *,
-                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None):
+                    color=None, colors=None, texts=None, subtexts=None, yolo_boxes=None,
+                    annotation_source_indices=None,
+                    primary_annotation_index=None, restrict_fall_to_primary=False,
+                    yolo_boxes_motion=None):
         centroids = []
         filtered_annotations = []
         filtered_texts = []
-        
+        filtered_source_indices = []
+
+        if annotation_source_indices is None:
+            annotation_source_indices = list(range(len(annotations)))
+        elif len(annotation_source_indices) != len(annotations):
+            annotation_source_indices = list(range(len(annotations)))
+
         use_yolo_gate = pipeline_config.POSE_USE_YOLO_GATE and bool(yolo_boxes)
         min_overlap = max(0.0, pipeline_config.POSE_YOLO_MIN_OVERLAP)
         min_score = pipeline_config.POSE_MIN_SCORE
         min_area = pipeline_config.POSE_MIN_BOX_AREA
-        
+
+        def _fall_eligible(global_idx):
+            if not restrict_fall_to_primary:
+                return True
+            if primary_annotation_index is None:
+                return False
+            return global_idx == primary_annotation_index
+
         for i, ann in enumerate(annotations):
             x_, y_, w_, h_ = ann.bbox()
             if w_ < 5.0:
@@ -466,14 +497,26 @@ class KeypointPainter:
 
             filtered_annotations.append(ann)
             filtered_texts.append(texts[i] if texts is not None and i < len(texts) else None)
+            filtered_source_indices.append(annotation_source_indices[i])
 
         ylim_pre = ax.get_ylim()
         frame_height_pre = abs(ylim_pre[1] - ylim_pre[0]) if ylim_pre else None
-        self._append_fall_motion_context(yolo_boxes, filtered_annotations, frame_height_pre)
+        motion_yolo = yolo_boxes_motion if yolo_boxes_motion is not None else yolo_boxes
+        ann_motion = filtered_annotations
+        if restrict_fall_to_primary:
+            if primary_annotation_index is None:
+                ann_motion = []
+            else:
+                ann_motion = [
+                    ann
+                    for ann, gidx in zip(filtered_annotations, filtered_source_indices)
+                    if gidx == primary_annotation_index
+                ]
+        self._append_fall_motion_context(motion_yolo, ann_motion, frame_height_pre)
 
         for i, ann in enumerate(filtered_annotations):
             self.centroid = -1
-            
+
             color = i
             if colors is not None:
                 color = colors[i]
@@ -497,8 +540,8 @@ class KeypointPainter:
                 subtext = '{:.0%}'.format(ann.score())
 
             self.annotation(ax, ann, color=color, text=text, subtext=subtext)
-            
-            if self.centroid != -1:
+
+            if self.centroid != -1 and _fall_eligible(filtered_source_indices[i]):
                 centroids.append(self.centroid)
             
         self.persons = self.ct.update(centroids, fps)
@@ -536,9 +579,37 @@ class KeypointPainter:
 
         self.prev_fallen = self.fallen
 
-        # Fallback 1: chỉ khi đã có bằng chứng keypoint (không đếm té chỉ vì bbox pose đổi kích thước)
-        if len(self.fallen) == 0 and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN:
-            for ann in filtered_annotations:
+        # Fallback 1: keypoint lying_hint + bbox nằm ngang rõ + streak — tránh spam khi FALL_REQUIRE_FLOOR=0
+        hint_strong = False
+        for ann, gidx in zip(filtered_annotations, filtered_source_indices):
+            if restrict_fall_to_primary and not _fall_eligible(gidx):
+                continue
+            if not lying_hint_from_keypoints(ann.data):
+                continue
+            xa, ya, wa, ha = ann.bbox()
+            if wa < 5:
+                wa += 4.0
+            if ha < 5:
+                ha += 4.0
+            if ha <= 1e-6 or wa * ha <= 200:
+                continue
+            if wa < pipeline_config.FALL_CLEARLY_LYING_ASPECT * ha:
+                continue
+            hint_strong = True
+            break
+        if hint_strong:
+            self._fb1_streak += 1
+        else:
+            self._fb1_streak = 0
+
+        if (
+            len(self.fallen) == 0
+            and self._fb1_streak >= pipeline_config.FALL_FB1_MIN_STREAK
+            and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN
+        ):
+            for ann, gidx in zip(filtered_annotations, filtered_source_indices):
+                if restrict_fall_to_primary and not _fall_eligible(gidx):
+                    continue
                 if not lying_hint_from_keypoints(ann.data):
                     continue
                 x_, y_, w_, h_ = ann.bbox()
@@ -546,7 +617,9 @@ class KeypointPainter:
                     w_ = w_ + 4
                 if h_ < 5:
                     h_ = h_ + 4
-                if w_ * h_ <= 200:
+                if h_ <= 1e-6 or w_ * h_ <= 200:
+                    continue
+                if w_ < pipeline_config.FALL_CLEARLY_LYING_ASPECT * h_:
                     continue
                 on_floor = True
                 if pipeline_config.FALL_REQUIRE_FLOOR and frame_height is not None and frame_height > 0:
@@ -558,19 +631,21 @@ class KeypointPainter:
                 if on_floor:
                     self.fallcount += 1
                     self._last_fallback_fall_frame = self.framecount
-                    LOG.info("FALL COUNT (fallback): {}".format(self.fallcount))
+                    self._fb1_streak = 0
+                    LOG.info("FALL COUNT (fallback keypoint+bbox): {}".format(self.fallcount))
                     break
         
         # Fallback 2: pose mất track — YOLO bbox nằm ngang + có cú rơi + từng thấy upright (tránh đếm vì khung to)
+        yolo_fb_boxes = motion_yolo if motion_yolo is not None else yolo_boxes
         if (
             pipeline_config.FALL_USE_YOLO_FALLBACK
             and len(self.fallen) == 0
-            and yolo_boxes
+            and yolo_fb_boxes
             and self.framecount - self._last_fallback_fall_frame >= self._FALLBACK_COOLDOWN
             and self._yolo_drop_supports_fall()
             and self._yolo_upright_context_ok()
         ):
-            for (x1, y1, x2, y2) in yolo_boxes:
+            for (x1, y1, x2, y2) in yolo_fb_boxes:
                 w_ = max(0.0, float(x2 - x1))
                 h_ = max(0.0, float(y2 - y1))
                 if h_ <= 1e-6:

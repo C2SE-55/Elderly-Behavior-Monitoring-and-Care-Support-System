@@ -8,6 +8,8 @@ from collections import namedtuple
 
 import cv2
 
+from . import pipeline_config
+
 LOG = logging.getLogger(__name__)
 
 # Optional: face_recognition (pip install face_recognition). Nếu không cài thì nhận diện tắt.
@@ -34,6 +36,22 @@ def _get_backend_url():
     return os.environ.get("BACKEND_URL", "http://localhost:5000").rstrip("/")
 
 
+def _parse_target_profile_ids():
+    raw = pipeline_config.FACE_TARGET_PROFILE_IDS
+    if not raw:
+        return None
+    out = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.add(int(part))
+        except ValueError:
+            LOG.warning("FACE_TARGET_PROFILE_IDS: bỏ qua id không hợp lệ %r", part)
+    return out if out else None
+
+
 def load_face_references(backend_url=None):
     """
     Gọi API Backend GET /api/health-metrics/face-references, tải từng ảnh,
@@ -46,6 +64,11 @@ def load_face_references(backend_url=None):
     backend_url = backend_url or _get_backend_url()
     api_url = backend_url + "/api/health-metrics/face-references"
     refs = []
+    allow_ids = _parse_target_profile_ids()
+    api_count = 0
+    skipped_filter = 0
+    failed_decode = 0
+    no_face = 0
     try:
         r = requests.get(api_url, timeout=10)
         r.raise_for_status()
@@ -54,38 +77,65 @@ def load_face_references(backend_url=None):
         items = payload.get("data") if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
         if not isinstance(items, list):
             items = []
+        api_count = len(items)
     except Exception as e:
         LOG.warning("Không lấy được face-references từ Backend (%s): %s", api_url, e)
         return []
 
     for item in items:
+        profile_id = item.get("id") or item.get("user_id")
+        if allow_ids is not None:
+            try:
+                pid_int = int(profile_id) if profile_id is not None else None
+            except (TypeError, ValueError):
+                pid_int = None
+            if pid_int is None or pid_int not in allow_ids:
+                skipped_filter += 1
+                continue
         full_url = item.get("image_full_url") or (backend_url + (item.get("face_image_url") or "").lstrip("/"))
         name = (item.get("elderly_name") or "").strip() or "N/A"
-        profile_id = item.get("id") or item.get("user_id")
         try:
             img_r = requests.get(full_url, timeout=5)
             img_r.raise_for_status()
             arr = np.frombuffer(img_r.content, dtype=np.uint8)
             img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             if img is None:
-                LOG.warning("Không decode được ảnh: %s", full_url)
+                failed_decode += 1
+                LOG.warning("Không decode được ảnh (profile id=%s): %s", profile_id, full_url)
                 continue
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             locs = face_recognition.face_locations(img_rgb)
             if not locs:
-                LOG.warning("Không tìm thấy khuôn mặt trong ảnh: %s", full_url)
+                no_face += 1
+                LOG.warning(
+                    "Không detect được khuôn mặt trong ảnh tham chiếu (id=%s, %s): %s",
+                    profile_id,
+                    name,
+                    full_url,
+                )
                 continue
             encodings = face_recognition.face_encodings(img_rgb, locs)
             if not encodings:
+                no_face += 1
                 continue
             refs.append((name, profile_id, encodings[0]))
             LOG.info("Đã thêm tham chiếu: %s (id=%s)", name, profile_id)
         except Exception as e:
-            LOG.warning("Lỗi xử lý ảnh %s: %s", full_url, e)
+            failed_decode += 1
+            LOG.warning("Lỗi xử lý ảnh (id=%s): %s — %s", profile_id, full_url, e)
+    LOG.info(
+        "Face references: API=%d bản ghi → embedding=%d dùng được | "
+        "bỏ qua lọc id=%d | lỗi tải/giải mã=%d | không có mặt=%d",
+        api_count,
+        len(refs),
+        skipped_filter,
+        failed_decode,
+        no_face,
+    )
     return refs
 
 
-def match_faces_in_image(image_rgb, reference_encodings, tolerance=0.65):
+def match_faces_in_image(image_rgb, reference_encodings, tolerance=None):
     """
     image_rgb: numpy (H,W,3) RGB.
     reference_encodings: list of (elderly_name, profile_id, encoding) từ load_face_references.
@@ -93,6 +143,9 @@ def match_faces_in_image(image_rgb, reference_encodings, tolerance=0.65):
     """
     if not HAS_FACE_RECOGNITION or not reference_encodings:
         return []
+
+    if tolerance is None:
+        tolerance = pipeline_config.FACE_MATCH_TOLERANCE
 
     try:
         locs = face_recognition.face_locations(image_rgb)

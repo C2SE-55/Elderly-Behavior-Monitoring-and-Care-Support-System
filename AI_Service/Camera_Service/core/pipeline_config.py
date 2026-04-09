@@ -21,9 +21,22 @@ POSE_MIN_BOX_AREA = float(os.environ.get("POSE_MIN_BOX_AREA", "65.0"))
 # MJPEG (matplotlib savefig): tăng mặc định cho hình rõ hơn trên app (máy yếu: giảm qua env)
 STREAM_JPEG_DPI = max(20, min(120, int(os.environ.get("STREAM_JPEG_DPI", "56"))))
 STREAM_JPEG_QUALITY = max(30, min(95, int(os.environ.get("STREAM_JPEG_QUALITY", "78"))))
-STREAM_UPDATE_EVERY_N_FRAMES = max(1, int(os.environ.get("STREAM_UPDATE_EVERY_N_FRAMES", "1")))
+# 2 = encode MJPEG mỗi 2 frame, bớt savefig → vòng nhận diện nhanh hơn (app hơi giật nếu cần đặt 1)
+STREAM_UPDATE_EVERY_N_FRAMES = max(1, int(os.environ.get("STREAM_UPDATE_EVERY_N_FRAMES", "2")))
 
 FACE_RECOGNITION_INTERVAL = max(1, int(os.environ.get("FACE_RECOGNITION_INTERVAL", "20")))
+# Ngưỡng face_distance (face_recognition); mặc định 0.65 — càng thấp càng khắt khe
+FACE_MATCH_TOLERANCE = float(os.environ.get("FACE_MATCH_TOLERANCE", "0.65"))
+# Khi có ≥2 người / không khớp mặt: nếu 1=cho phép coi người duy nhất là đúng như trước (không khuyến khích)
+FACE_SINGLE_PERSON_FALLBACK = os.environ.get("FACE_SINGLE_PERSON_FALLBACK", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Lọc profile tham chiếu theo id health_profiles (CSV) — rỗng = tất cả từ API
+FACE_TARGET_PROFILE_IDS = os.environ.get("FACE_TARGET_PROFILE_IDS", "").strip()
+# Làm mới ảnh tham chiếu từ Backend mỗi N giây (0 = chỉ lúc khởi động)
+FACE_REFS_REFRESH_SECONDS = max(0, int(os.environ.get("FACE_REFS_REFRESH_SECONDS", "0")))
 
 OUT_OF_ZONE_SECONDS = float(os.environ.get("OUT_OF_ZONE_SECONDS", "12"))
 OUT_OF_ZONE_ALERT_COOLDOWN = float(os.environ.get("OUT_OF_ZONE_ALERT_COOLDOWN", "30"))
@@ -63,22 +76,28 @@ FALL_LYING_ASPECT = float(os.environ.get("FALL_LYING_ASPECT", "1.02"))
 FALL_CLEARLY_LYING_ASPECT = float(os.environ.get("FALL_CLEARLY_LYING_ASPECT", "1.05"))
 # Spread keypoint thuần (min/max điểm vẽ được): w_span >= hệ số * h_span → coi nằm ngang (bắt té khi bbox vẫn “đứng”)
 FALL_USE_KEYPOINT_SPREAD = os.environ.get("FALL_USE_KEYPOINT_SPREAD", "1").lower() in ("1", "true", "yes", "")
-FALL_KP_LYING_ASPECT = float(os.environ.get("FALL_KP_LYING_ASPECT", "0.82"))
+FALL_KP_LYING_ASPECT = float(os.environ.get("FALL_KP_LYING_ASPECT", "0.95"))
 # Chiều cao spread keypoint tối thiểu (px) mới dùng ratio w/h — tránh hk quá nhỏ → tưởng “nằm” khi chỉ thấy nửa thân / lại gần cam
-FALL_KP_MIN_SPAN_H = float(os.environ.get("FALL_KP_MIN_SPAN_H", "32"))
+FALL_KP_MIN_SPAN_H = float(os.environ.get("FALL_KP_MIN_SPAN_H", "48"))
+# Ít nhất bấy nhiêu keypoint có conf > 0 mới dùng heuristic spread (tránh sparse → FP)
+FALL_KP_MIN_COUNT_SPREAD = max(3, int(os.environ.get("FALL_KP_MIN_COUNT_SPREAD", "6")))
+# Bật: có gối/mắt cá dưới hông rõ (chân đứng / cúi) thì không coi là lying_hint
+FALL_LEG_VETO = os.environ.get("FALL_LEG_VETO", "1").lower() in ("1", "true", "yes", "")
 # Vai–hông: |x_vai - x_hông| so với |y_vai - y_hông| (người nằm nghiêng trong khung)
 FALL_USE_TORSO = os.environ.get("FALL_USE_TORSO", "1").lower() in ("1", "true", "yes", "")
-FALL_TORSO_MIN_RATIO = float(os.environ.get("FALL_TORSO_MIN_RATIO", "0.52"))
+FALL_TORSO_MIN_RATIO = float(os.environ.get("FALL_TORSO_MIN_RATIO", "0.68"))
 FALL_MOVEMENT_RATIO = float(os.environ.get("FALL_MOVEMENT_RATIO", "0.025"))
 FALL_MIN_HISTORY_FRAMES = max(1, int(os.environ.get("FALL_MIN_HISTORY_FRAMES", "1")))
 FALL_COOLDOWN_FRAMES = max(1, int(os.environ.get("FALL_COOLDOWN_FRAMES", "45")))
 FALL_STABLE_LYING_FRAMES = max(1, int(os.environ.get("FALL_STABLE_LYING_FRAMES", "1")))
 FALL_FALLBACK_COOLDOWN_FRAMES = max(1, int(os.environ.get("FALL_FALLBACK_COOLDOWN_FRAMES", "18")))
-FALL_CONFIRM_FRAMES = max(1, int(os.environ.get("FALL_CONFIRM_FRAMES", "1")))
-FALL_GLOBAL_COOLDOWN_FRAMES = max(1, int(os.environ.get("FALL_GLOBAL_COOLDOWN_FRAMES", "18")))
+# Số frame liên tiếp “có dấu hiệu té” trước khi fallback keypoint tăng counter (chống spam)
+FALL_FB1_MIN_STREAK = max(1, int(os.environ.get("FALL_FB1_MIN_STREAK", "5")))
+FALL_CONFIRM_FRAMES = max(1, int(os.environ.get("FALL_CONFIRM_FRAMES", "2")))
+FALL_GLOBAL_COOLDOWN_FRAMES = max(1, int(os.environ.get("FALL_GLOBAL_COOLDOWN_FRAMES", "24")))
 # YOLO: bắt té khi pose mất keypoint lúc nằm; kèm cửa động (rơi + từng đứng) để không đếm vì khung to lên
 FALL_USE_YOLO_FALLBACK = os.environ.get("FALL_USE_YOLO_FALLBACK", "1").lower() in ("1", "true", "yes", "")
-FALL_YOLO_LYING_ASPECT = float(os.environ.get("FALL_YOLO_LYING_ASPECT", "1.28"))
+FALL_YOLO_LYING_ASPECT = float(os.environ.get("FALL_YOLO_LYING_ASPECT", "1.18"))
 FALL_YOLO_REQUIRE_DROP = os.environ.get("FALL_YOLO_REQUIRE_DROP", "1").lower() in ("1", "true", "yes", "")
 FALL_YOLO_REQUIRE_UPRIGHT = os.environ.get("FALL_YOLO_REQUIRE_UPRIGHT", "1").lower() in ("1", "true", "yes", "")
 # Biên độ tâm Y (chuẩn hoá theo chiều cao khung) trong cửa sổ gần đây — có cú “tụt” xuống
@@ -92,7 +111,7 @@ FALL_HORIZONTAL_FLOOR_ASPECT = float(os.environ.get("FALL_HORIZONTAL_FLOOR_ASPEC
 # Đáy bbox (từ trên xuống) phải ≥ tỉ lệ chiều cao khung — người chạm vùng thấp (sàn)
 FALL_BBOX_BOTTOM_MIN_RATIO = float(os.environ.get("FALL_BBOX_BOTTOM_MIN_RATIO", "0.48"))
 # Số frame “nằm” chỉ từ geometry (không có lying_hint keypoint) trước khi coi là té thật
-FALL_GEOMETRY_LYING_MIN_FRAMES = max(1, int(os.environ.get("FALL_GEOMETRY_LYING_MIN_FRAMES", "5")))
+FALL_GEOMETRY_LYING_MIN_FRAMES = max(1, int(os.environ.get("FALL_GEOMETRY_LYING_MIN_FRAMES", "4")))
 # Bật 1: coi bbox pose rộng>h cao là “nằm” mọi nơi khung (dễ FP). Mặc định tắt
 FALL_USE_POSE_BBOX_ASPECT = os.environ.get("FALL_USE_POSE_BBOX_ASPECT", "0").lower() in ("1", "true", "yes", "")
 # Mặc định tắt: kiểm tra “gần sàn” hay làm mất hết sự kiện té; bật lại: FALL_REQUIRE_FLOOR=1
