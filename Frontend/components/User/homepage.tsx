@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import FloatingAssistant from "@/components/assistant/FloatingAssistant";
 import type { AxiosError } from "axios";
 import { getCurrentUser, logoutUser, refreshCurrentUserProfile } from "../../services/api";
+import { getNotificationLogs, subscribeNotificationLogChange } from "@/services/notificationLog";
 
 const { width } = Dimensions.get("window");
 
@@ -39,6 +40,7 @@ const OPTIONS: HomeOption[] = [
 const HomepageUserScreen = () => {
     const router = useRouter();
     const [user, setUser] = useState(() => getCurrentUser());
+    const [roomMessageUnread, setRoomMessageUnread] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -62,6 +64,33 @@ const HomepageUserScreen = () => {
         };
     }, []);
 
+    useEffect(() => {
+        let mounted = true;
+        const refreshRoomMessageUnread = async () => {
+            try {
+                const logs = await getNotificationLogs();
+                if (!mounted) return;
+                const count = logs.reduce((acc, it) => {
+                    if (it.type !== "room-message" || it.read) return acc;
+                    return acc + 1;
+                }, 0);
+                setRoomMessageUnread(count);
+            } catch {
+                if (mounted) setRoomMessageUnread(0);
+            }
+        };
+        void refreshRoomMessageUnread();
+        const unsub = subscribeNotificationLogChange(() => {
+            void refreshRoomMessageUnread();
+        });
+        const t = setInterval(() => void refreshRoomMessageUnread(), 5000);
+        return () => {
+            mounted = false;
+            unsub();
+            clearInterval(t);
+        };
+    }, []);
+
     const displayName =
         user?.fullName || user?.username || "A";
     const avatarLetter = (displayName || "A").charAt(0).toUpperCase();
@@ -69,7 +98,7 @@ const HomepageUserScreen = () => {
     const handleLogout = () => {
         logoutUser();
         setUser(null);
-        router.replace("/(tabs)");
+        router.replace("/(homepages)/homepage_user");
     };
 
     return (
@@ -164,6 +193,13 @@ const HomepageUserScreen = () => {
                             activeOpacity={0.85}
                             onPress={handlePress}
                         >
+                            {item.id === "family" && roomMessageUnread > 0 ? (
+                                <View style={styles.chatUnreadBadge}>
+                                    <Text style={styles.chatUnreadBadgeText}>
+                                        {roomMessageUnread > 99 ? "99+" : roomMessageUnread}
+                                    </Text>
+                                </View>
+                            ) : null}
                             <View style={styles.cardTextWrapper}>
                                 <Text style={styles.cardTitle}>{item.title}</Text>
                                 {isComingSoon && <Text style={styles.comingSoonText}>Sắp ra mắt</Text>}
@@ -316,6 +352,24 @@ const styles = StyleSheet.create({
     },
     cardDisabled: {
         opacity: 0.6,
+    },
+    chatUnreadBadge: {
+        position: "absolute",
+        top: 8,
+        right: 8,
+        minWidth: 24,
+        height: 24,
+        borderRadius: 999,
+        backgroundColor: "#EF4444",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 6,
+        zIndex: 3,
+    },
+    chatUnreadBadgeText: {
+        color: "#FFFFFF",
+        fontSize: scaleFont(11),
+        fontWeight: "900",
     },
 
     cardTextWrapper: {

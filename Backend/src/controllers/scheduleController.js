@@ -22,6 +22,9 @@ exports.createSchedules = async (req, res) => {
     if (error?.code === "SCHEDULE_MEDICATIONS_REQUIRED") {
       return sendFail(res, "Vui lòng chọn ít nhất 1 thuốc cho lịch", HTTP_STATUS.BAD_REQUEST);
     }
+    if (error?.code === "SCHEDULE_TIME_PASSED") {
+      return sendFail(res, "Không thể tạo lịch trong quá khứ. Vui lòng chọn giờ hiện tại hoặc muộn hơn.", HTTP_STATUS.BAD_REQUEST);
+    }
     if (error?.code === "MEDICATION_NOT_FOUND") {
       return sendFail(res, "Thuốc không tồn tại hoặc không thuộc tài khoản", HTTP_STATUS.NOT_FOUND);
     }

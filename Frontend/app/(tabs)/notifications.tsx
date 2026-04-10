@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   deleteNotificationLog,
@@ -13,12 +13,36 @@ import NotificationList from "@/components/notifications/NotificationList";
 import NotificationDetailModal from "@/components/notifications/NotificationDetailModal";
 import { getMyRoom, type RoomMemberRole } from "@/services/api";
 import dayjs from "dayjs";
+import { isNotificationEntryConfirmed, safetyKindFromEntry } from "@/components/notifications/notificationTypes";
+
+type FilterKey =
+  | "all"
+  | "confirmed"
+  | "room-message"
+  | "medication"
+  | "weekly-schedule"
+  | "care-confirmation"
+  | "fall"
+  | "left_safe_zone"
+  | "system";
+
+const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
+  { key: "all", label: "Tất cả" },
+  { key: "confirmed", label: "Đã xác nhận" },
+  { key: "room-message", label: "Tin nhắn phòng" },
+  { key: "medication", label: "Nhắc thuốc" },
+  { key: "weekly-schedule", label: "Lịch sinh hoạt" },
+  { key: "fall", label: "Té ngã" },
+  { key: "left_safe_zone", label: "Rời vùng an toàn" },
+  { key: "system", label: "Hệ thống" },
+];
 
 export default function NotificationsScreen() {
   const [logs, setLogs] = useState<NotificationLogEntry[]>([]);
   const [detailItem, setDetailItem] = useState<NotificationLogEntry | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [myRole, setMyRole] = useState<RoomMemberRole | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const mutatingRef = useRef(false);
 
   const groupKeyOf = useCallback((it: NotificationLogEntry) => {
@@ -76,6 +100,19 @@ export default function NotificationsScreen() {
     }
     return Array.from(map.values()).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [logs]);
+
+  const filteredLogs = useMemo(() => {
+    if (activeFilter === "confirmed") {
+      return dedupedLogs.filter((it) => isNotificationEntryConfirmed(it));
+    }
+    if (activeFilter === "all") return dedupedLogs;
+    return dedupedLogs.filter((it) => {
+      if (activeFilter === "fall" || activeFilter === "left_safe_zone") {
+        return safetyKindFromEntry(it) === activeFilter;
+      }
+      return it.type === activeFilter;
+    });
+  }, [activeFilter, dedupedLogs]);
 
   const handleMarkAllRead = useCallback(async () => {
     if (!unreadCount) return;
@@ -169,8 +206,25 @@ export default function NotificationsScreen() {
           {!!unreadCount && <View style={styles.dot} />}
         </TouchableOpacity>
       </View>
+      <View style={styles.filterWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          {FILTER_OPTIONS.map((opt) => {
+            const active = activeFilter === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => setActiveFilter(opt.key)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
       <NotificationList
-        logs={dedupedLogs}
+        logs={filteredLogs}
         onOptimisticRead={(id) =>
           setLogs((prev) => {
             const target = prev.find((x) => x.id === id);
@@ -232,4 +286,34 @@ const styles = StyleSheet.create({
   markAllText: { color: "#1D4ED8", fontWeight: "900", fontSize: 12 },
   markAllTextDisabled: { color: "#9CA3AF" },
   dot: { width: 8, height: 8, borderRadius: 99, backgroundColor: "#EF4444" },
+  filterWrap: {
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  filterRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  filterChipActive: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#C7D2FE",
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4B5563",
+  },
+  filterChipTextActive: {
+    color: "#1D4ED8",
+  },
 });

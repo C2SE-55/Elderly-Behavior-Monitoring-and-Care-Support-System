@@ -86,9 +86,29 @@ const isValidVietnamesePhone = (phone) => {
   return phoneRegex.test(phone);
 };
 
-// Kiểm tra mật khẩu (tối thiểu 6 ký tự)
+// Kiểm tra mật khẩu theo rule đăng ký:
+// - Trên 6 ký tự
+// - Có ít nhất 1 số
+// - Có ít nhất 1 ký tự đặc biệt
 const isValidPassword = (password) => {
-  return password && password.length >= 6;
+  if (typeof password !== "string") return false;
+  const p = password.trim();
+  if (p.length < 7) return false;
+  if (!/[0-9]/.test(p)) return false;
+  if (!/[^A-Za-z0-9]/.test(p)) return false;
+  return true;
+};
+
+// Username: ít nhất 6 ký tự, bắt buộc gồm cả chữ và số.
+const isValidUsername = (username) => {
+  if (typeof username !== "string") return false;
+  const u = username.trim();
+  if (u.length < 6) return false;
+  // Chỉ cho chữ + số để tránh ký tự khó kiểm soát.
+  if (!/^[A-Za-z0-9]+$/.test(u)) return false;
+  if (!/[A-Za-z]/.test(u)) return false;
+  if (!/[0-9]/.test(u)) return false;
+  return true;
 };
 
 // Kiểm tra trường rỗng
@@ -120,5 +140,6 @@ module.exports = {
   isValidPhone,
   isValidVietnamesePhone,
   isValidPassword,
+  isValidUsername,
   isEmptyField,
 };

@@ -16,6 +16,14 @@ class MedicationSystem {
     return null;
   }
 
+  static hhmmToMinutes(timeValue) {
+    const raw = String(timeValue || "").slice(0, 5);
+    const [h, m] = raw.split(":").map((x) => Number(x));
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  }
+
   /** Ghi log uống thuốc; nếu DB chưa có cột acted_by_user_id thì INSERT không cột đó (không cần migration). */
   static async insertMedicationLogRow(connection, scheduleId, status, note, actorUserId) {
     try {
@@ -165,6 +173,16 @@ class MedicationSystem {
         throw error;
       }
       const repeatType = payload?.repeat_type === "once" ? "once" : "daily";
+      if (repeatType === "once") {
+        const alarmMinutes = this.hhmmToMinutes(normalizedTime);
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        if (alarmMinutes !== null && alarmMinutes < nowMinutes) {
+          const error = new Error("SCHEDULE_TIME_PASSED");
+          error.code = "SCHEDULE_TIME_PASSED";
+          throw error;
+        }
+      }
       const medicationItems = Array.isArray(payload?.medications) ? payload.medications : [];
       if (!medicationItems.length) {
         const error = new Error("SCHEDULE_MEDICATIONS_REQUIRED");

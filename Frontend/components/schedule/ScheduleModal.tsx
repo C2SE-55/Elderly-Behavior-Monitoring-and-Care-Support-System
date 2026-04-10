@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -10,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DailyScheduleItem, DailyScheduleType, DayOfWeek } from "@/services/api";
 
@@ -22,10 +24,19 @@ type FormValue = {
   type: DailyScheduleType;
 };
 
-const formatTimeInput = (raw: string) => {
-  const digits = String(raw || "").replace(/[^\d]/g, "").slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+const timeStringToDate = (value: string) => {
+  const now = new Date();
+  const [hRaw, mRaw] = String(value || "00:00").split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  now.setHours(Number.isFinite(h) ? h : 0, Number.isFinite(m) ? m : 0, 0, 0);
+  return now;
+};
+
+const dateToHHmm = (date: Date) => {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 };
 
 type Props = {
@@ -74,6 +85,9 @@ export default function ScheduleModal({
   );
   const [value, setValue] = useState<FormValue>(defaultValue);
   const [error, setError] = useState("");
+  const [iosPickerField, setIosPickerField] = useState<"start" | "end" | null>(null);
+  const [androidStartPickerOpen, setAndroidStartPickerOpen] = useState(false);
+  const [androidEndPickerOpen, setAndroidEndPickerOpen] = useState(false);
 
   useEffect(() => {
     if (editingItem) {
@@ -88,6 +102,9 @@ export default function ScheduleModal({
     } else {
       setValue(defaultValue);
     }
+    setIosPickerField(null);
+    setAndroidStartPickerOpen(false);
+    setAndroidEndPickerOpen(false);
     setError("");
   }, [defaultValue, editingItem, visible]);
 
@@ -166,6 +183,7 @@ export default function ScheduleModal({
                   onChangeText={(t) => setValue((prev) => ({ ...prev, description: t }))}
                   style={[styles.input, styles.textArea]}
                   placeholder="Mô tả chi tiết"
+                  placeholderTextColor="#6B7280"
                   multiline
                   scrollEnabled={false}
                 />
@@ -173,23 +191,79 @@ export default function ScheduleModal({
                 <View style={styles.timeRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.label}>Bắt đầu</Text>
-                    <TextInput
-                      value={value.start_time}
-                      onChangeText={(t) => setValue((prev) => ({ ...prev, start_time: formatTimeInput(t) }))}
-                      style={styles.input}
-                      placeholder="HH:mm"
-                      keyboardType={Platform.OS === "ios" ? "number-pad" : "numeric"}
-                    />
+                    {Platform.OS === "ios" ? (
+                      <TouchableOpacity
+                        style={[styles.input, styles.androidTimeButton]}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setIosPickerField("start");
+                        }}
+                      >
+                        <Text style={styles.androidTimeText}>{value.start_time}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.input, styles.androidTimeButton]}
+                          onPress={() => {
+                            Keyboard.dismiss();
+                            setAndroidStartPickerOpen(true);
+                          }}
+                        >
+                          <Text style={styles.androidTimeText}>{value.start_time}</Text>
+                        </TouchableOpacity>
+                        {androidStartPickerOpen && (
+                          <DateTimePicker
+                            value={timeStringToDate(value.start_time)}
+                            mode="time"
+                            display="default"
+                            onChange={(_, date) => {
+                              setAndroidStartPickerOpen(false);
+                              if (!date) return;
+                              setValue((prev) => ({ ...prev, start_time: dateToHHmm(date) }));
+                            }}
+                          />
+                        )}
+                      </>
+                    )}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.label}>Kết thúc</Text>
-                    <TextInput
-                      value={value.end_time}
-                      onChangeText={(t) => setValue((prev) => ({ ...prev, end_time: formatTimeInput(t) }))}
-                      style={styles.input}
-                      placeholder="HH:mm"
-                      keyboardType={Platform.OS === "ios" ? "number-pad" : "numeric"}
-                    />
+                    {Platform.OS === "ios" ? (
+                      <TouchableOpacity
+                        style={[styles.input, styles.androidTimeButton]}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setIosPickerField("end");
+                        }}
+                      >
+                        <Text style={styles.androidTimeText}>{value.end_time}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.input, styles.androidTimeButton]}
+                          onPress={() => {
+                            Keyboard.dismiss();
+                            setAndroidEndPickerOpen(true);
+                          }}
+                        >
+                          <Text style={styles.androidTimeText}>{value.end_time}</Text>
+                        </TouchableOpacity>
+                        {androidEndPickerOpen && (
+                          <DateTimePicker
+                            value={timeStringToDate(value.end_time)}
+                            mode="time"
+                            display="default"
+                            onChange={(_, date) => {
+                              setAndroidEndPickerOpen(false);
+                              if (!date) return;
+                              setValue((prev) => ({ ...prev, end_time: dateToHHmm(date) }));
+                            }}
+                          />
+                        )}
+                      </>
+                    )}
                   </View>
                 </View>
 
@@ -220,6 +294,40 @@ export default function ScheduleModal({
                 </TouchableOpacity>
               </View>
             </View>
+
+            {Platform.OS === "ios" && iosPickerField && (
+              <View style={styles.iosPickerOverlay}>
+                <View style={styles.iosPickerSheet}>
+                  <View style={styles.iosDoneRow}>
+                    <Text style={styles.iosPickerTitle}>
+                      {iosPickerField === "start" ? "Chọn giờ bắt đầu" : "Chọn giờ kết thúc"}
+                    </Text>
+                    <TouchableOpacity style={styles.iosDoneBtn} onPress={() => setIosPickerField(null)}>
+                      <Text style={styles.iosDoneText}>Xong</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.iosPickerCenter}>
+                    <DateTimePicker
+                      value={timeStringToDate(iosPickerField === "start" ? value.start_time : value.end_time)}
+                      mode="time"
+                      display="spinner"
+                      onChange={(_, date) => {
+                        if (!date) return;
+                        if (iosPickerField === "start") {
+                          setValue((prev) => ({ ...prev, start_time: dateToHHmm(date) }));
+                        } else {
+                          setValue((prev) => ({ ...prev, end_time: dateToHHmm(date) }));
+                        }
+                      }}
+                      minuteInterval={1}
+                      textColor="#111827"
+                      themeVariant="light"
+                      style={styles.iosPicker}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -283,6 +391,75 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, color: "#4B5563", fontWeight: "600" },
   pillTextActive: { color: "#1D4ED8", fontWeight: "700" },
   timeRow: { flexDirection: "row", gap: 8 },
+  iosPickerWrap: {
+    display: "none",
+  },
+  iosPicker: {
+    width: 300,
+    height: 180,
+  },
+  iosPickerCenter: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iosPickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.28)",
+  },
+  iosPickerSheet: {
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 12,
+    width: "88%",
+    maxWidth: 360,
+    minHeight: 250,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+    justifyContent: "center",
+  },
+  iosDoneRow: {
+    width: "100%",
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  iosPickerTitle: {
+    color: "#111827",
+    fontWeight: "700",
+    fontSize: 13,
+    paddingHorizontal: 6,
+    flexShrink: 1,
+  },
+  iosDoneBtn: {
+    backgroundColor: "#DBEAFE",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  iosDoneText: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  androidTimeButton: {
+    justifyContent: "center",
+  },
+  androidTimeText: {
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: "600",
+  },
   error: { color: "#B91C1C", fontSize: 12, marginTop: 2 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 8 },
   cancelBtn: {

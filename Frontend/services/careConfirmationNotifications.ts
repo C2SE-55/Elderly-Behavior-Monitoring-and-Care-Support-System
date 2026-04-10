@@ -148,7 +148,7 @@ export async function confirmCareNotification(logId: string, role: RoomMemberRol
     nextData.elder_name ? `Người cần chăm sóc: ${nextData.elder_name}` : "",
     nextData.caregiver_name ? `Người chăm sóc: ${nextData.caregiver_name}` : "",
     nextData.host_name ? `Chủ phòng: ${nextData.host_name}` : "",
-    `Trạng thái: ${statusText}${status !== "done" ? " / Chờ bên còn lại xác nhận" : ""}`,
+    `Trạng thái: ${statusText}${status !== "done" ? " / Chờ bên Caregiver xác nhận" : ""}`,
   ].filter(Boolean);
 
   // create follow-up for other role if not done

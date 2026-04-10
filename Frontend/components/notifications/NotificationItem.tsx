@@ -6,6 +6,7 @@ import {
   categoryLabelForEntry,
   categoryToneForEntry,
   isCareConfirmationData,
+  notificationBodyForDisplay,
   statusLabelForCareConfirmation,
   toneForCareConfirmationStatus,
 } from "./notificationTypes";
@@ -68,7 +69,7 @@ export default function NotificationItem({
 
       {!!item.body && (
         <Text style={[styles.body, item.read && styles.bodyRead]} numberOfLines={3}>
-          {stripDoneMarker(item.body)}
+          {stripDoneMarker(notificationBodyForDisplay(item))}
         </Text>
       )}
 

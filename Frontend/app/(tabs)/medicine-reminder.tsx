@@ -21,6 +21,7 @@ import {
   createMedication,
   createSchedules,
   deleteMedication,
+  deleteSchedule,
   deleteSchedulesForSlot,
   extractMedicationsFromImage,
   ExtractedMedicineItem,
@@ -33,14 +34,11 @@ import {
   MyRoomInfo,
   TodayScheduleItem,
   updateMedication,
-  updateMedicationDailyReminders,
   subscribeActiveRoomChange,
 } from "../../services/api";
 import { ensureNotificationPermission, rescheduleMedicationNotifications } from "@/services/medicationNotifications";
 import { dismissMedicationReminderLogsForMedicationSlot } from "@/services/notificationLog";
 import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
-
-type RepeatType = "once" | "daily";
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 const localDateYmd = () => {
@@ -50,6 +48,14 @@ const localDateYmd = () => {
 const nowHHMM = () => {
   const now = new Date();
   return `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+};
+const SNOOZE_MINUTE_OPTIONS = [1, 5, 10, 15] as const;
+const hhmmToMinutes = (time: string): number => {
+  const raw = String(time || "").slice(0, 5);
+  const [h, m] = raw.split(":").map((x) => Number(x));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return -1;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return -1;
+  return h * 60 + m;
 };
 
 export default function MedicineReminderScreen() {
@@ -81,9 +87,14 @@ export default function MedicineReminderScreen() {
   const [hour, setHour] = useState(8);
   const [minute, setMinute] = useState(0);
   const [androidPickerOpen, setAndroidPickerOpen] = useState(false);
-  const [repeatType, setRepeatType] = useState<RepeatType>("daily");
+  const [iosPickerOpen, setIosPickerOpen] = useState(false);
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<number[]>([]);
   const [doseOverrides, setDoseOverrides] = useState<Record<number, string>>({});
+  const [allowMissedReminder, setAllowMissedReminder] = useState(true);
+  const [missedReminderMinutes, setMissedReminderMinutes] = useState<number>(5);
+  const missReminderShownRef = useRef<Record<string, true>>({});
+  const scrollRef = useRef<ScrollView | null>(null);
+  const lastScrollYRef = useRef(0);
 
   const notifiedKeysRef = useRef<Record<string, true>>({});
   const noticeAnim = useRef(new Animated.Value(0)).current;
@@ -214,9 +225,19 @@ export default function MedicineReminderScreen() {
       const allowDaily =
         roomInfo?.medication_daily_reminders_enabled !== false &&
         roomInfo?.medication_daily_reminders_enabled !== 0;
-      await rescheduleMedicationNotifications(todaySchedules, { allowDaily });
+      await rescheduleMedicationNotifications(todaySchedules, {
+        allowDaily,
+        allowSnooze: allowMissedReminder,
+        snoozeMinutes: missedReminderMinutes,
+      });
     })();
-  }, [todaySchedules, canReceiveMedicationNotifications, roomInfo?.medication_daily_reminders_enabled]);
+  }, [
+    todaySchedules,
+    canReceiveMedicationNotifications,
+    roomInfo?.medication_daily_reminders_enabled,
+    allowMissedReminder,
+    missedReminderMinutes,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -259,7 +280,6 @@ export default function MedicineReminderScreen() {
 
   useEffect(() => {
     const timer = setInterval(async () => {
-      await loadPermissions();
       if (!canReadRoomData || !canReceiveMedicationNotifications) return;
       try {
         const schedules = await getTodaySchedules();
@@ -277,13 +297,36 @@ export default function MedicineReminderScreen() {
             showDueNotice(dueItems, now);
           }
         }
+
+        // Nhắc lại mỗi 5 phút cho lịch đã quá giờ nhưng chưa Taken/Skip.
+        const nowMin = hhmmToMinutes(now);
+        if (allowMissedReminder && nowMin >= 0) {
+          const retryGroups: Record<string, TodayScheduleItem[]> = {};
+          for (const item of schedules) {
+            if (item.status === "taken" || item.status === "skipped") continue;
+            const t = String(item.alarm_time || "").slice(0, 5);
+            const tMin = hhmmToMinutes(t);
+            if (tMin < 0) continue;
+            // Chỉ nhắc lại 1 lần khi đã trễ ít nhất N phút từ giờ ban đầu.
+            if (nowMin < tMin + missedReminderMinutes) continue;
+            retryGroups[t] = retryGroups[t] || [];
+            retryGroups[t].push(item);
+          }
+          for (const [t, items] of Object.entries(retryGroups)) {
+            const idsKey = items.map((x) => Number(x.id)).sort((a, b) => a - b).join("-");
+            const key = `${localDateYmd()}-${t}-${idsKey}`;
+            if (missReminderShownRef.current[key]) continue;
+            missReminderShownRef.current[key] = true;
+            showDueNotice(items, t);
+          }
+        }
       } catch {
         // Polling silently; lỗi đã hiển thị ở lần tải chính.
       }
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [canReadRoomData, canReceiveMedicationNotifications, showDueNotice, loadPermissions]);
+  }, [canReadRoomData, canReceiveMedicationNotifications, showDueNotice, allowMissedReminder, missedReminderMinutes]);
 
   useEffect(() => {
     if (!canReceiveMedicationNotifications) {
@@ -461,6 +504,10 @@ export default function MedicineReminderScreen() {
       setScreenError("Vui lòng chọn ít nhất 1 thuốc để đặt lịch.");
       return;
     }
+    if (hhmmToMinutes(selectedTime) < hhmmToMinutes(nowHHMM())) {
+      setScreenError("Không thể đặt lịch trong quá khứ. Vui lòng chọn giờ hiện tại hoặc muộn hơn.");
+      return;
+    }
     try {
       setSavingSchedule(true);
       setScreenError("");
@@ -468,7 +515,7 @@ export default function MedicineReminderScreen() {
 
       await createSchedules({
         alarm_time: selectedTime,
-        repeat_type: repeatType,
+        repeat_type: "once",
         medications: selectedMedicationIds.map((id) => ({
           medication_id: id,
           dosage: doseOverrides[id] ? doseOverrides[id].trim() : undefined,
@@ -494,8 +541,14 @@ export default function MedicineReminderScreen() {
     }
     const t = String(alarmTime || "").slice(0, 5);
     if (!t) return false;
+    const snapshot = [...todaySchedules];
     try {
       setScreenError("");
+      setTodaySchedules((prev) =>
+        prev.map((item) =>
+          String(item.alarm_time || "").slice(0, 5) === t ? { ...item, status: "taken" } : item
+        )
+      );
       const data = await markMedicationSlotTaken(t);
       const ymd = String(data?.intake_date || localDateYmd()).slice(0, 10);
       const ids =
@@ -503,10 +556,18 @@ export default function MedicineReminderScreen() {
           ? data.schedule_ids.map(Number)
           : scheduleIdsFallback;
       await dismissMedicationReminderLogsForMedicationSlot(ymd, ids, t);
+      setSuccessMessage(`Đã xác nhận uống thuốc cho khung giờ ${t}.`);
       await loadAll();
       return true;
     } catch (error) {
+      setTodaySchedules(snapshot);
       const backendMessage = (error as any)?.response?.data?.message;
+      if (backendMessage === "Không tìm thấy lịch cho khung giờ này") {
+        // Tránh báo lỗi giả khi slot vừa bị xóa/cập nhật từ thiết bị khác.
+        setScreenError("");
+        await loadAll();
+        return false;
+      }
       setScreenError(backendMessage || "Không thể đánh dấu đã uống.");
       return false;
     }
@@ -519,8 +580,14 @@ export default function MedicineReminderScreen() {
     }
     const t = String(alarmTime || "").slice(0, 5);
     if (!t) return false;
+    const snapshot = [...todaySchedules];
     try {
       setScreenError("");
+      setTodaySchedules((prev) =>
+        prev.map((item) =>
+          String(item.alarm_time || "").slice(0, 5) === t ? { ...item, status: "skipped" } : item
+        )
+      );
       const data = await markMedicationSlotSkipped(t);
       const ymd = String(data?.intake_date || localDateYmd()).slice(0, 10);
       const ids =
@@ -528,28 +595,54 @@ export default function MedicineReminderScreen() {
           ? data.schedule_ids.map(Number)
           : scheduleIdsFallback;
       await dismissMedicationReminderLogsForMedicationSlot(ymd, ids, t);
+      setSuccessMessage(`Đã đánh dấu bỏ qua cho khung giờ ${t}.`);
       await loadAll();
       return true;
     } catch (error) {
+      setTodaySchedules(snapshot);
       const backendMessage = (error as any)?.response?.data?.message;
+      if (backendMessage === "Không tìm thấy lịch cho khung giờ này") {
+        // Tránh báo lỗi giả khi slot vừa bị xóa/cập nhật từ thiết bị khác.
+        setScreenError("");
+        await loadAll();
+        return false;
+      }
       setScreenError(backendMessage || "Không thể đánh dấu bỏ qua.");
       return false;
     }
   };
 
-  const onDeleteSlot = async (alarmTime: string) => {
+  const onDeleteSlot = async (alarmTime: string, scheduleIds: number[] = []) => {
     if (!canManageMedication) {
       setScreenError("Bạn không có quyền xóa lịch thuốc.");
       return;
     }
     const t = String(alarmTime || "").slice(0, 5);
     if (!t) return;
+    const keepY = lastScrollYRef.current;
+    const snapshot = [...todaySchedules];
     try {
       setScreenError("");
-      await deleteSchedulesForSlot(t);
+      // Optimistic remove so the slot disappears immediately in UI.
+      setTodaySchedules((prev) => prev.filter((item) => String(item.alarm_time || "").slice(0, 5) !== t));
+      const result = await deleteSchedulesForSlot(t);
+      // Fallback: some environments may reject DELETE body, then endpoint returns deleted=0.
+      // In that case, delete by schedule IDs to guarantee the slot is removed.
+      if ((result?.deleted || 0) === 0 && scheduleIds.length) {
+        await Promise.all(
+          scheduleIds
+            .map((id) => Number(id))
+            .filter((id) => id > 0)
+            .map((id) => deleteSchedule(id))
+        );
+      }
       setSuccessMessage("Đã xóa toàn bộ lịch trong khung giờ này.");
       await loadAll();
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: keepY, animated: false });
+      });
     } catch (error) {
+      setTodaySchedules(snapshot);
       const backendMessage = (error as any)?.response?.data?.message;
       setScreenError(backendMessage || "Không thể xóa lịch.");
     }
@@ -579,6 +672,7 @@ export default function MedicineReminderScreen() {
         style={[
           styles.noticeContainer,
           {
+            top: insets.top + 34,
             opacity: noticeAnim,
             transform: [
               {
@@ -620,47 +714,23 @@ export default function MedicineReminderScreen() {
         </View>
       </Animated.View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentWrap}>
+      <ScrollView
+        ref={(r) => {
+          scrollRef.current = r;
+        }}
+        style={styles.container}
+        contentContainerStyle={styles.contentWrap}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          lastScrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
+      >
         {!!screenError && <Text style={styles.errorText}>{screenError}</Text>}
         {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
         {roomInfo?.member_role === "caretaker" && <Text style={styles.readonlyBadge}>Chỉ xem</Text>}
         {!!permissionMessage && <Text style={styles.warnText}>{permissionMessage}</Text>}
         {permissionLoading && <Text style={styles.loadingText}>Đang kiểm tra quyền trong room...</Text>}
         {!!roomInfo?.room_id && <Text style={styles.loadingText}>Room: {roomInfo.room_id}</Text>}
-
-        {roomInfo?.member_role === "host" && (
-          <View style={styles.card}>
-            <View style={styles.hostDailyRow}>
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={styles.cardTitle}>Nhắc lặp hằng ngày (máy)</Text>
-                <Text style={styles.cardHint}>
-                  Tắt để không lên lịch thông báo OS cho lịch &quot;daily&quot; trong room (chỉ host).
-                </Text>
-              </View>
-              <Switch
-                value={
-                  roomInfo.medication_daily_reminders_enabled !== false &&
-                  roomInfo.medication_daily_reminders_enabled !== 0
-                }
-                onValueChange={(v) => {
-                  void (async () => {
-                    try {
-                      setScreenError("");
-                      await updateMedicationDailyReminders(v);
-                      await loadPermissions();
-                      await loadAll();
-                    } catch (error) {
-                      const backendMessage = (error as any)?.response?.data?.message;
-                      setScreenError(backendMessage || "Không cập nhật được cài đặt nhắc hằng ngày.");
-                    }
-                  })();
-                }}
-                trackColor={{ false: "#D1D5DB", true: "#A78BFA" }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-          </View>
-        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>1) Nhập thuốc</Text>
@@ -732,7 +802,7 @@ export default function MedicineReminderScreen() {
                 onPress={() => onUseExtractedMedicine(item)}
                 disabled={!canManageMedication}
               >
-                <Text style={styles.lightBtnText}>Dùng dòng này</Text>
+                <Text style={styles.lightBtnText}>Dùng đơn thuốc này</Text>
               </TouchableOpacity>
             </View>
           ))}
@@ -764,30 +834,39 @@ export default function MedicineReminderScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>2) Đặt lịch uống thuốc</Text>
-          <Text style={styles.timeText}>{selectedTime}</Text>
+          <TouchableOpacity
+            style={[styles.timeTrigger, !canManageMedication && { opacity: 0.6 }]}
+            activeOpacity={0.8}
+            disabled={!canManageMedication}
+            onPress={() => {
+              if (Platform.OS === "android") {
+                setAndroidPickerOpen(true);
+                return;
+              }
+              setIosPickerOpen((prev) => !prev);
+            }}
+          >
+            <Text style={styles.timeText}>{selectedTime}</Text>
+            <Text style={styles.timeHint}>Chạm để chọn giờ</Text>
+          </TouchableOpacity>
           {Platform.OS === "ios" ? (
-            <View style={[styles.iosPickerWrap, !canManageMedication && { opacity: 0.6 }]}>
-              <DateTimePicker
-                value={selectedDate}
-                mode="time"
-                display="spinner"
-                onChange={onChangeTime}
-                minuteInterval={1}
-                disabled={!canManageMedication}
-                textColor="#111827"
-                themeVariant="light"
-                style={styles.iosPicker}
-              />
-            </View>
+            iosPickerOpen ? (
+              <View style={[styles.iosPickerWrap, !canManageMedication && { opacity: 0.6 }]}>
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="time"
+                  display="spinner"
+                  onChange={onChangeTime}
+                  minuteInterval={1}
+                  disabled={!canManageMedication}
+                  textColor="#111827"
+                  themeVariant="light"
+                  style={styles.iosPicker}
+                />
+              </View>
+            ) : null
           ) : (
             <>
-              <TouchableOpacity
-                style={[styles.primaryBtn, !canManageMedication && { opacity: 0.6 }]}
-                onPress={() => setAndroidPickerOpen(true)}
-                disabled={!canManageMedication}
-              >
-                <Text style={styles.primaryBtnText}>Chọn giờ (Time picker)</Text>
-              </TouchableOpacity>
               {androidPickerOpen && (
                 <DateTimePicker
                   value={selectedDate}
@@ -801,20 +880,45 @@ export default function MedicineReminderScreen() {
 
           <View style={styles.repeatRow}>
             <TouchableOpacity
-              style={[styles.repeatPill, repeatType === "once" && styles.repeatPillActive, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setRepeatType("once")}
-              disabled={!canManageMedication}
+              style={[styles.repeatPill, !allowMissedReminder && styles.repeatPillActive]}
+              onPress={() => setAllowMissedReminder(false)}
             >
-              <Text style={[styles.repeatText, repeatType === "once" && styles.repeatTextActive]}>1 lần</Text>
+              <Text style={[styles.repeatText, !allowMissedReminder && styles.repeatTextActive]}>
+                Nhắc 1 lần
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.repeatPill, repeatType === "daily" && styles.repeatPillActive, !canManageMedication && { opacity: 0.6 }]}
-              onPress={() => setRepeatType("daily")}
-              disabled={!canManageMedication}
+              style={[
+                styles.repeatPill,
+                allowMissedReminder && styles.repeatPillActive,
+              ]}
+              onPress={() => setAllowMissedReminder(true)}
             >
-              <Text style={[styles.repeatText, repeatType === "daily" && styles.repeatTextActive]}>Hàng ngày</Text>
+              <Text
+                style={[
+                  styles.repeatText,
+                  allowMissedReminder && styles.repeatTextActive,
+                ]}
+              >
+                Báo lại
+              </Text>
             </TouchableOpacity>
           </View>
+          {allowMissedReminder && (
+            <View style={styles.repeatRow}>
+              {SNOOZE_MINUTE_OPTIONS.map((m) => (
+                <TouchableOpacity
+                  key={`snooze-${m}`}
+                  style={[styles.repeatPill, missedReminderMinutes === m && styles.repeatPillActive]}
+                  onPress={() => setMissedReminderMinutes(m)}
+                >
+                  <Text style={[styles.repeatText, missedReminderMinutes === m && styles.repeatTextActive]}>
+                    {m} phút
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <Text style={styles.cardHint}>Chọn nhiều thuốc cho cùng 1 thời điểm và chỉnh liều riêng nếu cần.</Text>
           {medications.map((item) => {
@@ -877,7 +981,7 @@ export default function MedicineReminderScreen() {
                     {canManageMedication && (
                       <TouchableOpacity
                         style={styles.deleteSlotBtn}
-                        onPress={() => void onDeleteSlot(time)}
+                        onPress={() => void onDeleteSlot(time, slotIds)}
                         disabled={!canManageMedication}
                       >
                         <Text style={styles.deleteSlotBtnText}>Xóa cả khung giờ</Text>
@@ -901,14 +1005,14 @@ export default function MedicineReminderScreen() {
                         onPress={() => void onMarkSlotTaken(time, slotIds)}
                         disabled={!canMarkMedicationIntake}
                       >
-                        <Text style={styles.takenBtnText}>✔ Taken (cả đơn)</Text>
+                        <Text style={styles.takenBtnText}>✔ Xác nhận (Taken)</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.skipBtn}
                         onPress={() => void onMarkSlotSkipped(time, slotIds)}
                         disabled={!canMarkMedicationIntake}
                       >
-                        <Text style={styles.skipBtnText}>Skip (cả đơn)</Text>
+                        <Text style={styles.skipBtnText}>Bỏ qua (Skip)</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -1002,12 +1106,6 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 16, color: "#111827", fontWeight: "700" },
   cardHint: { fontSize: 12, color: "#6B7280" },
-  hostDailyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  },
   input: {
     borderWidth: 1,
     borderColor: "#D1D5DB",
@@ -1056,6 +1154,8 @@ const styles = StyleSheet.create({
   medName: { color: "#111827", fontSize: 14, fontWeight: "700" },
   medMeta: { color: "#6B7280", fontSize: 12 },
   timeText: { fontSize: 34, fontWeight: "700", color: "#111827", textAlign: "center" },
+  timeTrigger: { alignItems: "center", gap: 2 },
+  timeHint: { color: "#6B7280", fontSize: 12, fontWeight: "600" },
   timePickerWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   iosPickerWrap: {
     alignSelf: "stretch",
@@ -1093,6 +1193,19 @@ const styles = StyleSheet.create({
   repeatPillActive: { borderColor: "#2563EB", backgroundColor: "#DBEAFE" },
   repeatText: { color: "#4B5563", fontSize: 12 },
   repeatTextActive: { color: "#1D4ED8", fontWeight: "700" },
+  repeatHintPill: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#F8FAFC",
+  },
+  repeatHintText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
+  },
   selectRow: {
     borderWidth: 1,
     borderColor: "#E5E7EB",

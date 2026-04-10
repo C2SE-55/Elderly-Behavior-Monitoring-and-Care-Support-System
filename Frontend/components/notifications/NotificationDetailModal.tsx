@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import type { NotificationLogEntry } from "@/services/notificationLog";
-import { categoryLabelForEntry, isCareConfirmationData, statusLabelForCareConfirmation } from "./notificationTypes";
+import {
+  categoryLabelForEntry,
+  isCareConfirmationData,
+  notificationBodyForDisplay,
+  statusLabelForCareConfirmation,
+} from "./notificationTypes";
 import { getCurrentUser, getMyRoom, getRoomMembers, type RoomMemberRole } from "@/services/api";
 import { confirmCareNotification } from "@/services/careConfirmationNotifications";
 import { getElderNameFromHealthMetrics } from "@/services/healthContext";
@@ -297,7 +302,11 @@ export default function NotificationDetailModal({
                 </View>
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Nội dung</Text>
-                  <Text style={styles.metaValue}>{(safeName(item.body) ? stripDoneMarker(safeName(item.body)) : "") || "—"}</Text>
+                  <Text style={styles.metaValue}>
+                    {(safeName(notificationBodyForDisplay(item))
+                      ? stripDoneMarker(safeName(notificationBodyForDisplay(item)))
+                      : "") || "—"}
+                  </Text>
                 </View>
 
                 <View style={styles.metaRow}>

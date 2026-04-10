@@ -108,6 +108,7 @@ export default function RoomPermissionsScreen() {
   const [success, setSuccess] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const togglePendingRef = useRef<Set<number>>(new Set());
+  const pollingRef = useRef(false);
 
   const loadAll = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent;
@@ -143,6 +144,18 @@ export default function RoomPermissionsScreen() {
 
   useEffect(() => {
     loadAll();
+  }, [loadAll]);
+
+  // Realtime-like refresh: tự động đồng bộ số thành viên/quyền mỗi 5s (không cần reload trang).
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+      void loadAll({ silent: true }).finally(() => {
+        pollingRef.current = false;
+      });
+    }, 5000);
+    return () => clearInterval(t);
   }, [loadAll]);
 
   const onToggle = async (

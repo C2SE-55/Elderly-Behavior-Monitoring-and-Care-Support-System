@@ -38,6 +38,39 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [usernameTouched, setUsernameTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+
+  const isValidUsername = (value: string) => {
+    const v = String(value || "").trim();
+    return v.length >= 6 && /^[A-Za-z0-9]+$/.test(v) && /[A-Za-z]/.test(v) && /[0-9]/.test(v);
+  };
+
+  const isValidPassword = (value: string) => {
+    const v = String(value || "").trim();
+    return v.length >= 7 && /[0-9]/.test(v) && /[^A-Za-z0-9]/.test(v);
+  };
+
+  const usernameRuleMessage = (value: string) => {
+    const v = String(value || "").trim();
+    if (v.length < 6) return "Tên đăng nhập phải có ít nhất 6 ký tự.";
+    if (!/^[A-Za-z0-9]+$/.test(v)) return "Tên đăng nhập chỉ gồm chữ cái và số.";
+    if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return "Tên đăng nhập phải chứa cả chữ và số.";
+    return "";
+  };
+
+  const passwordRuleMessage = (value: string) => {
+    const v = String(value || "").trim();
+    if (v.length < 7) return "Mật khẩu phải trên 6 ký tự.";
+    if (!/[0-9]/.test(v)) return "Mật khẩu cần có ít nhất 1 số.";
+    if (!/[^A-Za-z0-9]/.test(v)) return "Mật khẩu cần có ít nhất 1 ký tự đặc biệt (@#$*&...).";
+    return "";
+  };
+  const passHasMinLen = String(password || "").trim().length >= 7;
+  const passHasNumber = /[0-9]/.test(String(password || ""));
+  const passHasSpecial = /[^A-Za-z0-9]/.test(String(password || ""));
+  const showPasswordChecklist = passwordFocused;
 
   const handleDateChange = (text: string) => {
     // Chỉ cho nhập số, tối đa 8 ký tự (ddMMyyyy)
@@ -59,6 +92,18 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     if (!fullName || !username || !email || !password || !confirmPassword) {
       setError("Vui lòng điền đầy đủ các trường bắt buộc");
+      return;
+    }
+    if (!isValidUsername(username)) {
+      setError(usernameRuleMessage(username) || "Username không đúng định dạng.");
+      return;
+    }
+    if (!isValidPassword(password)) {
+      setError(passwordRuleMessage(password) || "Mật khẩu không đúng định dạng.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Mật khẩu và xác nhận mật khẩu không khớp");
       return;
     }
 
@@ -123,8 +168,12 @@ export default function SignupScreen() {
                 onSubmitEditing={() => emailRef.current?.focus()}
                 value={username}
                 onChangeText={setUsername}
+                onBlur={() => setUsernameTouched(true)}
                 autoCapitalize="none"
               />
+              {usernameTouched && !!username && !isValidUsername(username) ? (
+                <Text style={styles.ruleText}>{usernameRuleMessage(username)}</Text>
+              ) : null}
               <TextInput
                 ref={emailRef}
                 placeholder="Email"
@@ -172,6 +221,11 @@ export default function SignupScreen() {
                   onSubmitEditing={() => confirmRef.current?.focus()}
                   value={password}
                   onChangeText={setPassword}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => {
+                    setPasswordFocused(false);
+                    setPasswordTouched(true);
+                  }}
                 />
                 <TouchableOpacity onPress={() => setSecure1(!secure1)}>
                   <Ionicons
@@ -181,6 +235,31 @@ export default function SignupScreen() {
                   />
                 </TouchableOpacity>
               </View>
+              {showPasswordChecklist ? (
+                <View style={styles.passwordRulesWrap}>
+                  <View style={styles.ruleRow}>
+                    <View style={[styles.ruleDot, passHasSpecial && styles.ruleDotActive]} />
+                    <Text style={[styles.ruleText, passHasSpecial && styles.ruleTextDone]}>
+                      Phải có ít nhất 1 ký tự đặc biệt (@#$*&...)
+                    </Text>
+                  </View>
+                  <View style={styles.ruleRow}>
+                    <View style={[styles.ruleDot, passHasMinLen && styles.ruleDotActive]} />
+                    <Text style={[styles.ruleText, passHasMinLen && styles.ruleTextDone]}>
+                      Phải có ít nhất 6 ký tự
+                    </Text>
+                  </View>
+                  <View style={styles.ruleRow}>
+                    <View style={[styles.ruleDot, passHasNumber && styles.ruleDotActive]} />
+                    <Text style={[styles.ruleText, passHasNumber && styles.ruleTextDone]}>
+                      Phải có ít nhất 1 chữ số (0-9)
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+              {passwordTouched && !!password && !isValidPassword(password) ? (
+                <Text style={styles.ruleWarnText}>{passwordRuleMessage(password)}</Text>
+              ) : null}
 
               <View style={styles.passwordContainer}>
                 <TextInput
@@ -303,5 +382,38 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontSize: 13,
     textAlign: "center",
+  },
+  passwordRulesWrap: {
+    marginTop: -6,
+    marginBottom: 10,
+    gap: 4,
+  },
+  ruleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  ruleDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    backgroundColor: "#9CA3AF",
+  },
+  ruleDotActive: {
+    backgroundColor: "#16A34A",
+  },
+  ruleText: {
+    color: "#6B7280",
+    fontSize: 12,
+  },
+  ruleTextDone: {
+    color: "#166534",
+    fontWeight: "600",
+  },
+  ruleWarnText: {
+    color: "#B45309",
+    marginTop: -2,
+    marginBottom: 10,
+    fontSize: 12,
   },
 });

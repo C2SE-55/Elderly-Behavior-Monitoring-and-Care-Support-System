@@ -6,7 +6,12 @@ import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
 import { getCurrentUser, getMyRoom, getRoomChatNotificationPrefs, subscribeActiveRoomChange } from "@/services/api";
 import { handleRemoteMedicationIntake } from "@/services/medicationIntakeSync";
 import { appendNotificationLog, getNotificationLogs, subscribeNotificationLogChange } from "@/services/notificationLog";
-import { connectRoomChatSocket } from "@/services/roomChatSocket";
+import {
+  connectRoomChatSocket,
+  getRoomChatNotifPrefCached,
+  seedRoomChatNotifPrefsCache,
+  subscribeRoomChatNotifPrefCacheChange,
+} from "@/services/roomChatSocket";
 import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
 const PRIMARY = "#A78BFA";   // tím nhạt
@@ -138,6 +143,12 @@ export default function TabLayout() {
         const next = new Map<number, boolean>();
         rows.forEach((r) => next.set(Number(r.room_id), r.chat_notifications_enabled !== false));
         chatNotifByRoomRef.current = next;
+        seedRoomChatNotifPrefsCache(
+          rows.map((r) => ({
+            room_id: Number(r.room_id),
+            chat_notifications_enabled: r.chat_notifications_enabled !== false,
+          }))
+        );
       } catch {
         // best-effort: keep previous map
       }
@@ -165,6 +176,8 @@ export default function TabLayout() {
       if (myUserId && Number(msg.sender_user_id || 0) === myUserId) return;
 
       // Respect per-room notification preference (default ON if missing).
+      const cachedPref = getRoomChatNotifPrefCached(roomId);
+      if (cachedPref === false) return;
       if (chatNotifByRoomRef.current.get(roomId) === false) return;
 
       const roomName = String(msg.room_id || `Room #${roomId}`);
@@ -227,10 +240,22 @@ export default function TabLayout() {
     const unsubRoom = subscribeActiveRoomChange(() => {
       void joinActiveRoom();
     });
+    const unsubPref = subscribeRoomChatNotifPrefCacheChange(() => {
+      // keep local ref synchronized so checks are immediate
+      // cached prefs are authoritative for runtime toggles
+      // (backend sync still runs by timer)
+      const current = new Map<number, boolean>(chatNotifByRoomRef.current);
+      for (const [rid, _val] of current) {
+        const cv = getRoomChatNotifPrefCached(rid);
+        if (cv !== undefined) current.set(rid, cv);
+      }
+      chatNotifByRoomRef.current = current;
+    });
 
     return () => {
       cancelled = true;
       unsubRoom();
+      unsubPref();
       clearInterval(prefTimer);
       socket.off("medication:intake", onIntake);
       socket.off("message:new", onMessageNew);

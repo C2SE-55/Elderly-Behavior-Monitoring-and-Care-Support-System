@@ -1,7 +1,14 @@
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET, JWT_EXPIRE, HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
-const { isValidEmail, isValidPassword, isEmptyField, isGmail, isValidVietnamesePhone } = require("../utils/validators");
+const {
+  isValidEmail,
+  isValidPassword,
+  isValidUsername,
+  isEmptyField,
+  isGmail,
+  isValidVietnamesePhone,
+} = require("../utils/validators");
 const User = require("../models/User");
 const Role = require("../models/Role");
 
@@ -29,13 +36,25 @@ exports.register = async (req, res) => {
       return sendFail(res, "Định dạng email không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
 
+    if (!isValidUsername(username)) {
+      return sendFail(
+        res,
+        "Username phải có ít nhất 6 ký tự, chỉ gồm chữ và số, và phải chứa cả chữ lẫn số",
+        HTTP_STATUS.BAD_REQUEST
+      );
+    }
+
     // Kiểm tra email được host bởi Google (hỗ trợ cả Gmail cá nhân và Google Workspace)
     if (!(await isGmail(email))) {
       return sendFail(res, "Email phải là hộp thư do Google quản lý (Gmail/Workspace)", HTTP_STATUS.BAD_REQUEST);
     }
 
     if (!isValidPassword(password)) {
-      return sendFail(res, "Mật khẩu phải có ít nhất 6 ký tự", HTTP_STATUS.BAD_REQUEST);
+      return sendFail(
+        res,
+        "Mật khẩu phải trên 6 ký tự, có ít nhất 1 số và 1 ký tự đặc biệt",
+        HTTP_STATUS.BAD_REQUEST
+      );
     }
 
     // Kiểm tra người dùng đã tồn tại (theo username hoặc email)
@@ -197,7 +216,11 @@ exports.updateProfile = async (req, res) => {
         );
       }
       if (!isValidPassword(newPassword)) {
-        return sendFail(res, "Mật khẩu mới phải có ít nhất 6 ký tự", HTTP_STATUS.BAD_REQUEST);
+        return sendFail(
+          res,
+          "Mật khẩu mới phải trên 6 ký tự, có ít nhất 1 số và 1 ký tự đặc biệt",
+          HTTP_STATUS.BAD_REQUEST
+        );
       }
       if (newPassword !== confirmNewPassword) {
         return sendFail(res, "Mật khẩu mới và xác nhận mật khẩu mới không khớp", HTTP_STATUS.BAD_REQUEST);

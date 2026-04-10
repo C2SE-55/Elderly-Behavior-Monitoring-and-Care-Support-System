@@ -19,7 +19,12 @@ import {
   setRoomChatNotificationPref,
 } from "@/services/api";
 import { appendNotificationLog } from "@/services/notificationLog";
-import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
+import {
+  connectRoomChatSocket,
+  getRoomChatSocket,
+  seedRoomChatNotifPrefsCache,
+  setRoomChatNotifPrefCached,
+} from "@/services/roomChatSocket";
 
 type Row = {
   room_id: number;
@@ -72,6 +77,7 @@ export default function RoomChatListScreen() {
       summary.forEach((it) => summaryMap.set(Number(it.room_id), it));
       const notifMap = new Map<number, boolean>();
       notifPrefs.forEach((p) => notifMap.set(Number(p.room_id), p.chat_notifications_enabled));
+      seedRoomChatNotifPrefsCache(notifPrefs);
       const merged = (rooms || []).map((room: MyRoomSummary) => {
         const sum = summaryMap.get(Number(room.id));
         const rid = Number(room.id);
@@ -172,6 +178,7 @@ export default function RoomChatListScreen() {
   const onToggleRoomNotifications = useCallback(async (roomId: number, next: boolean) => {
     const prev = chatNotifByRoomRef.current.get(roomId);
     chatNotifByRoomRef.current.set(roomId, next);
+    setRoomChatNotifPrefCached(roomId, next);
     setRows((r) =>
       r.map((row) => (row.room_id === roomId ? { ...row, chat_notifications_enabled: next } : row))
     );
@@ -180,6 +187,7 @@ export default function RoomChatListScreen() {
     } catch {
       const revert = prev !== false;
       chatNotifByRoomRef.current.set(roomId, revert);
+      setRoomChatNotifPrefCached(roomId, revert);
       setRows((r) =>
         r.map((row) => (row.room_id === roomId ? { ...row, chat_notifications_enabled: revert } : row))
       );

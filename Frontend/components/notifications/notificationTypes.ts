@@ -1,5 +1,6 @@
 import type { NotificationLogEntry } from "@/services/notificationLog";
 import type { CareConfirmationData, CareConfirmationStatus } from "@/services/careConfirmationNotifications";
+import { getGenericConfirmationFromData } from "@/services/notificationConfirmations";
 
 export type NotificationStatusTone = { bg: string; border: string; text: string };
 
@@ -57,4 +58,38 @@ export const toneForCareConfirmationStatus = (status: CareConfirmationStatus): N
 
 export const isCareConfirmationData = (data: any): data is CareConfirmationData =>
   !!data && data.kind === "care-confirmation" && typeof data.thread_id === "string" && !!data.confirmations;
+
+const extractMedicationNames = (entry: NotificationLogEntry): string[] => {
+  const raw = (entry.data as any)?.medication_names;
+  if (!Array.isArray(raw)) return [];
+  return Array.from(
+    new Set(
+      raw
+        .map((x: unknown) => (typeof x === "string" ? x.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+};
+
+/** Chuẩn hóa nội dung hiển thị để ưu tiên tên thuốc cho log lên lịch nhắc thuốc. */
+export function notificationBodyForDisplay(entry: NotificationLogEntry): string {
+  const body = typeof entry.body === "string" ? entry.body : "";
+  if (entry.type !== "medication") return body;
+  if (entry.title !== "Đã lên lịch nhắc thuốc") return body;
+  const names = extractMedicationNames(entry);
+  if (!names.length) return body;
+  return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")}… (+${names.length - 3})`;
+}
+
+/** Đồng bộ với modal chi tiết: có ít nhất một bên Host/Caregiver đã bấm xác nhận (không áp dụng tin nhắn phòng). */
+export function isNotificationEntryConfirmed(entry: NotificationLogEntry): boolean {
+  if (entry.type === "care-confirmation") {
+    const d = entry.data;
+    if (!isCareConfirmationData(d)) return false;
+    return !!(d.confirmations?.host || d.confirmations?.caretaker);
+  }
+  const g = getGenericConfirmationFromData(entry.data);
+  if (!g) return false;
+  return !!(g.confirmations?.host || g.confirmations?.caretaker);
+}
 

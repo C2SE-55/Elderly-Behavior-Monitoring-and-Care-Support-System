@@ -41,7 +41,6 @@ export default function RootLayout() {
     const authed = !!token;
     const inAuth = root === "(auths)";
     const inHome = root === "(homepages)";
-
     // When not logged in: allow only auth screens and logged-out homepage.
     if (!authed && !inAuth && !inHome) {
       router.replace("/(homepages)/homepage_user");

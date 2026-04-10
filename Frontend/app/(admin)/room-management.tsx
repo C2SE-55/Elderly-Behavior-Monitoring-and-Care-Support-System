@@ -44,21 +44,40 @@ export default function AdminRoomManagementScreen() {
     })();
   }, []);
 
-  const loadRooms = async () => {
+  const loadRooms = async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     try {
-      setRoomsLoading(true);
-      setError("");
+      if (!silent) {
+        setRoomsLoading(true);
+        setError("");
+      }
       const data = await getAdminRooms();
-      setRooms(data);
+      setRooms((prev) => {
+        const prevJson = JSON.stringify(prev || []);
+        const nextJson = JSON.stringify(data || []);
+        return prevJson === nextJson ? prev : data;
+      });
     } catch (e: any) {
-      setError(e?.response?.data?.message || "Không tải được danh sách room.");
+      if (!silent) {
+        setError(e?.response?.data?.message || "Không tải được danh sách room.");
+      }
     } finally {
-      setRoomsLoading(false);
+      if (!silent) {
+        setRoomsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadRooms();
+  }, []);
+
+  // Tự làm mới danh sách room để số thành viên cập nhật realtime hơn.
+  useEffect(() => {
+    const t = setInterval(() => {
+      void loadRooms({ silent: true });
+    }, 5000);
+    return () => clearInterval(t);
   }, []);
 
   const filteredUsers = useMemo(() => {
