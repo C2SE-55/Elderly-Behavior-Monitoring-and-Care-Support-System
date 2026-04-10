@@ -1033,6 +1033,26 @@ export type MedicationCreatePayload = {
   note?: string;
 };
 
+export type ExtractedMedicineItem = {
+  id: string;
+  ten_thuoc: string | null;
+  lieu_luong: string | null;
+  ghi_chu: string | null;
+  confidence: number;
+  needs_review: boolean;
+  note_item: string;
+};
+
+export type MedicationExtractionResponse = {
+  status: "ok" | "partial" | "fail";
+  message: string;
+  medicines: ExtractedMedicineItem[];
+  summary: {
+    total_detected: number;
+    high_confidence_count: number;
+  };
+};
+
 export const getMedications = async (): Promise<MedicationItem[]> => {
   const res = await api.get("/medications");
   return Array.isArray(res.data?.data) ? res.data.data : [];
@@ -1041,6 +1061,37 @@ export const getMedications = async (): Promise<MedicationItem[]> => {
 export const createMedication = async (payload: MedicationCreatePayload): Promise<MedicationItem | null> => {
   const res = await api.post("/medications", payload);
   return res.data?.data ?? null;
+};
+
+export const extractMedicationsFromImage = async (imageUri: string): Promise<MedicationExtractionResponse> => {
+  const formData = new FormData();
+  if (Platform.OS === "web" || imageUri.startsWith("blob:")) {
+    const fetched = await fetch(imageUri);
+    const blob = await fetched.blob();
+    const file = new File([blob], "prescription.jpg", { type: "image/jpeg" });
+    formData.append("image", file);
+  } else {
+    formData.append("image", {
+      uri: imageUri,
+      name: "prescription.jpg",
+      type: "image/jpeg",
+    } as any);
+  }
+
+  const headers: Record<string, string> = getAuthHeaders();
+  const uploadUrl = `${API_ROOT}/medications/extract-from-image`;
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  const json = await response.json();
+  if (!response.ok) {
+    throw Object.assign(new Error(json?.message || "Không thể trích xuất thuốc từ ảnh"), {
+      response: { data: json, status: response.status },
+    });
+  }
+  return json as MedicationExtractionResponse;
 };
 
 export const updateMedication = async (

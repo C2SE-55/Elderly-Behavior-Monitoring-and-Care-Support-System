@@ -45,4 +45,10 @@ const uploadFallImage = multer({
   fileFilter: imageFilter,
 }).single("image");
 
-module.exports = { uploadFaceImage, uploadFallImage };
+const uploadPrescriptionImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: imageFilter,
+}).single("image");
+
+module.exports = { uploadFaceImage, uploadFallImage, uploadPrescriptionImage };

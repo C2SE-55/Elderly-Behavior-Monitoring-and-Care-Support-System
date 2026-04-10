@@ -2,6 +2,7 @@ const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
+const { extractMedicationsFromImage } = require("../services/medicationImageExtraction");
 
 exports.getMedications = async (req, res) => {
   try {
@@ -93,5 +94,40 @@ exports.deleteMedication = async (req, res) => {
   } catch (error) {
     console.error("Lỗi xóa thuốc:", error);
     return sendError(res, "Không thể xóa thuốc", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
+exports.extractFromImage = async (req, res) => {
+  try {
+    const context = await resolveAccessContext(req, req.userId);
+    if (!context.canReadRoomData || !context.hostUserId) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        status: "fail",
+        message: "Bạn không có quyền xem dữ liệu trong room",
+        medicines: [],
+        summary: { total_detected: 0, high_confidence_count: 0 },
+      });
+    }
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        status: "fail",
+        message: "Vui lòng gửi ảnh thuốc (field 'image', JPG/PNG).",
+        medicines: [],
+        summary: { total_detected: 0, high_confidence_count: 0 },
+      });
+    }
+
+    const result = await extractMedicationsFromImage(req.file.buffer, req.file.mimetype || "image/jpeg");
+    const statusCode = result.status === "fail" ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.OK;
+    return res.status(statusCode).json(result);
+  } catch (error) {
+    console.error("Lỗi trích xuất thuốc từ ảnh:", error);
+    return res.status(HTTP_STATUS.INTERNAL_ERROR).json({
+      status: "fail",
+      message: "Lỗi hệ thống khi trích xuất thuốc từ ảnh.",
+      medicines: [],
+      summary: { total_detected: 0, high_confidence_count: 0 },
+    });
   }
 };

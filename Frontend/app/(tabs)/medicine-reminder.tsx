@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Animated,
+  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,11 +16,14 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import {
   createMedication,
   createSchedules,
   deleteMedication,
   deleteSchedulesForSlot,
+  extractMedicationsFromImage,
+  ExtractedMedicineItem,
   getMyRoom,
   getMedications,
   getTodaySchedules,
@@ -69,6 +73,9 @@ export default function MedicineReminderScreen() {
   const [medicineName, setMedicineName] = useState("");
   const [medicineDosage, setMedicineDosage] = useState("");
   const [medicineNote, setMedicineNote] = useState("");
+  const [extractedMedicines, setExtractedMedicines] = useState<ExtractedMedicineItem[]>([]);
+  const [extractMessage, setExtractMessage] = useState("");
+  const [extractingImage, setExtractingImage] = useState(false);
   const [editingMedicationId, setEditingMedicationId] = useState<number | null>(null);
 
   const [hour, setHour] = useState(8);
@@ -395,6 +402,52 @@ export default function MedicineReminderScreen() {
     }
   };
 
+  const onExtractFromImage = async () => {
+    if (!canManageMedication) {
+      setScreenError("Bạn không có quyền chỉnh sửa nhắc thuốc.");
+      return;
+    }
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Quyền truy cập ảnh", "Cần cấp quyền truy cập thư viện để chọn ảnh toa thuốc.");
+        return;
+      }
+
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (picked.canceled || !picked.assets?.[0]?.uri) return;
+
+      setExtractingImage(true);
+      setScreenError("");
+      setSuccessMessage("");
+      setExtractMessage("");
+      const result = await extractMedicationsFromImage(picked.assets[0].uri);
+      setExtractedMedicines(Array.isArray(result.medicines) ? result.medicines : []);
+      setExtractMessage(result.message || "");
+      if (!result.medicines?.length) {
+        setScreenError(result.message || "Không đọc được thuốc từ ảnh.");
+      } else {
+        setSuccessMessage("Đã trích xuất thuốc từ ảnh. Bấm 'Dùng dòng này' để điền vào form.");
+      }
+    } catch (error) {
+      const backendMessage = (error as any)?.response?.data?.message;
+      setScreenError(backendMessage || "Không thể trích xuất thuốc từ ảnh.");
+    } finally {
+      setExtractingImage(false);
+    }
+  };
+
+  const onUseExtractedMedicine = (item: ExtractedMedicineItem) => {
+    setMedicineName(item.ten_thuoc || "");
+    setMedicineDosage(item.lieu_luong || "");
+    setMedicineNote(item.ghi_chu || "");
+    setEditingMedicationId(null);
+  };
+
   const toggleSelectMedication = (id: number) => {
     setSelectedMedicationIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -644,6 +697,13 @@ export default function MedicineReminderScreen() {
             >
               <Text style={styles.primaryBtnText}>{savingMedication ? "Đang lưu..." : editingMedicationId ? "Cập nhật thuốc" : "Thêm thuốc"}</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.lightBtn, !canManageMedication && { opacity: 0.6 }]}
+              onPress={() => void onExtractFromImage()}
+              disabled={extractingImage || !canManageMedication}
+            >
+              <Text style={styles.lightBtnText}>{extractingImage ? "Đang đọc ảnh..." : "Trích xuất từ ảnh"}</Text>
+            </TouchableOpacity>
             {editingMedicationId && (
               <TouchableOpacity
                 style={[styles.lightBtn, !canManageMedication && { opacity: 0.6 }]}
@@ -654,6 +714,28 @@ export default function MedicineReminderScreen() {
               </TouchableOpacity>
             )}
           </View>
+          {!!extractMessage && <Text style={styles.cardHint}>{extractMessage}</Text>}
+
+          {extractedMedicines.map((item) => (
+            <View key={`extract-${item.id}`} style={styles.medicationRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.medName}>{item.ten_thuoc || "(chưa rõ tên thuốc)"}</Text>
+                {!!item.lieu_luong && <Text style={styles.medMeta}>Liều: {item.lieu_luong}</Text>}
+                {!!item.ghi_chu && <Text style={styles.medMeta}>Ghi chú: {item.ghi_chu}</Text>}
+                <Text style={styles.medMeta}>
+                  Confidence: {Math.round((item.confidence || 0) * 100)}% {item.needs_review ? "• cần kiểm tra" : ""}
+                </Text>
+                {!!item.note_item && <Text style={styles.medMeta}>{item.note_item}</Text>}
+              </View>
+              <TouchableOpacity
+                style={[styles.lightBtn, !canManageMedication && { opacity: 0.6 }]}
+                onPress={() => onUseExtractedMedicine(item)}
+                disabled={!canManageMedication}
+              >
+                <Text style={styles.lightBtnText}>Dùng dòng này</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
 
           {medications.map((item) => (
             <View key={item.id} style={styles.medicationRow}>
