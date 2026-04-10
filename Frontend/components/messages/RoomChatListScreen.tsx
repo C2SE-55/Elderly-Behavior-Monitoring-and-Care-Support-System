@@ -15,7 +15,6 @@ import {
   logoutUser,
   RoomChatNotificationPrefItem,
   RoomUnreadSummaryItem,
-  setActiveRoomId,
   setRoomChatNotificationPref,
 } from "@/services/api";
 import { appendNotificationLog } from "@/services/notificationLog";
@@ -227,7 +226,6 @@ export default function RoomChatListScreen() {
   };
 
   const openRoom = (item: Row) => {
-    setActiveRoomId(item.room_id);
     router.push({
       pathname: "/(screens)/room-chat",
       params: {

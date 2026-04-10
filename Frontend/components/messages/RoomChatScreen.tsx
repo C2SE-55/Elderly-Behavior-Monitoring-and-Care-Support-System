@@ -31,7 +31,6 @@ import {
   RoomChatMessage,
   RoomNote,
   sendRoomMessage,
-  setActiveRoomId,
   updateRoomNote,
 } from "@/services/api";
 import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
@@ -151,7 +150,6 @@ export default function RoomChatScreen() {
     if (!roomId) return;
     setLoading(true);
     try {
-      setActiveRoomId(roomId);
       const [page, noteRows, roomInfo, roomList] = await Promise.all([
         getRoomMessages(roomId, { limit: 100 }),
         getRoomNotes(roomId),

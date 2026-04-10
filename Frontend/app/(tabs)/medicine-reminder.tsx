@@ -90,6 +90,7 @@ export default function MedicineReminderScreen() {
   const [iosPickerOpen, setIosPickerOpen] = useState(false);
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<number[]>([]);
   const [doseOverrides, setDoseOverrides] = useState<Record<number, string>>({});
+  const [scheduleRepeatType, setScheduleRepeatType] = useState<"once" | "daily">("once");
   const [allowMissedReminder, setAllowMissedReminder] = useState(true);
   const [missedReminderMinutes, setMissedReminderMinutes] = useState<number>(5);
   const missReminderShownRef = useRef<Record<string, true>>({});
@@ -173,14 +174,14 @@ export default function MedicineReminderScreen() {
     }
   }, []);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (showLoading = true) => {
     if (!canReadRoomData) {
       setMedications([]);
       setTodaySchedules([]);
       return;
     }
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setScreenError("");
       const [meds, schedules] = await Promise.all([getMedications(), getTodaySchedules()]);
       setMedications(meds);
@@ -189,7 +190,7 @@ export default function MedicineReminderScreen() {
       const backendMessage = (error as any)?.response?.data?.message;
       setScreenError(backendMessage || "Không tải được dữ liệu nhắc thuốc.");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [canReadRoomData]);
 
@@ -504,7 +505,7 @@ export default function MedicineReminderScreen() {
       setScreenError("Vui lòng chọn ít nhất 1 thuốc để đặt lịch.");
       return;
     }
-    if (hhmmToMinutes(selectedTime) < hhmmToMinutes(nowHHMM())) {
+    if (scheduleRepeatType === "once" && hhmmToMinutes(selectedTime) < hhmmToMinutes(nowHHMM())) {
       setScreenError("Không thể đặt lịch trong quá khứ. Vui lòng chọn giờ hiện tại hoặc muộn hơn.");
       return;
     }
@@ -515,7 +516,7 @@ export default function MedicineReminderScreen() {
 
       await createSchedules({
         alarm_time: selectedTime,
-        repeat_type: "once",
+        repeat_type: scheduleRepeatType,
         medications: selectedMedicationIds.map((id) => ({
           medication_id: id,
           dosage: doseOverrides[id] ? doseOverrides[id].trim() : undefined,
@@ -619,7 +620,6 @@ export default function MedicineReminderScreen() {
     }
     const t = String(alarmTime || "").slice(0, 5);
     if (!t) return;
-    const keepY = lastScrollYRef.current;
     const snapshot = [...todaySchedules];
     try {
       setScreenError("");
@@ -629,21 +629,34 @@ export default function MedicineReminderScreen() {
       // Fallback: some environments may reject DELETE body, then endpoint returns deleted=0.
       // In that case, delete by schedule IDs to guarantee the slot is removed.
       if ((result?.deleted || 0) === 0 && scheduleIds.length) {
-        await Promise.all(
+        const settled = await Promise.allSettled(
           scheduleIds
             .map((id) => Number(id))
             .filter((id) => id > 0)
             .map((id) => deleteSchedule(id))
         );
+        const hasHardError = settled.some((s) => {
+          if (s.status === "fulfilled") return false;
+          const backendMessage = (s.reason as any)?.response?.data?.message;
+          return backendMessage !== "Không tìm thấy lịch uống";
+        });
+        if (hasHardError) {
+          throw new Error("DELETE_SLOT_FALLBACK_FAILED");
+        }
       }
       setSuccessMessage("Đã xóa toàn bộ lịch trong khung giờ này.");
-      await loadAll();
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollTo({ y: keepY, animated: false });
-      });
+      await loadAll(false);
     } catch (error) {
-      setTodaySchedules(snapshot);
       const backendMessage = (error as any)?.response?.data?.message;
+      if (
+        backendMessage === "Không tìm thấy lịch cho khung giờ này" ||
+        backendMessage === "Không tìm thấy lịch uống"
+      ) {
+        setScreenError("");
+        await loadAll(false);
+        return;
+      }
+      setTodaySchedules(snapshot);
       setScreenError(backendMessage || "Không thể xóa lịch.");
     }
   };
@@ -880,30 +893,38 @@ export default function MedicineReminderScreen() {
 
           <View style={styles.repeatRow}>
             <TouchableOpacity
-              style={[styles.repeatPill, !allowMissedReminder && styles.repeatPillActive]}
-              onPress={() => setAllowMissedReminder(false)}
+              style={[styles.repeatPill, scheduleRepeatType === "once" && styles.repeatPillActive]}
+              onPress={() => setScheduleRepeatType("once")}
             >
-              <Text style={[styles.repeatText, !allowMissedReminder && styles.repeatTextActive]}>
+              <Text style={[styles.repeatText, scheduleRepeatType === "once" && styles.repeatTextActive]}>
                 Nhắc 1 lần
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.repeatPill,
-                allowMissedReminder && styles.repeatPillActive,
-              ]}
-              onPress={() => setAllowMissedReminder(true)}
+              style={[styles.repeatPill, scheduleRepeatType === "daily" && styles.repeatPillActive]}
+              onPress={() => setScheduleRepeatType("daily")}
             >
-              <Text
-                style={[
-                  styles.repeatText,
-                  allowMissedReminder && styles.repeatTextActive,
-                ]}
-              >
-                Báo lại
+              <Text style={[styles.repeatText, scheduleRepeatType === "daily" && styles.repeatTextActive]}>
+                Nhắc hằng ngày
               </Text>
             </TouchableOpacity>
           </View>
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Báo lại</Text>
+            <Switch
+              value={allowMissedReminder}
+              onValueChange={setAllowMissedReminder}
+              disabled={!canManageMedication}
+              trackColor={{ false: "#9CA3AF", true: "#22C55E" }}
+              thumbColor={allowMissedReminder ? "#FFFFFF" : "#FFFFFF"}
+            />
+          </View>
+          {allowMissedReminder && (
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Thời lượng báo lại</Text>
+              <Text style={styles.settingValue}>{missedReminderMinutes} phút</Text>
+            </View>
+          )}
           {allowMissedReminder && (
             <View style={styles.repeatRow}>
               {SNOOZE_MINUTE_OPTIONS.map((m) => (
@@ -1193,6 +1214,19 @@ const styles = StyleSheet.create({
   repeatPillActive: { borderColor: "#2563EB", backgroundColor: "#DBEAFE" },
   repeatText: { color: "#4B5563", fontSize: 12 },
   repeatTextActive: { color: "#1D4ED8", fontWeight: "700" },
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#F8FAFC",
+  },
+  settingLabel: { color: "#111827", fontSize: 14, fontWeight: "600" },
+  settingValue: { color: "#D97706", fontSize: 14, fontWeight: "700" },
   repeatHintPill: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
