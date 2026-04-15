@@ -23,8 +23,6 @@ type Props = {
   onDelete: (item: DailyScheduleItem) => void;
   readonly?: boolean;
   onViewDetail?: (item: DailyScheduleItem) => void;
-  /** Đã qua giờ kết thúc lịch nhưng chưa tích hoàn thành */
-  overdueNotice?: boolean;
 };
 
 const TYPE_BG: Record<DailyScheduleItem["type"], string> = {
@@ -47,32 +45,29 @@ export default function ScheduleItem({
   onDelete,
   readonly = false,
   onViewDetail,
-  overdueNotice = false,
 }: Props) {
   const isDone = isScheduleMarkedDone(item);
+  const normalizedDescription = String(item.description || "")
+    .replace(/\[ĐÃ XONG\]/gi, "")
+    .trim();
   return (
     <View style={[styles.box, { backgroundColor: TYPE_BG[item.type] }]}>
-      <View style={styles.topRow}>
-        <View style={styles.timeChip}>
-          <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
-            {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
-          </Text>
+      <View style={styles.content}>
+        <View style={styles.topRow}>
+          <View style={styles.timeChip}>
+            <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
+              {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
+            </Text>
+          </View>
+          {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
         </View>
-        {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
-      </View>
-      <Text style={styles.title} numberOfLines={2}>
-        {item.title}
-      </Text>
-      {!!item.description && (
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description}
+        <Text style={styles.title} numberOfLines={2}>
+          {item.title}
         </Text>
-      )}
-      {overdueNotice && (
-        <View style={styles.overdueWrap}>
-          <Text style={styles.overdueText}>Đã qua lịch — chưa hoàn thành</Text>
-        </View>
-      )}
+        <Text style={styles.description} numberOfLines={2}>
+          {normalizedDescription || " "}
+        </Text>
+      </View>
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)} activeOpacity={0.9}>
           <Text style={styles.actionText}>Chi tiết</Text>
@@ -101,6 +96,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
+    minHeight: 134,
+    maxHeight: 134,
+    justifyContent: "space-between",
+    overflow: "hidden",
+  },
+  content: {
+    flexShrink: 1,
   },
   topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   timeChip: {
@@ -127,22 +129,8 @@ const styles = StyleSheet.create({
     color: COLORS.sub,
     marginTop: 2,
     fontWeight: "600",
-  },
-  overdueWrap: {
-    marginTop: 4,
-    alignSelf: "stretch",
-    backgroundColor: "#FEF3C7",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: "#F59E0B",
-  },
-  overdueText: {
-    color: "#92400E",
-    fontSize: 10,
-    fontWeight: "800",
-    lineHeight: 14,
+    minHeight: 30,
+    lineHeight: 15,
   },
   doneBadge: {
     alignSelf: "flex-start",
@@ -159,6 +147,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     marginTop: 6,
+    flexWrap: "nowrap",
   },
   actionBtn: {
     backgroundColor: COLORS.actionBg,

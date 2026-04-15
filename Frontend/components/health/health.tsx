@@ -28,9 +28,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const COLORS = {
-  bg: "#F5F6FF",
-  card: "rgba(255,255,255,0.92)",
-  border: "rgba(148,163,184,0.22)",
+  bg: "#F4F5FF",
+  card: "#FFFFFF",
+  border: "rgba(148,163,184,0.20)",
   text: "#0F172A",
   sub: "#64748B",
   primary: "#56328C",
@@ -77,7 +77,10 @@ const HealthAvatar = ({ faceImageUrl, onUpload, loading, disabled }: HealthAvata
         {loading ? (
           <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 8 }} />
         ) : (
-          <Text style={avatarStyles.change}>Đổi hình đại diện</Text>
+          <View style={[avatarStyles.changeBtn, disabled && avatarStyles.changeBtnDisabled]}>
+            <Ionicons name="camera-outline" size={14} color={disabled ? "#94A3B8" : COLORS.primary} />
+            <Text style={[avatarStyles.change, disabled && avatarStyles.changeDisabled]}>Đổi hình đại diện</Text>
+          </View>
         )}
       </TouchableOpacity>
     </View>
@@ -588,19 +591,20 @@ export default function HealthScreen() {
           </View>
 
           {!!permissionMessage && (
-            <Text style={permissionMessage === "Chỉ xem" ? screenStyles.readonlyBadge : screenStyles.warnText}>
-              {permissionMessage}
-            </Text>
+            <View style={screenStyles.metaRow}>
+              <Text style={permissionMessage === "Chỉ xem" ? screenStyles.readonlyBadge : screenStyles.warnText}>
+                {permissionMessage}
+              </Text>
+            </View>
           )}
-          {permissionLoading ? (
-            <Text style={screenStyles.infoText}>Đang kiểm tra quyền trong room...</Text>
-          ) : null}
-          {!!roomInfo?.room_id && (
-            <Text style={screenStyles.infoText}>Room: {roomInfo.room_id}</Text>
-          )}
+          <View style={screenStyles.metaRow}>
+            {permissionLoading ? (
+              <Text style={screenStyles.infoChip}>Đang kiểm tra quyền...</Text>
+            ) : null}
+            {!!roomInfo?.room_id && <Text style={screenStyles.infoChip}>Room: {roomInfo.room_id}</Text>}
+          </View>
 
           <View style={screenStyles.sectionCard}>
-            <Text style={screenStyles.sectionTitle}>Chỉ số cơ bản</Text>
             <HealthInput
               placeholder="Nhập họ và tên"
               label="Họ và tên"
@@ -630,7 +634,6 @@ export default function HealthScreen() {
           </View>
 
           <View style={screenStyles.sectionCard}>
-            <Text style={screenStyles.sectionTitle}>Tim mạch & nhóm máu</Text>
             <View style={bloodStyles.wrapper}>
               <Text style={bloodStyles.label}>Nhóm máu</Text>
               <View style={bloodStyles.chipRow}>
@@ -672,7 +675,6 @@ export default function HealthScreen() {
           </View>
 
           <View style={screenStyles.sectionCard}>
-            <Text style={screenStyles.sectionTitle}>Tiền sử</Text>
             <HealthInput
               label="Bệnh nền"
               placeholder="Nhập bệnh nền"
@@ -728,9 +730,10 @@ const screenStyles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
-    paddingBottom: 28,
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 30,
+    gap: 10,
   },
   scrollDownButton: {
     position: "absolute",
@@ -764,7 +767,7 @@ const screenStyles = StyleSheet.create({
     fontWeight: "800",
   },
   warnText: {
-    marginBottom: 10,
+    marginBottom: 0,
     color: "#92400E",
     backgroundColor: "#FEF3C7",
     borderRadius: 14,
@@ -777,7 +780,7 @@ const screenStyles = StyleSheet.create({
   },
   readonlyBadge: {
     alignSelf: "flex-start",
-    marginBottom: 10,
+    marginBottom: 0,
     color: "#92400E",
     backgroundColor: "#FEF3C7",
     borderRadius: 999,
@@ -786,9 +789,20 @@ const screenStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
-  infoText: {
+  metaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     marginBottom: 8,
+  },
+  infoChip: {
     color: "#475569",
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#DDE2FF",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -796,26 +810,28 @@ const screenStyles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 22,
-    padding: 14,
+    borderRadius: 20,
+    padding: 15,
     shadowColor: "#0F172A",
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 9 },
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "900", color: COLORS.text },
+  sectionTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text, marginBottom: 2 },
   sectionHint: { marginTop: 10, fontSize: 12, fontWeight: "700", color: COLORS.sub, lineHeight: 18, textAlign: "center" },
 });
 
 const headerStyles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.bg,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingBottom: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(148,163,184,0.18)",
   },
   backBtn: {
     width: 38,
@@ -823,13 +839,13 @@ const headerStyles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.card,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   title: {
     color: COLORS.text,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "900",
     flex: 1,
     textAlign: "center",
@@ -853,12 +869,24 @@ const avatarStyles = StyleSheet.create({
     elevation: 4,
   },
   avatar: { width: "100%", height: "100%", borderRadius: 56 },
-  change: {
-    marginTop: 8,
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: "900",
+  changeBtn: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(167,139,250,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
+  changeBtnDisabled: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
+  },
+  change: { color: COLORS.primary, fontSize: 12, fontWeight: "900" },
+  changeDisabled: { color: "#94A3B8" },
 });
 
 const inputStyles = StyleSheet.create({
@@ -935,15 +963,21 @@ const twoColStyles = StyleSheet.create({
 const buttonStyles = StyleSheet.create({
   button: {
     backgroundColor: COLORS.primary,
-    height: 48,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 6,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   text: {
     color: "white",
     fontWeight: "900",
+    fontSize: 14,
   },
 });
 

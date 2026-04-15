@@ -21,8 +21,6 @@ type Props = {
   isCurrent: boolean;
   readonly?: boolean;
   isPast?: boolean;
-  /** Mục đã qua thời gian kết thúc và chưa đánh dấu hoàn thành → hiện nhắc trên thẻ */
-  isItemOverdueIncomplete?: (item: DailyScheduleItem) => boolean;
   onAdd: (dayKey: DailyScheduleItem["day_of_week"]) => void;
   onEdit: (item: DailyScheduleItem) => void;
   onDelete: (item: DailyScheduleItem) => void;
@@ -36,36 +34,42 @@ export default function TimeSlotCell({
   isCurrent,
   readonly = false,
   isPast = false,
-  isItemOverdueIncomplete,
   onAdd,
   onEdit,
   onDelete,
   onViewDetail,
 }: Props) {
+  const hasSchedules = schedules.length > 0;
+  const primarySchedules = hasSchedules ? schedules.slice(0, 1) : [];
+  const extraCount = hasSchedules ? Math.max(0, schedules.length - primarySchedules.length) : 0;
   return (
     <View style={[styles.cell, isCurrent && styles.currentCell, isPast && styles.disabledCell]}>
-      {schedules.length === 0 ? (
-        <Text style={styles.placeholder}>Chưa có lịch</Text>
-      ) : (
-        schedules.map((item) => (
-          <ScheduleItem
-            key={item.id}
-            item={item}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            readonly={readonly}
-            onViewDetail={onViewDetail}
-            overdueNotice={isItemOverdueIncomplete?.(item) ?? false}
-          />
-        ))
-      )}
-      {!readonly && !isPast ? (
-        <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => onAdd(dayKey)}>
-          <Text style={styles.addBtnText}>+ Thêm lịch</Text>
-        </TouchableOpacity>
-      ) : !readonly && isPast ? (
-        <Text style={styles.disabledText}>Đã qua thời gian</Text>
-      ) : null}
+      <View style={styles.cellBody}>
+        {hasSchedules ? (
+          primarySchedules.map((item) => (
+            <ScheduleItem
+              key={item.id}
+              item={item}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              readonly={readonly}
+              onViewDetail={onViewDetail}
+            />
+          ))
+        ) : (
+          <Text style={styles.placeholder}>Chưa có lịch</Text>
+        )}
+        {extraCount > 0 ? <Text style={styles.moreText}>+{extraCount} hoạt động khác</Text> : null}
+      </View>
+      <View style={styles.cellFooter}>
+        {!readonly && !isPast ? (
+          <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => onAdd(dayKey)}>
+            <Text style={styles.addBtnText}>+ Thêm lịch</Text>
+          </TouchableOpacity>
+        ) : !readonly && isPast && !hasSchedules ? (
+          <Text style={styles.disabledText}>Đã qua thời gian</Text>
+        ) : null}
+      </View>
       {isCurrent && (
         <View style={styles.currentBadge}>
           <Text style={styles.currentBadgeText}>Đang diễn ra ({slotLabel})</Text>
@@ -78,7 +82,8 @@ export default function TimeSlotCell({
 const styles = StyleSheet.create({
   cell: {
     width: 185,
-    minHeight: 128,
+    minHeight: 168,
+    maxHeight: 168,
     padding: 10,
     borderRadius: 18,
     backgroundColor: COLORS.card,
@@ -89,6 +94,15 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
+    justifyContent: "space-between",
+    overflow: "hidden",
+  },
+  cellBody: {
+    flex: 1,
+  },
+  cellFooter: {
+    minHeight: 24,
+    justifyContent: "flex-end",
   },
   currentCell: {
     borderColor: COLORS.primaryBorder,
@@ -100,6 +114,12 @@ const styles = StyleSheet.create({
   placeholder: {
     color: COLORS.sub,
     fontSize: 12,
+    fontWeight: "700",
+  },
+  moreText: {
+    marginTop: 4,
+    color: COLORS.sub,
+    fontSize: 10,
     fontWeight: "700",
   },
   addBtn: {

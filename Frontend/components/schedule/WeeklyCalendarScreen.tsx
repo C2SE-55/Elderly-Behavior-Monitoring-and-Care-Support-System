@@ -620,7 +620,7 @@ export default function WeeklyCalendarScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
+        <TouchableOpacity onPress={() => router.replace("/(tabs)")} hitSlop={8}>
           <View style={styles.headerIconBtn}>
             <Ionicons name="arrow-back" size={20} color={COLORS.text} />
           </View>
@@ -635,16 +635,32 @@ export default function WeeklyCalendarScreen() {
         nestedScrollEnabled
       >
         <View style={styles.weekNavRow}>
-          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)} activeOpacity={0.9}>
-            <Ionicons name="chevron-back" size={16} color={COLORS.primary} />
-            <Text style={styles.weekBtnText}>Tuần trước</Text>
-          </TouchableOpacity>
+          <View style={styles.weekNavTopRow}>
+            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)} activeOpacity={0.9}>
+              <Ionicons name="chevron-back" size={16} color={COLORS.primary} />
+              <Text style={styles.weekBtnText}>Tuần trước</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.weekBtn} onPress={goToToday} activeOpacity={0.9}>
+              <Ionicons name="today-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.weekBtnText}>Hôm nay</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)} activeOpacity={0.9}>
+              <Text style={styles.weekBtnText}>Tuần sau</Text>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={[styles.rangeSummaryBtn, isRangeActive && styles.rangeSummaryBtnActive]}
             onPress={() => setRangeModalVisible(true)}
             activeOpacity={0.85}
           >
             <View style={styles.rangeTopRow}>
+              <Ionicons
+                name="calendar-outline"
+                size={14}
+                color={isRangeActive ? "#92400E" : COLORS.primary}
+              />
               <Text style={[styles.rangeSummaryLabel, isRangeActive && styles.rangeSummaryLabelActive]}>Khoảng ngày</Text>
             </View>
             <Text
@@ -656,16 +672,6 @@ export default function WeeklyCalendarScreen() {
               {effectiveRangeStart.format("DD/MM")} – {effectiveRangeEnd.format("DD/MM")}
             </Text>
           </TouchableOpacity>
-          <View style={styles.weekActionsRight}>
-            <TouchableOpacity style={styles.weekBtn} onPress={goToToday} activeOpacity={0.9}>
-              <Ionicons name="today-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.weekBtnText}>Hôm nay</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)} activeOpacity={0.9}>
-              <Text style={styles.weekBtnText}>Tuần sau</Text>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
         </View>
         <Text style={styles.weekHint}>
           Tuần: {weekStart.format("DD/MM")} - {weekEnd.format("DD/MM")}
@@ -855,9 +861,13 @@ const styles = StyleSheet.create({
   weekNavRow: {
     marginHorizontal: 12,
     marginBottom: 6,
+    gap: 8,
+  },
+  weekNavTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 6,
   },
   weekBtn: {
     backgroundColor: COLORS.primarySoft,
@@ -870,40 +880,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  weekActionsRight: {
-    flexDirection: "row",
-    gap: 6,
-  },
   weekBtnText: { color: COLORS.primary, fontSize: 12, fontWeight: "900" },
   rangeSummaryBtn: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    minWidth: 0,
-    marginHorizontal: 6,
-    backgroundColor: COLORS.card,
+    width: "100%",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    borderColor: "rgba(167,139,250,0.28)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     alignItems: "flex-start",
     justifyContent: "center",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
+    shadowColor: "#56328C",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  rangeTopRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rangeSummaryLabel: { color: COLORS.sub, fontSize: 10, fontWeight: "900" },
-  rangeSummaryValue: { marginTop: 2, color: COLORS.text, fontSize: 14, fontWeight: "900" },
+  rangeTopRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  rangeSummaryLabel: { color: "#6D28D9", fontSize: 11, fontWeight: "800" },
+  rangeSummaryValue: { color: COLORS.text, fontSize: 32/2, fontWeight: "900", letterSpacing: 0.2 },
   rangeSummaryBtnActive: {
     borderColor: "rgba(245,158,11,0.35)",
     backgroundColor: COLORS.warnSoft,
   },
   rangeSummaryLabelActive: { color: "#92400E" },
-  rangeSummaryValueActive: { color: "#92400E" },
+  rangeSummaryValueActive: { color: "#78350F" },
   weekHint: { color: COLORS.sub, fontSize: 11, fontWeight: "800", marginHorizontal: 12, marginBottom: 6 },
   errorText: {
     color: "#991B1B",

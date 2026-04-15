@@ -61,8 +61,8 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             animation: Platform.OS === "ios" ? "default" : "slide_from_right",
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            gestureEnabled: false,
+            fullScreenGestureEnabled: false,
             animationDuration: 230,
           }}
           initialRouteName="index"
@@ -87,9 +87,33 @@ export default function RootLayout() {
           />
           <Stack.Screen name="(auths)" options={{ animation: "fade", animationDuration: 180 }} />
           <Stack.Screen name="(homepages)" options={{ animation: "fade", animationDuration: 180 }} />
-          <Stack.Screen name="(screens)" options={{ animation: "slide_from_right", animationDuration: 230 }} />
-          <Stack.Screen name="(healths)" options={{ animation: "slide_from_right", animationDuration: 230 }} />
-          <Stack.Screen name="(profiles)" options={{ animation: "slide_from_right", animationDuration: 230 }} />
+          <Stack.Screen
+            name="(screens)"
+            options={{
+              animation: "slide_from_right",
+              animationDuration: 230,
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
+          <Stack.Screen
+            name="(healths)"
+            options={{
+              animation: "slide_from_right",
+              animationDuration: 230,
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
+          <Stack.Screen
+            name="(profiles)"
+            options={{
+              animation: "slide_from_right",
+              animationDuration: 230,
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
           <Stack.Screen
             name="modal"
             options={{

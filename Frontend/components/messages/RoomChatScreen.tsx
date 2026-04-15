@@ -500,37 +500,6 @@ export default function RoomChatScreen() {
   const notesPanel = (
     <View style={styles.notesStickyOuter}>
       <View style={styles.notesSection}>
-        <View style={styles.notesHeader}>
-          <View style={styles.notesHeaderSide}>
-            <TouchableOpacity style={styles.notesBackBtn} onPress={goBackToRoomList} accessibilityRole="button">
-              <Feather name="chevron-left" size={22} color="#56328C" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.notesTitle}>Ghi chú</Text>
-          <View style={styles.notesHeaderSide}>
-            {canEditNotes ? (
-              <TouchableOpacity
-                style={styles.noteBtn}
-                onPress={() => {
-                  if (latestNote) {
-                    onEditNote(latestNote);
-                    return;
-                  }
-                  setEditingNoteId(null);
-                  setNoteTitle("");
-                  setNoteContent("");
-                  setNotePinned(false);
-                  setShowComposer((v) => !v);
-                }}
-              >
-                <Text style={styles.noteBtnText}>{showComposer ? "Đóng" : latestNote ? "Sửa note" : "Tạo note"}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.notesHeaderSpacer} />
-            )}
-          </View>
-        </View>
-
         {showComposer && canEditNotes && (
           <View style={styles.noteComposer}>
             <TextInput
@@ -596,11 +565,31 @@ export default function RoomChatScreen() {
                   <TouchableOpacity onPress={() => onEditNote(latestNote)}>
                     <Text style={styles.editText}>Sửa</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity onPress={() => onDeleteNote(latestNote)}>
+                    <Text style={styles.deleteText}>Xóa note</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
           ) : (
-            <Text style={styles.noteMeta}>Chưa có ghi chú truyền đạt cho người thân trong room này.</Text>
+            <View style={styles.emptyNoteWrap}>
+              <Text style={styles.noteMeta}>Chưa có ghi chú truyền đạt cho người thân trong room này.</Text>
+              {canEditNotes ? (
+                <TouchableOpacity
+                  style={styles.emptyAddNoteBtn}
+                  onPress={() => {
+                    setEditingNoteId(null);
+                    setNoteTitle("");
+                    setNoteContent("");
+                    setNotePinned(false);
+                    setShowComposer(true);
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.emptyAddNoteText}>+ Thêm note</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           )}
         </ScrollView>
       </View>
@@ -616,7 +605,11 @@ export default function RoomChatScreen() {
       >
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={goBackToRoomList} style={styles.headerBackBtn} hitSlop={10}>
+              <Feather name="arrow-left" size={20} color={COLORS.text} />
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
+              <Text style={styles.headerMainTitle}>Chat người thân</Text>
               <Text style={styles.room} numberOfLines={1}>
                 {roomName}
               </Text>
@@ -645,6 +638,10 @@ export default function RoomChatScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         )}
+
+        <View style={styles.chatSeparatorWrap}>
+          <View style={styles.chatSeparator} />
+        </View>
 
         <FlatList
           ref={(r) => {
@@ -722,15 +719,30 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingTop: 12,
     backgroundColor: COLORS.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(148,163,184,0.18)",
   },
-  headerTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  room: { fontSize: 18, fontWeight: "900", color: COLORS.text },
+  headerTopRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerMainTitle: { fontSize: 12, fontWeight: "800", color: COLORS.sub },
+  room: { fontSize: 18, fontWeight: "900", color: COLORS.text, marginTop: 1 },
   typing: { marginTop: 3, color: COLORS.sub, fontSize: 12, minHeight: 16, fontWeight: "700" },
   notesStickyOuter: {
-    backgroundColor: COLORS.bg,
-    paddingBottom: 8,
+    backgroundColor: "#F8FAFF",
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(148,163,184,0.2)",
   },
-  notesSection: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
+  notesSection: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 2 },
   notesScroll: { maxHeight: 220 },
   notesHeader: {
     flexDirection: "row",
@@ -744,19 +756,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-start",
   },
-  notesBackBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 4,
-    paddingRight: 4,
-  },
-  notesBackText: { fontSize: 12, fontWeight: "900", color: COLORS.primary, marginLeft: -2 },
   notesTitle: { flex: 1, fontSize: 15, fontWeight: "900", color: COLORS.text, textAlign: "center" },
-  notesHeaderSpacer: { width: 88 },
+  notesHeaderSpacer: { width: 38 },
   pinnedBar: {
     marginHorizontal: 12,
     marginTop: 10,
-    marginBottom: 0,
+    marginBottom: 8,
     backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -766,10 +771,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
+  },
+  chatSeparatorWrap: {
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+    backgroundColor: COLORS.bg,
+  },
+  chatSeparator: {
+    height: 1,
+    backgroundColor: "rgba(148,163,184,0.24)",
+    borderRadius: 999,
   },
   pinnedTitle: { fontSize: 11, fontWeight: "900", color: "#334155" },
   pinnedContent: { marginTop: 2, fontSize: 12, fontWeight: "800", color: COLORS.text },
-  messageList: { flex: 1 },
+  messageList: { flex: 1, backgroundColor: COLORS.bg },
   noteBtn: {
     backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
@@ -846,6 +866,25 @@ const styles = StyleSheet.create({
   noteDetailScroll: { maxHeight: 360 },
   noteDetailBody: { fontSize: 15, lineHeight: 22, color: "#111827" },
   noteActions: { marginTop: 8, flexDirection: "row", gap: 12 },
+  emptyNoteWrap: {
+    alignItems: "stretch",
+    gap: 8,
+    paddingTop: 2,
+  },
+  emptyAddNoteBtn: {
+    alignSelf: "flex-end",
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  emptyAddNoteText: {
+    color: COLORS.primary,
+    fontWeight: "900",
+    fontSize: 12,
+  },
   editText: { color: "#4F46E5", fontWeight: "700" },
   deleteText: { color: "#DC2626", fontWeight: "700" },
   messageWrap: { marginBottom: 10, maxWidth: "88%" },
