@@ -27,6 +27,17 @@ import {
   updateCaretakerPermissions,
 } from "@/services/api";
 
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
+
 const TOGGLE_TRACK_W = 52;
 const TOGGLE_TRACK_H = 30;
 const TOGGLE_THUMB = 26;
@@ -107,6 +118,7 @@ export default function RoomPermissionsScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedMemberId, setExpandedMemberId] = useState<number | null>(null);
   const togglePendingRef = useRef<Set<number>>(new Set());
   const pollingRef = useRef(false);
 
@@ -255,11 +267,11 @@ export default function RoomPermissionsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
-        <TouchableOpacity onPress={() => router.navigate("/(tabs)")} hitSlop={8}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate("/(tabs)")} hitSlop={8}>
+          <Ionicons name="arrow-back" size={20} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Quản lý quyền trong room</Text>
-        <View style={{ width: 22 }} />
+        <Text style={styles.headerTitle}>Phân quyền thành viên</Text>
+        <View style={{ width: 38 }} />
       </View>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -272,101 +284,141 @@ export default function RoomPermissionsScreen() {
           contentInsetAdjustmentBehavior="automatic"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         >
-        {room?.member_role !== "host" ? (
-          <View style={styles.card}>
-            <Text style={styles.warn}>Chỉ HOST (family) mới được quản lý quyền thành viên.</Text>
-          </View>
-        ) : (
-          <>
-            {!!error && <Text style={styles.error}>{error}</Text>}
-            {!!success && <Text style={styles.success}>{success}</Text>}
+          {room?.member_role !== "host" ? (
             <View style={styles.card}>
-              <Text style={styles.roomText}>room_id: {room?.room_id || "-"}</Text>
-              <Text style={styles.roomMeta}>Tổng thành viên: {members.length}</Text>
+              <Text style={styles.warn}>Chỉ HOST (family) mới được quản lý quyền thành viên.</Text>
             </View>
-
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Mã QR mời người chăm sóc (CAREGIVER)</Text>
-              <Text style={styles.qrIntro}>
-                Người dùng chỉ cần quét mã này trong app để vào phòng — không cần mã QR từ admin. Chỉ dùng cho
-                người chăm sóc, không dùng thay mã admin để lên HOST.
-              </Text>
-              {hostQrPayload ? (
-                <>
-                  <Text style={styles.roomMeta}>Nội dung mã (HOST_JOIN):</Text>
-                  <View style={styles.copyRow}>
-                    <Text style={styles.tokenText} selectable numberOfLines={3}>
-                      {hostQrPayload}
-                    </Text>
-                    <TouchableOpacity style={styles.copyBtn} onPress={() => void copyQrPayload()}>
-                      <Text style={styles.copyTxt}>Copy</Text>
-                    </TouchableOpacity>
+          ) : (
+            <>
+              {!!error && <Text style={styles.error}>{error}</Text>}
+              {!!success && <Text style={styles.success}>{success}</Text>}
+              <View style={styles.card}>
+                <View style={styles.roomTop}>
+                  <View style={styles.roomTopIcon}>
+                    <Ionicons name="people-outline" size={16} color={COLORS.primary} />
                   </View>
-                  <View style={styles.qrWrap}>
-                    <Image source={{ uri: getHostQrImageUrl(hostQrPayload) }} style={styles.qrImage} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.roomText}>room_id: {room?.room_id || "-"}</Text>
+                    <Text style={styles.roomMeta}>Tổng thành viên: {members.length}</Text>
                   </View>
-                  <Text style={styles.qrHint}>
-                    Khi tự tạo QR ở app khác, chỉ nhập đúng chuỗi «HOST_JOIN:…» ở trên — không dán link ảnh
-                    https://api.qrserver.com/…
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.warn}>
-                  Chưa có mã mời. Kéo xuống để làm mới trang, hoặc mở mục Phân quyền trong room từ Cài đặt.
-                </Text>
-              )}
-            </View>
-
-            {members.map((member) => {
-              const isHost = member.member_role === "host";
-              return (
-                <View key={member.user_id} style={styles.card}>
-                  <Text style={styles.name}>
-                    {member.fullName || member.username || `User #${member.user_id}`}{" "}
-                    {isHost ? "(HOST)" : "(CAREGIVER)"}
-                  </Text>
-                  {!!member.email && <Text style={styles.roomMeta}>{member.email}</Text>}
-
-                  {!isHost && (
-                    <>
-                      <View style={styles.toggleRow}>
-                        <Text style={styles.toggleLabel}>Nhận thông báo lịch sinh hoạt</Text>
-                        <PermissionToggle
-                          value={member.can_receive_schedule_notifications}
-                          disabled={updatingId === member.user_id}
-                          onValueChange={(v) => void onToggle(member, "can_receive_schedule_notifications", v)}
-                        />
-                      </View>
-                      <View style={styles.toggleRow}>
-                        <Text style={styles.toggleLabel}>Nhận thông báo nhắc thuốc</Text>
-                        <PermissionToggle
-                          value={member.can_receive_medication_notifications}
-                          disabled={updatingId === member.user_id}
-                          onValueChange={(v) => void onToggle(member, "can_receive_medication_notifications", v)}
-                        />
-                      </View>
-                      <View style={styles.toggleRow}>
-                        <Text style={styles.toggleLabel}>Xem camera trực tiếp trong room</Text>
-                        <PermissionToggle
-                          value={member.can_view_live}
-                          disabled={updatingId === member.user_id}
-                          onValueChange={(v) => void onToggle(member, "can_view_live", v)}
-                        />
-                      </View>
-                      <TouchableOpacity
-                        style={[styles.kickBtn, updatingId === member.user_id && { opacity: 0.6 }]}
-                        onPress={() => onKick(member.user_id)}
-                        disabled={updatingId === member.user_id}
-                      >
-                        <Text style={styles.kickTxt}>Kick khỏi room</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
                 </View>
-              );
-            })}
-          </>
-        )}
+              </View>
+
+              <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Mã QR mời người chăm sóc (CAREGIVER)</Text>
+                <Text style={styles.qrIntro}>
+                  Người dùng chỉ cần quét mã này trong app để vào phòng — không cần mã QR từ admin. Chỉ dùng cho
+                  người chăm sóc, không dùng thay mã admin để lên HOST.
+                </Text>
+                {hostQrPayload ? (
+                  <>
+                    <Text style={styles.roomMeta}>Nội dung mã (HOST_JOIN):</Text>
+                    <View style={styles.copyRow}>
+                      <Text style={styles.tokenText} selectable numberOfLines={3}>
+                        {hostQrPayload}
+                      </Text>
+                      <TouchableOpacity style={styles.copyBtn} onPress={() => void copyQrPayload()}>
+                        <Text style={styles.copyTxt}>Copy</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.qrWrap}>
+                      <Image source={{ uri: getHostQrImageUrl(hostQrPayload) }} style={styles.qrImage} />
+                    </View>
+                    <Text style={styles.qrHint}>
+                      Khi tự tạo QR ở app khác, chỉ nhập đúng chuỗi «HOST_JOIN:…» ở trên — không dán link ảnh
+                      https://api.qrserver.com/…
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.warn}>
+                    Chưa có mã mời. Kéo xuống để làm mới trang, hoặc mở mục Phân quyền trong room từ Cài đặt.
+                  </Text>
+                )}
+              </View>
+
+              {members.map((member) => {
+                const isHost = member.member_role === "host";
+                const expanded = expandedMemberId === member.user_id;
+                return (
+                  <View key={member.user_id} style={styles.card}>
+                    <Pressable
+                      style={styles.memberHeaderPress}
+                      onPress={() =>
+                        setExpandedMemberId((prev) => (prev === member.user_id ? null : member.user_id))
+                      }
+                    >
+                      <View style={styles.memberTop}>
+                        <View style={styles.memberAvatar}>
+                          <Text style={styles.memberAvatarTxt}>
+                            {String(member.fullName || member.username || "U").trim().charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.name}>
+                            {member.fullName || member.username || `User #${member.user_id}`}
+                          </Text>
+                          <Text style={styles.roomMeta}>{isHost ? "HOST" : "CAREGIVER"}</Text>
+                          {!!member.email && <Text style={styles.roomMeta}>{member.email}</Text>}
+                        </View>
+                        <View style={styles.memberTopRight}>
+                          <Ionicons
+                            name={expanded ? "chevron-up" : "chevron-down"}
+                            size={18}
+                            color={COLORS.sub}
+                          />
+                        </View>
+                      </View>
+                    </Pressable>
+
+                    {expanded && !isHost && (
+                      <>
+                        <Text style={styles.permissionGroupLabel}>Quyền thông báo & truy cập</Text>
+                        <View style={styles.toggleRow}>
+                          <Text style={styles.toggleLabel}>Nhận thông báo lịch sinh hoạt</Text>
+                          <PermissionToggle
+                            value={member.can_receive_schedule_notifications}
+                            disabled={updatingId === member.user_id}
+                            onValueChange={(v) => void onToggle(member, "can_receive_schedule_notifications", v)}
+                          />
+                        </View>
+                        <View style={styles.toggleRow}>
+                          <Text style={styles.toggleLabel}>Nhận thông báo nhắc thuốc</Text>
+                          <PermissionToggle
+                            value={member.can_receive_medication_notifications}
+                            disabled={updatingId === member.user_id}
+                            onValueChange={(v) => void onToggle(member, "can_receive_medication_notifications", v)}
+                          />
+                        </View>
+                        <View style={styles.toggleRow}>
+                          <Text style={styles.toggleLabel}>Xem camera trực tiếp trong room</Text>
+                          <PermissionToggle
+                            value={member.can_view_live}
+                            disabled={updatingId === member.user_id}
+                            onValueChange={(v) => void onToggle(member, "can_view_live", v)}
+                          />
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.kickBtn, updatingId === member.user_id && { opacity: 0.6 }]}
+                          onPress={() => onKick(member.user_id)}
+                          disabled={updatingId === member.user_id}
+                        >
+                          <Text style={styles.kickTxt}>Kick khỏi room</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+
+                    {expanded && isHost && (
+                      <View style={styles.hostInfoBox}>
+                        <Text style={styles.hostInfoText}>
+                          HOST có toàn quyền quản lý room và không cần bật/tắt các quyền caregiver.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </>
+          )}
 
           <View style={{ height: 28 }} />
         </ScrollView>
@@ -376,25 +428,56 @@ export default function RoomPermissionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8FAFC" },
+  safe: { flex: 1, backgroundColor: COLORS.bg },
   wrap: { padding: 16, gap: 12, paddingBottom: 120 },
   headerBar: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.bg,
     height: 56,
     paddingTop: 6,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
   },
-  headerTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
-  card: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12, gap: 8 },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: "900", flex: 1, textAlign: "center" },
+  card: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    padding: 14,
+    gap: 10,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
   warn: { color: "#92400E", fontWeight: "600", fontSize: 13 },
-  roomText: { color: "#111827", fontWeight: "700", fontSize: 14 },
-  roomMeta: { color: "#6B7280", fontSize: 12 },
-  sectionTitle: { color: "#111827", fontWeight: "700", fontSize: 14 },
+  roomTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  roomTopIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+  },
+  roomText: { color: COLORS.text, fontWeight: "900", fontSize: 14 },
+  roomMeta: { color: COLORS.sub, fontSize: 12, fontWeight: "700" },
+  sectionTitle: { color: COLORS.text, fontWeight: "900", fontSize: 14 },
   qrIntro: { color: "#4B5563", fontSize: 12, lineHeight: 18 },
   copyRow: { flexDirection: "row", alignItems: "stretch", gap: 8 },
   tokenText: {
@@ -420,20 +503,53 @@ const styles = StyleSheet.create({
   qrWrap: { alignItems: "center", marginTop: 4 },
   qrImage: { width: 220, height: 220, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFF" },
   qrHint: { color: "#64748B", fontSize: 11, lineHeight: 16 },
-  name: { color: "#111827", fontWeight: "700", fontSize: 14 },
+  memberHeaderPress: { borderRadius: 12 },
+  memberTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  memberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+  },
+  memberAvatarTxt: { color: COLORS.primary, fontWeight: "900", fontSize: 14 },
+  memberTopRight: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(148,163,184,0.12)",
+  },
+  name: { color: COLORS.text, fontWeight: "900", fontSize: 14 },
+  permissionGroupLabel: { fontSize: 12, color: COLORS.sub, fontWeight: "800", marginTop: 4 },
   toggleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 10,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    backgroundColor: "#FFFFFF",
+  },
+  toggleLabel: { flex: 1, color: "#374151", fontSize: 12, fontWeight: "700", paddingRight: 8 },
+  kickBtn: { backgroundColor: "#FEE2E2", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
+  kickTxt: { color: "#991B1B", textAlign: "center", fontWeight: "900", fontSize: 13 },
+  hostInfoBox: {
+    marginTop: 8,
+    backgroundColor: "rgba(167,139,250,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.35)",
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  toggleLabel: { flex: 1, color: "#374151", fontSize: 12, fontWeight: "600", paddingRight: 8 },
-  kickBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  kickTxt: { color: "#991B1B", textAlign: "center", fontWeight: "700", fontSize: 13 },
+  hostInfoText: { color: "#4C1D95", fontSize: 12, fontWeight: "700", lineHeight: 18 },
   error: {
     color: "#991B1B",
     backgroundColor: "#FEE2E2",

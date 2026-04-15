@@ -3,6 +3,17 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { DailyScheduleItem } from "@/services/api";
 import ScheduleItem from "./ScheduleItem";
 
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
+
 type Props = {
   dayKey: DailyScheduleItem["day_of_week"];
   slotLabel: string;
@@ -68,36 +79,43 @@ const styles = StyleSheet.create({
   cell: {
     width: 185,
     minHeight: 128,
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
+    padding: 10,
+    borderRadius: 18,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: COLORS.border,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   currentCell: {
-    borderColor: "#2563EB",
-    backgroundColor: "#EFF6FF",
+    borderColor: COLORS.primaryBorder,
+    backgroundColor: "rgba(167,139,250,0.12)",
   },
   disabledCell: {
     opacity: 0.65,
   },
   placeholder: {
-    color: "#9CA3AF",
+    color: COLORS.sub,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   addBtn: {
-    marginTop: 4,
-    backgroundColor: "#EEF2FF",
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    marginTop: 8,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     alignSelf: "flex-start",
   },
   addBtnText: {
-    color: "#1D4ED8",
+    color: COLORS.primary,
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   disabledText: {
     marginTop: 6,
@@ -106,16 +124,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   currentBadge: {
-    marginTop: 4,
-    backgroundColor: "#DBEAFE",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    marginTop: 8,
+    backgroundColor: "rgba(167,139,250,0.18)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
   },
   currentBadgeText: {
-    color: "#1D4ED8",
+    color: COLORS.primary,
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "900",
   },
 });

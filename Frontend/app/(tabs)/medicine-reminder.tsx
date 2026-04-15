@@ -40,6 +40,21 @@ import { ensureNotificationPermission, rescheduleMedicationNotifications } from 
 import { dismissMedicationReminderLogsForMedicationSlot } from "@/services/notificationLog";
 import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  cardSolid: "#FFFFFF",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primary2: "#7C3AED",
+  blue: "#2563EB",
+  success: "#16A34A",
+  warn: "#B45309",
+  danger: "#DC2626",
+};
+
 const pad2 = (value: number) => String(value).padStart(2, "0");
 const localDateYmd = () => {
   const d = new Date();
@@ -96,6 +111,7 @@ export default function MedicineReminderScreen() {
   const missReminderShownRef = useRef<Record<string, true>>({});
   const scrollRef = useRef<ScrollView | null>(null);
   const lastScrollYRef = useRef(0);
+  const sectionYRef = useRef<{ today?: number; meds?: number; schedule?: number }>({});
 
   const notifiedKeysRef = useRef<Record<string, true>>({});
   const noticeAnim = useRef(new Animated.Value(0)).current;
@@ -676,7 +692,9 @@ export default function MedicineReminderScreen() {
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
         <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
+          <View style={styles.headerIconBtn}>
+            <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+          </View>
         </TouchableOpacity>
         <Text style={styles.headerBarTitle}>Nhắc uống thuốc</Text>
         <View style={{ width: 22 }} />
@@ -715,10 +733,12 @@ export default function MedicineReminderScreen() {
           {canMarkMedicationIntake ? (
             <View style={styles.noticeActionsRow}>
               <TouchableOpacity style={styles.noticeTakenBtn} onPress={() => void handleNoticeSlotAction("taken")}>
-                <Text style={styles.noticeTakenText}>Taken</Text>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#166534" />
+                <Text style={styles.noticeTakenText}>Đã uống</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.noticeSkipBtn} onPress={() => void handleNoticeSlotAction("skipped")}>
-                <Text style={styles.noticeSkipText}>Skip</Text>
+                <Ionicons name="close-circle-outline" size={16} color="#92400E" />
+                <Text style={styles.noticeSkipText}>Bỏ qua</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -745,12 +765,79 @@ export default function MedicineReminderScreen() {
         {permissionLoading && <Text style={styles.loadingText}>Đang kiểm tra quyền trong room...</Text>}
         {!!roomInfo?.room_id && <Text style={styles.loadingText}>Room: {roomInfo.room_id}</Text>}
 
+        <View
+          onLayout={(e) => {
+            sectionYRef.current.today = e.nativeEvent.layout.y;
+          }}
+          style={styles.todayHero}
+        >
+          <View style={styles.todayHeroTop}>
+            <View style={styles.todayHeroIcon}>
+              <Ionicons name="time-outline" size={18} color="#56328C" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.todayHeroTitle}>Hôm nay</Text>
+              <Text style={styles.todayHeroSub}>Theo dõi các mốc giờ uống thuốc và đánh dấu nhanh.</Text>
+            </View>
+          </View>
+          <View style={styles.todayHeroStatsRow}>
+            <View style={styles.todayStat}>
+              <Text style={styles.todayStatValue}>{todaySchedules.length}</Text>
+              <Text style={styles.todayStatLabel}>Lượt nhắc</Text>
+            </View>
+            <View style={styles.todayStatDivider} />
+            <View style={styles.todayStat}>
+              <Text style={styles.todayStatValue}>{medications.length}</Text>
+              <Text style={styles.todayStatLabel}>Thuốc</Text>
+            </View>
+            <View style={styles.todayStatDivider} />
+            <View style={styles.todayStat}>
+              <Text style={styles.todayStatValue}>{localDateYmd()}</Text>
+              <Text style={styles.todayStatLabel}>Ngày</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.quickNav}>
+          <TouchableOpacity
+            style={styles.quickNavChip}
+            activeOpacity={0.9}
+            onPress={() => scrollRef.current?.scrollTo({ y: sectionYRef.current.today ?? 0, animated: true })}
+          >
+            <Ionicons name="today-outline" size={16} color="#56328C" />
+            <Text style={styles.quickNavText}>Hôm nay</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickNavChip}
+            activeOpacity={0.9}
+            onPress={() => scrollRef.current?.scrollTo({ y: sectionYRef.current.meds ?? 0, animated: true })}
+          >
+            <Ionicons name="medkit-outline" size={16} color="#56328C" />
+            <Text style={styles.quickNavText}>Thuốc</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickNavChip}
+            activeOpacity={0.9}
+            onPress={() => scrollRef.current?.scrollTo({ y: sectionYRef.current.schedule ?? 0, animated: true })}
+          >
+            <Ionicons name="alarm-outline" size={16} color="#56328C" />
+            <Text style={styles.quickNavText}>Đặt lịch</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>1) Nhập thuốc</Text>
+          <View
+            onLayout={(e) => {
+              sectionYRef.current.meds = e.nativeEvent.layout.y;
+            }}
+          >
+            <Text style={styles.cardTitle}>Thuốc</Text>
+            <Text style={styles.cardHint}>Tạo danh sách thuốc trước, sau đó đặt lịch uống theo giờ.</Text>
+          </View>
           <TextInput
             value={medicineName}
             onChangeText={setMedicineName}
-            placeholder="Tên thuốc (name)"
+            placeholder="Tên thuốc"
             placeholderTextColor="#9CA3AF"
             style={styles.input}
             editable={canManageMedication}
@@ -758,7 +845,7 @@ export default function MedicineReminderScreen() {
           <TextInput
             value={medicineDosage}
             onChangeText={setMedicineDosage}
-            placeholder="Liều lượng mặc định (dosage)"
+            placeholder="Liều lượng (vd: 1 viên)"
             placeholderTextColor="#9CA3AF"
             style={styles.input}
             editable={canManageMedication}
@@ -766,7 +853,7 @@ export default function MedicineReminderScreen() {
           <TextInput
             value={medicineNote}
             onChangeText={setMedicineNote}
-            placeholder="Ghi chú (note)"
+            placeholder="Ghi chú (tuỳ chọn)"
             placeholderTextColor="#9CA3AF"
             style={[styles.input, styles.textArea]}
             multiline
@@ -845,8 +932,14 @@ export default function MedicineReminderScreen() {
           ))}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>2) Đặt lịch uống thuốc</Text>
+      <View
+        style={styles.card}
+        onLayout={(e) => {
+          sectionYRef.current.schedule = e.nativeEvent.layout.y;
+        }}
+      >
+          <Text style={styles.cardTitle}>Đặt lịch uống thuốc</Text>
+          <Text style={styles.cardHint}>Chọn giờ, chọn thuốc, rồi bấm tạo lịch.</Text>
           <TouchableOpacity
             style={[styles.timeTrigger, !canManageMedication && { opacity: 0.6 }]}
             activeOpacity={0.8}
@@ -1025,15 +1118,19 @@ export default function MedicineReminderScreen() {
                         style={styles.takenBtn}
                         onPress={() => void onMarkSlotTaken(time, slotIds)}
                         disabled={!canMarkMedicationIntake}
+                        activeOpacity={0.9}
                       >
-                        <Text style={styles.takenBtnText}>✔ Xác nhận (Taken)</Text>
+                        <Ionicons name="checkmark-circle-outline" size={16} color="#166534" />
+                        <Text style={styles.takenBtnText}>Đã uống</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.skipBtn}
                         onPress={() => void onMarkSlotSkipped(time, slotIds)}
                         disabled={!canMarkMedicationIntake}
+                        activeOpacity={0.9}
                       >
-                        <Text style={styles.skipBtnText}>Bỏ qua (Skip)</Text>
+                        <Ionicons name="close-circle-outline" size={16} color="#92400E" />
+                        <Text style={styles.skipBtnText}>Bỏ qua</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -1048,7 +1145,7 @@ export default function MedicineReminderScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F6F7FB" },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
   noticeContainer: {
     position: "absolute",
     top: 8,
@@ -1057,12 +1154,12 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   noticeCard: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: "#0B1220",
+    borderRadius: 18,
+    padding: 14,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
@@ -1072,7 +1169,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  noticeTitle: { color: "#F9FAFB", fontWeight: "700", fontSize: 14 },
+  noticeTitle: { color: "#F9FAFB", fontWeight: "900", fontSize: 14 },
   noticeClose: { color: "#D1D5DB", fontSize: 18, fontWeight: "700", paddingHorizontal: 4 },
   noticeItemRow: {
     flexDirection: "row",
@@ -1086,6 +1183,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   noticeTakenText: { color: "#166534", fontSize: 12, fontWeight: "700" },
   noticeSkipBtn: {
@@ -1093,6 +1193,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   noticeSkipText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
   noticeReadonly: { color: "#FDE68A", fontSize: 12, fontWeight: "700", marginTop: 8 },
@@ -1103,80 +1206,155 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
   },
-  container: { flex: 1, backgroundColor: "#F6F7FB" },
-  contentWrap: { padding: 16, paddingBottom: 24, gap: 12 },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  contentWrap: { padding: 16, paddingBottom: 28, gap: 12 },
   headerBar: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.bg,
     height: 56,
     paddingTop: 6,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
   },
-  headerBarTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
-  card: {
-    backgroundColor: "#FFF",
+  headerIconBtn: {
+    width: 38,
+    height: 38,
     borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 12,
-    gap: 10,
+    borderColor: "rgba(148,163,184,0.22)",
   },
-  cardTitle: { fontSize: 16, color: "#111827", fontWeight: "700" },
-  cardHint: { fontSize: 12, color: "#6B7280" },
+  headerBarTitle: { color: COLORS.text, fontSize: 18, fontWeight: "900", flex: 1, textAlign: "center" },
+
+  quickNav: { flexDirection: "row", gap: 8, marginTop: 4, marginBottom: 2 },
+  quickNavChip: {
+    flex: 1,
+    backgroundColor: "rgba(167,139,250,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  quickNavText: { fontSize: 12, fontWeight: "900", color: COLORS.primary },
+
+  todayHero: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.22)",
+    borderRadius: 22,
+    padding: 16,
+    gap: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  todayHeroTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  todayHeroIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(167,139,250,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
+  },
+  todayHeroTitle: { fontSize: 16, fontWeight: "900", color: COLORS.text },
+  todayHeroSub: { marginTop: 2, fontSize: 12, fontWeight: "600", color: COLORS.sub, lineHeight: 18 },
+  todayHeroStatsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.22)",
+    backgroundColor: "#FFFFFF",
+  },
+  todayStat: { flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center", gap: 2 },
+  todayStatValue: { fontSize: 14, fontWeight: "900", color: COLORS.text },
+  todayStatLabel: { fontSize: 11, fontWeight: "700", color: COLORS.sub },
+  todayStatDivider: { width: 1, backgroundColor: "rgba(148,163,184,0.22)" },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.22)",
+    padding: 14,
+    gap: 10,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 3,
+  },
+  cardTitle: { fontSize: 16, color: COLORS.text, fontWeight: "900" },
+  cardHint: { fontSize: 12, color: COLORS.sub, fontWeight: "600", lineHeight: 18 },
   input: {
     borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 10,
-    backgroundColor: "#F9FAFB",
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+    borderColor: "rgba(148,163,184,0.28)",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     fontSize: 14,
-    color: "#111827",
+    color: COLORS.text,
+    fontWeight: "700",
   },
   textArea: { minHeight: 60, textAlignVertical: "top" },
   rowActions: { flexDirection: "row", gap: 8, alignItems: "center" },
   primaryBtn: {
-    backgroundColor: "#2563EB",
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 11,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     minWidth: 120,
   },
-  primaryBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
+  primaryBtnText: { color: "#FFF", fontWeight: "900", fontSize: 13 },
   lightBtn: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "rgba(167,139,250,0.14)",
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
   },
-  lightBtnText: { color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
+  lightBtnText: { color: COLORS.primary, fontSize: 12, fontWeight: "900" },
   deleteBtn: {
-    backgroundColor: "#FEE2E2",
+    backgroundColor: "rgba(239,68,68,0.12)",
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.22)",
   },
-  deleteBtnText: { color: "#991B1B", fontSize: 12, fontWeight: "700" },
+  deleteBtnText: { color: "#B91C1C", fontSize: 12, fontWeight: "900" },
   medicationRow: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 10,
-    padding: 8,
+    borderColor: "rgba(148,163,184,0.22)",
+    borderRadius: 18,
+    padding: 12,
     flexDirection: "row",
     gap: 8,
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
   },
-  medName: { color: "#111827", fontSize: 14, fontWeight: "700" },
-  medMeta: { color: "#6B7280", fontSize: 12 },
-  timeText: { fontSize: 34, fontWeight: "700", color: "#111827", textAlign: "center" },
+  medName: { color: COLORS.text, fontSize: 14, fontWeight: "900" },
+  medMeta: { color: COLORS.sub, fontSize: 12, fontWeight: "600" },
+  timeText: { fontSize: 34, fontWeight: "900", color: COLORS.text, textAlign: "center" },
   timeTrigger: { alignItems: "center", gap: 2 },
-  timeHint: { color: "#6B7280", fontSize: 12, fontWeight: "600" },
+  timeHint: { color: COLORS.sub, fontSize: 12, fontWeight: "700" },
   timePickerWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   iosPickerWrap: {
     alignSelf: "stretch",
@@ -1211,9 +1389,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: "#FFF",
   },
-  repeatPillActive: { borderColor: "#2563EB", backgroundColor: "#DBEAFE" },
+  repeatPillActive: { borderColor: "rgba(167,139,250,0.55)", backgroundColor: "rgba(167,139,250,0.16)" },
   repeatText: { color: "#4B5563", fontSize: 12 },
-  repeatTextActive: { color: "#1D4ED8", fontWeight: "700" },
+  repeatTextActive: { color: COLORS.primary, fontWeight: "900" },
   settingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1225,8 +1403,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#F8FAFC",
   },
-  settingLabel: { color: "#111827", fontSize: 14, fontWeight: "600" },
-  settingValue: { color: "#D97706", fontSize: 14, fontWeight: "700" },
+  settingLabel: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
+  settingValue: { color: COLORS.warn, fontSize: 14, fontWeight: "900" },
   repeatHintPill: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
@@ -1259,7 +1437,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 3,
   },
-  checkboxActive: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
+  checkboxActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   checkboxText: { color: "#FFF", fontWeight: "700" },
   groupCard: {
     borderWidth: 1,
@@ -1276,12 +1454,14 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
-  groupTime: { fontSize: 20, fontWeight: "700", color: "#111827", flexShrink: 1 },
+  groupTime: { fontSize: 20, fontWeight: "900", color: COLORS.text, flexShrink: 1 },
   deleteSlotBtn: {
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
-    backgroundColor: "#FEE2E2",
+    backgroundColor: "rgba(239,68,68,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.22)",
   },
   deleteSlotBtnText: { color: "#B91C1C", fontWeight: "800", fontSize: 11 },
   slotActionsRow: {
@@ -1297,6 +1477,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   takenBtnText: { color: "#166534", fontSize: 12, fontWeight: "700" },
   skipBtn: {
@@ -1304,6 +1487,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   skipBtnText: { color: "#92400E", fontSize: 12, fontWeight: "700" },
   loadingWrap: { paddingVertical: 14, alignItems: "center", gap: 8 },

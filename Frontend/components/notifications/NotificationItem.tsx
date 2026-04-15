@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import type { NotificationLogEntry } from "@/services/notificationLog";
+import { Ionicons } from "@expo/vector-icons";
 import {
   categoryLabelForEntry,
   categoryToneForEntry,
@@ -24,6 +25,19 @@ const formatWhen = (iso: string) => {
   if (d.isSame(now, "day")) return `Hôm nay ${d.format("HH:mm")}`;
   if (d.isSame(now.subtract(1, "day"), "day")) return `Hôm qua ${d.format("HH:mm")}`;
   return d.format("DD/MM HH:mm");
+};
+
+const iconForEntry = (entry: NotificationLogEntry): keyof typeof Ionicons.glyphMap => {
+  if (entry.type === "room-message") return "chatbubbles-outline";
+  if (entry.type === "medication") return "medkit-outline";
+  if (entry.type === "weekly-schedule") return "calendar-outline";
+  if (entry.type === "care-confirmation") return "checkmark-done-circle-outline";
+  const d: any = entry?.data;
+  if (d?.type === "safety") {
+    if (d?.safety_type === "left_safe_zone") return "walk-outline";
+    return "warning-outline";
+  }
+  return "notifications-outline";
 };
 
 export default function NotificationItem({
@@ -51,27 +65,30 @@ export default function NotificationItem({
 
   return (
     <TouchableOpacity
-      style={[styles.card, item.read && styles.cardRead]}
+      style={[styles.card, !item.read ? styles.cardUnread : styles.cardRead]}
       activeOpacity={0.85}
       onPressIn={onPressIn}
       onPress={onPress}
     >
-      <View style={[styles.typeBar, { backgroundColor: typeTone.text, opacity: item.read ? 0.35 : 1 }]} />
-      <View style={styles.cardTop}>
-        <Text style={[styles.cardTitle, item.read && styles.cardTitleRead]} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <View style={styles.rightMeta}>
-          {!item.read && <View style={styles.unreadDot} />}
-          <Text style={styles.time}>{formatWhen(item.createdAt)}</Text>
+      <View pointerEvents="none" style={[styles.sheen, { backgroundColor: typeTone.bg }]} />
+      <View style={styles.rowTop}>
+        <View style={[styles.iconWrap, { backgroundColor: typeTone.bg, borderColor: typeTone.border, opacity: item.read ? 0.78 : 1 }]}>
+          <Ionicons name={iconForEntry(item)} size={18} color={typeTone.text} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.cardTitle, item.read && styles.cardTitleRead]} numberOfLines={2}>
+              {item.title}
+            </Text>
+            {!item.read && <View style={styles.unreadDot} />}
+          </View>
+          {!!item.body && (
+            <Text style={[styles.body, item.read && styles.bodyRead]} numberOfLines={2}>
+              {stripDoneMarker(notificationBodyForDisplay(item))}
+            </Text>
+          )}
         </View>
       </View>
-
-      {!!item.body && (
-        <Text style={[styles.body, item.read && styles.bodyRead]} numberOfLines={3}>
-          {stripDoneMarker(notificationBodyForDisplay(item))}
-        </Text>
-      )}
 
       <View style={styles.bottomRow}>
         <View style={[styles.badgePill, { backgroundColor: typeTone.bg, borderColor: typeTone.border, opacity: item.read ? 0.6 : 1 }]}>
@@ -83,6 +100,9 @@ export default function NotificationItem({
             <Text style={[styles.statusText, { color: careStatusChip.tone.text }]}>{careStatusChip.text}</Text>
           </View>
         )}
+
+        <View style={{ flex: 1 }} />
+        <Text style={styles.time}>{formatWhen(item.createdAt)}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -92,30 +112,43 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFF",
     padding: 12,
-    gap: 6,
+    gap: 8,
   },
-  typeBar: {
+  sheen: {
     position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 14,
-    borderBottomLeftRadius: 14,
+    top: -26,
+    right: -32,
+    width: 120,
+    height: 120,
+    borderRadius: 80,
+    opacity: 0.55,
   },
-  cardRead: { opacity: 0.7, backgroundColor: "#F8FAFC" },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", gap: 10, alignItems: "flex-start" },
-  rightMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
-  unreadDot: { width: 8, height: 8, borderRadius: 99, backgroundColor: "#EF4444" },
+  cardUnread: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(86,50,140,0.18)",
+  },
+  // Đã đọc chỉ mờ nhẹ, vẫn giữ rõ nội dung
+  cardRead: { opacity: 0.9, backgroundColor: "#F8FAFC" },
+  rowTop: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  iconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  unreadDot: { width: 8, height: 8, borderRadius: 99, backgroundColor: "#EF4444", marginTop: 6 },
   cardTitle: { flex: 1, color: "#111827", fontSize: 14, fontWeight: "900" },
   cardTitleRead: { color: "#374151" },
-  time: { color: "#6B7280", fontSize: 12, fontWeight: "700" },
-  body: { color: "#374151", fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  time: { color: "#6B7280", fontSize: 12, fontWeight: "800" },
+  body: { marginTop: 4, color: "#4B5563", fontSize: 12, fontWeight: "700", lineHeight: 18 },
   bodyRead: { color: "#6B7280" },
   bottomRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   badgePill: {
     alignSelf: "flex-start",
-    marginTop: 2,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -124,7 +157,6 @@ const styles = StyleSheet.create({
   badge: { fontSize: 11, fontWeight: "900" },
   statusPill: {
     alignSelf: "flex-start",
-    marginTop: 2,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,

@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
 import { getCurrentUser, getMyRoom, getRoomChatNotificationPrefs, subscribeActiveRoomChange } from "@/services/api";
@@ -16,11 +16,13 @@ import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
 
 const PRIMARY = "#A78BFA";   // tím nhạt
 const ACTIVE = "#56328C";    // tím đậm
+const SCAN_BG = "#56328C";
 
 export default function TabLayout() {
   const lastSigRef = useRef<{ sig: string; at: number } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const chatNotifByRoomRef = useRef<Map<number, boolean>>(new Map());
+  const [isHost, setIsHost] = useState(false);
 
   const refreshUnreadCount = useCallback(async () => {
     try {
@@ -68,6 +70,25 @@ export default function TabLayout() {
     };
     void tick();
     const t = setInterval(() => void tick(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncRole = async () => {
+      try {
+        const r = await getMyRoom();
+        if (cancelled) return;
+        setIsHost(r?.member_role === "host");
+      } catch {
+        if (!cancelled) setIsHost(false);
+      }
+    };
+    void syncRole();
+    const t = setInterval(() => void syncRole(), 10_000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -303,6 +324,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="stats"
         options={{
+          // Hide for non-host: remove from tab bar entirely
+          href: isHost ? undefined : null,
           tabBarIcon: ({ color }) => (
             <Feather name="bar-chart-2" size={26} color={color} />
           ),
@@ -343,6 +366,32 @@ export default function TabLayout() {
         }}
       />
 
+      {/* SCAN QR - highlighted button (placed after Settings) */}
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: "Quét mã",
+          tabBarShowLabel: false,
+          tabBarStyle: { display: "none" },
+          tabBarButton: ({ onPress, accessibilityState }) => {
+            const focused = accessibilityState?.selected === true;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={onPress}
+                style={[styles.scanBtnWrap, focused && styles.scanBtnWrapFocused]}
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã vào phòng"
+              >
+                <View style={styles.scanBtn}>
+                  <Ionicons name="qr-code-outline" size={24} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            );
+          },
+        }}
+      />
+
       {/* MEDICINE REMINDER - hidden tab button */}
       <Tabs.Screen
         name="medicine-reminder"
@@ -373,3 +422,30 @@ export default function TabLayout() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  scanBtnWrap: {
+    width: 74,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: -20,
+  },
+  scanBtnWrapFocused: {
+    transform: [{ scale: 1.02 }],
+  },
+  scanBtn: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: SCAN_BG,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+});

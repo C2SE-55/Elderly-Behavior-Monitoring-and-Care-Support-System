@@ -4,8 +4,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { adminCreateUser } from "@/services/api";
+import { AnimatedPressable, ScreenEnter } from "@/components/ui/AnimatedPressable";
 
 const PLACEHOLDER_COLOR = "#64748B";
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.94)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.34)",
+};
 
 export default function AdminAddAccountScreen() {
   const router = useRouter();
@@ -55,111 +66,206 @@ export default function AdminAddAccountScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScreenEnter>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#111" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin tạo tài khoản USER</Text>
+        <AnimatedPressable onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button">
+          <Feather name="arrow-left" size={20} color={COLORS.text} />
+        </AnimatedPressable>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Tạo tài khoản mới</Text>
+          <Text style={styles.headerSub}>Admin tạo tài khoản USER trong hệ thống</Text>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {!!error && <Text style={styles.error}>{error}</Text>}
         {!!success && <Text style={styles.success}>{success}</Text>}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Họ tên"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={fullName}
-          onChangeText={setFullName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Username *"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email *"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Số điện thoại"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={phone}
-          onChangeText={setPhone}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Ngày sinh (YYYY-MM-DD)"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={dob}
-          onChangeText={setDob}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Mật khẩu *"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Nhắc lại mật khẩu *"
-          placeholderTextColor={PLACEHOLDER_COLOR}
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-        />
+        <View style={styles.formCard}>
+          <View style={styles.formHead}>
+            <View style={styles.formHeadIcon}>
+              <Feather name="user-plus" size={16} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.formTitle}>Thông tin tài khoản</Text>
+              <Text style={styles.formHint}>Các trường có dấu * là bắt buộc</Text>
+            </View>
+          </View>
 
-        <TouchableOpacity style={[styles.nextBtn, loading && { opacity: 0.7 }]} onPress={onCreate} disabled={loading}>
-          {loading ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.nextBtnText}>Tạo tài khoản</Text>}
-        </TouchableOpacity>
+          <Field label="Họ tên">
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: Nguyễn Văn A"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={fullName}
+              onChangeText={setFullName}
+            />
+          </Field>
+
+          <Field label="Username *">
+            <TextInput
+              style={styles.input}
+              placeholder="username đăng nhập"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+            />
+          </Field>
+
+          <Field label="Email *">
+            <TextInput
+              style={styles.input}
+              placeholder="example@email.com"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </Field>
+
+          <Field label="Số điện thoại">
+            <TextInput
+              style={styles.input}
+              placeholder="Ví dụ: 09xxxxxxxx"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={phone}
+              onChangeText={setPhone}
+            />
+          </Field>
+
+          <Field label="Ngày sinh">
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={dob}
+              onChangeText={setDob}
+            />
+          </Field>
+
+          <Field label="Mật khẩu *">
+            <TextInput
+              style={styles.input}
+              placeholder="Nhập mật khẩu"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </Field>
+
+          <Field label="Nhắc lại mật khẩu *">
+            <TextInput
+              style={styles.input}
+              placeholder="Nhập lại mật khẩu"
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+            />
+          </Field>
+        </View>
+
+        <AnimatedPressable
+          style={[styles.nextBtn, loading && { opacity: 0.7 }]}
+          onPress={onCreate}
+          disabled={loading}
+          accessibilityRole="button"
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <>
+              <Feather name="check-circle" size={18} color="#FFF" />
+              <Text style={styles.nextBtnText}>Tạo tài khoản</Text>
+            </>
+          )}
+        </AnimatedPressable>
       </ScrollView>
+      </ScreenEnter>
     </SafeAreaView>
   );
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  container: { flex: 1, backgroundColor: COLORS.bg },
   header: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
-  backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
-  scrollContent: { padding: 16, paddingBottom: 24, gap: 10 },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerTitle: { fontSize: 18, fontWeight: "900", color: COLORS.text },
+  headerSub: { marginTop: 2, fontSize: 12, fontWeight: "700", color: COLORS.sub },
+  scrollContent: { padding: 18, paddingBottom: 24, gap: 10 },
+  formCard: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  formHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
+  formHeadIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+  },
+  formTitle: { fontSize: 14, fontWeight: "900", color: COLORS.text },
+  formHint: { marginTop: 2, fontSize: 11, fontWeight: "700", color: COLORS.sub },
+  field: { gap: 6 },
+  fieldLabel: { fontSize: 12, fontWeight: "800", color: COLORS.sub },
   input: {
     backgroundColor: "#FFF",
     paddingHorizontal: 12,
     paddingVertical: 11,
-    borderRadius: 10,
+    borderRadius: 12,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: "rgba(148,163,184,0.30)",
+    color: COLORS.text,
+    fontWeight: "700",
   },
   nextBtn: {
-    backgroundColor: "#2563EB",
+    backgroundColor: COLORS.primary,
     paddingVertical: 13,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     marginTop: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
   },
-  nextBtnText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
+  nextBtnText: { color: "#FFF", fontSize: 14, fontWeight: "900" },
   error: {
     color: "#991B1B",
     backgroundColor: "#FEE2E2",

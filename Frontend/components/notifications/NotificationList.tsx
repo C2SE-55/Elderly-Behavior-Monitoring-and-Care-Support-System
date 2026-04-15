@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native
 import { Swipeable } from "react-native-gesture-handler";
 import type { NotificationLogEntry } from "@/services/notificationLog";
 import NotificationItem from "./NotificationItem";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function NotificationList({
   logs,
@@ -69,6 +70,7 @@ export default function NotificationList({
                   }}
                   disabled={it.read}
                 >
+                  <Ionicons name="checkmark-done-outline" size={18} color={it.read ? "#9CA3AF" : "#1D4ED8"} />
                   <Text style={[styles.swipeBtnText, it.read && styles.swipeBtnTextDisabled]}>Đã đọc</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -79,6 +81,7 @@ export default function NotificationList({
                     onDelete(it.id);
                   }}
                 >
+                  <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
                   <Text style={[styles.swipeBtnText, styles.swipeDeleteText]}>Xóa</Text>
                 </TouchableOpacity>
               </View>
@@ -103,14 +106,19 @@ export default function NotificationList({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10, paddingBottom: 24 },
+  container: { paddingHorizontal: 16, paddingTop: 12, gap: 10, paddingBottom: 24 },
   subtitle: { fontSize: 14, color: "#6B7280", textAlign: "center", marginTop: 30 },
   swipeRow: {
-    borderRadius: 14,
+    borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#EEF2FF",
     backgroundColor: "#FFF",
+    shadowColor: "#0B1220",
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 1,
   },
   swipeActions: {
     flexDirection: "row",
@@ -121,11 +129,12 @@ const styles = StyleSheet.create({
     width: 86,
     justifyContent: "center",
     alignItems: "center",
+    gap: 6,
   },
   swipeReadBtn: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "rgba(59,130,246,0.10)",
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "rgba(59,130,246,0.22)",
     borderRightWidth: 0,
   },
   swipeReadBtnDisabled: { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" },

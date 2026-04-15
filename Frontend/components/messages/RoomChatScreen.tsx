@@ -36,6 +36,16 @@ import {
 import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
 const TYPING_IDLE_MS = 2200;
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
 
 const fmt = (iso?: string | null) => {
   if (!iso) return "";
@@ -666,13 +676,13 @@ export default function RoomChatScreen() {
           <TextInput
             style={styles.input}
             placeholder="Nhập tin nhắn..."
-            placeholderTextColor="#111827"
+            placeholderTextColor="#94A3B8"
             value={draft}
             onChangeText={onDraftChange}
             multiline
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={() => void send()}>
-            <Text style={styles.sendText}>Gửi</Text>
+          <TouchableOpacity style={styles.sendBtn} onPress={() => void send()} activeOpacity={0.9}>
+            <Feather name="send" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -706,24 +716,21 @@ export default function RoomChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8FAFC" },
+  safe: { flex: 1, backgroundColor: COLORS.bg },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     paddingTop: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.bg,
   },
   headerTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  room: { fontSize: 18, fontWeight: "800", color: "#0F172A" },
-  typing: { marginTop: 3, color: "#64748B", fontSize: 12, minHeight: 16 },
+  room: { fontSize: 18, fontWeight: "900", color: COLORS.text },
+  typing: { marginTop: 3, color: COLORS.sub, fontSize: 12, minHeight: 16, fontWeight: "700" },
   notesStickyOuter: {
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    backgroundColor: COLORS.bg,
+    paddingBottom: 8,
   },
-  notesSection: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 },
+  notesSection: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 0 },
   notesScroll: { maxHeight: 220 },
   notesHeader: {
     flexDirection: "row",
@@ -743,17 +750,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingRight: 4,
   },
-  notesBackText: { fontSize: 12, fontWeight: "700", color: "#56328C", marginLeft: -2 },
-  notesTitle: { flex: 1, fontSize: 15, fontWeight: "800", color: "#111827", textAlign: "center" },
+  notesBackText: { fontSize: 12, fontWeight: "900", color: COLORS.primary, marginLeft: -2 },
+  notesTitle: { flex: 1, fontSize: 15, fontWeight: "900", color: COLORS.text, textAlign: "center" },
   notesHeaderSpacer: { width: 88 },
   pinnedBar: {
     marginHorizontal: 12,
     marginTop: 10,
     marginBottom: 0,
-    backgroundColor: "#F1F5F9",
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
+    borderColor: COLORS.border,
+    borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexDirection: "row",
@@ -761,27 +768,31 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   pinnedTitle: { fontSize: 11, fontWeight: "900", color: "#334155" },
-  pinnedContent: { marginTop: 2, fontSize: 12, fontWeight: "700", color: "#0F172A" },
+  pinnedContent: { marginTop: 2, fontSize: 12, fontWeight: "800", color: COLORS.text },
   messageList: { flex: 1 },
   noteBtn: {
-    backgroundColor: "#EDE9FE",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
     flexShrink: 0,
     minWidth: 88,
     alignItems: "center",
   },
-  noteBtnText: { color: "#5B21B6", fontWeight: "700", fontSize: 12 },
-  noteComposer: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 10, marginBottom: 10 },
+  noteBtnText: { color: COLORS.primary, fontWeight: "900", fontSize: 12 },
+  noteComposer: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 18, padding: 12, marginBottom: 10 },
   noteInput: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderColor: "rgba(148,163,184,0.28)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginBottom: 8,
+    color: COLORS.text,
+    fontWeight: "700",
   },
   noteContentInput: {
     height: 96,
@@ -789,26 +800,26 @@ const styles = StyleSheet.create({
   },
   pinBtn: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#F1F5F9" },
   pinText: { color: "#334155", fontWeight: "600", fontSize: 12 },
-  submitNoteBtn: { marginTop: 8, alignSelf: "flex-start", backgroundColor: "#4F46E5", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9 },
-  submitNoteText: { color: "#FFFFFF", fontWeight: "800" },
+  submitNoteBtn: { marginTop: 8, alignSelf: "flex-start", backgroundColor: COLORS.primary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16 },
+  submitNoteText: { color: "#FFFFFF", fontWeight: "900" },
   noteCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
-    padding: 10,
+    borderColor: COLORS.border,
+    borderRadius: 18,
+    padding: 12,
     marginBottom: 8,
   },
   noteCardPinned: {
-    backgroundColor: "#F5F3FF",
-    borderColor: "#C4B5FD",
+    backgroundColor: "rgba(167,139,250,0.14)",
+    borderColor: "rgba(167,139,250,0.55)",
   },
   noteCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  noteTitleText: { fontWeight: "700", color: "#111827", flex: 1, marginRight: 8 },
-  pinBadge: { fontSize: 10, fontWeight: "800", color: "#FFFFFF", backgroundColor: "#8B5CF6", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999 },
-  noteContent: { color: "#334155", marginTop: 6 },
-  noteDetailText: { marginTop: 6, color: "#4F46E5", fontSize: 12, fontWeight: "700" },
-  noteMeta: { marginTop: 6, color: "#64748B", fontSize: 11 },
+  noteTitleText: { fontWeight: "900", color: COLORS.text, flex: 1, marginRight: 8 },
+  pinBadge: { fontSize: 10, fontWeight: "900", color: "#FFFFFF", backgroundColor: COLORS.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  noteContent: { color: "#334155", marginTop: 6, fontWeight: "600" },
+  noteDetailText: { marginTop: 6, color: COLORS.primary, fontSize: 12, fontWeight: "900" },
+  noteMeta: { marginTop: 6, color: COLORS.sub, fontSize: 11, fontWeight: "700" },
   noteDetailBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -816,10 +827,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   noteDetailCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
+    backgroundColor: COLORS.card,
+    borderRadius: 22,
     padding: 14,
     maxHeight: "80%",
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   noteDetailHeader: {
     flexDirection: "row",
@@ -828,8 +841,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 8,
   },
-  noteDetailTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: "#111827" },
-  noteDetailClose: { fontSize: 13, fontWeight: "800", color: "#4F46E5" },
+  noteDetailTitle: { flex: 1, fontSize: 16, fontWeight: "900", color: COLORS.text },
+  noteDetailClose: { fontSize: 13, fontWeight: "900", color: COLORS.primary },
   noteDetailScroll: { maxHeight: 360 },
   noteDetailBody: { fontSize: 15, lineHeight: 22, color: "#111827" },
   noteActions: { marginTop: 8, flexDirection: "row", gap: 12 },
@@ -838,19 +851,25 @@ const styles = StyleSheet.create({
   messageWrap: { marginBottom: 10, maxWidth: "88%" },
   messageMineWrap: { alignSelf: "flex-end", alignItems: "flex-end" },
   messageOtherWrap: { alignSelf: "flex-start", alignItems: "flex-start" },
-  sender: { fontSize: 11, color: "#64748B", marginBottom: 3 },
-  bubble: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  mine: { backgroundColor: "#4F46E5" },
-  other: { backgroundColor: "#E2E8F0" },
-  messageText: { color: "#0F172A", fontSize: 14 },
+  sender: { fontSize: 11, color: COLORS.sub, marginBottom: 3, fontWeight: "800" },
+  bubble: {
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.18)",
+  },
+  mine: { backgroundColor: COLORS.primary, borderColor: "rgba(167,139,250,0.55)" },
+  other: { backgroundColor: COLORS.card, borderColor: COLORS.border },
+  messageText: { color: COLORS.text, fontSize: 14, fontWeight: "700", lineHeight: 20 },
   meta: { marginTop: 4, color: "#64748B", fontSize: 10 },
   seen: { marginTop: 2, color: "#0EA5E9", fontSize: 10 },
   empty: { marginTop: 16, textAlign: "center", color: "#64748B" },
   loadingMore: { textAlign: "center", color: "#64748B", fontSize: 12, marginVertical: 10 },
   composer: {
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
     padding: 10,
     flexDirection: "row",
     alignItems: "flex-end",
@@ -860,13 +879,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 42,
     maxHeight: 120,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
+    borderColor: COLORS.border,
+    borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 9,
+    color: COLORS.text,
+    fontWeight: "700",
   },
-  sendBtn: { height: 42, borderRadius: 10, paddingHorizontal: 16, backgroundColor: "#4F46E5", alignItems: "center", justifyContent: "center" },
-  sendText: { color: "#FFFFFF", fontWeight: "800" },
+  sendBtn: { height: 42, width: 44, borderRadius: 16, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  sendText: { color: "#FFFFFF", fontWeight: "900" },
 });

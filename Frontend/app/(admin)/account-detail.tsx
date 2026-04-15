@@ -5,6 +5,22 @@ import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AdminUserAccount, adminDeleteUser, getAdminUserById } from "@/services/api";
 
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.94)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.34)",
+  blueSoft: "rgba(37,99,235,0.10)",
+  blueBorder: "rgba(37,99,235,0.24)",
+  dangerBg: "#FEE2E2",
+  dangerBorder: "rgba(239,68,68,0.35)",
+  dangerText: "#991B1B",
+};
+
 export default function AdminAccountDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
@@ -61,15 +77,18 @@ export default function AdminAccountDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#111" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.9}>
+          <Feather name="arrow-left" size={20} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết tài khoản</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Chi tiết tài khoản</Text>
+          <Text style={styles.headerSub}>Thông tin hồ sơ và thao tác quản trị</Text>
+        </View>
       </View>
 
       {loading ? (
         <View style={styles.loading}>
-          <ActivityIndicator size="small" color="#2563EB" />
+          <ActivityIndicator size="small" color={COLORS.primary} />
           <Text style={styles.loadingTxt}>Đang tải dữ liệu...</Text>
         </View>
       ) : (
@@ -79,27 +98,61 @@ export default function AdminAccountDetailScreen() {
             <Text style={styles.meta}>Không tìm thấy tài khoản.</Text>
           ) : (
             <>
+              <View style={styles.heroCard}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarTxt}>{(row.fullName || row.username || "U").charAt(0).toUpperCase()}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{row.fullName || row.username}</Text>
+                  <Text style={styles.meta}>@{row.username}</Text>
+                  <View style={styles.rolePill}>
+                    <Text style={styles.rolePillTxt}>{(row.role || "user").toUpperCase()}</Text>
+                  </View>
+                </View>
+              </View>
+
               <View style={styles.card}>
-                <Text style={styles.name}>{row.fullName || row.username}</Text>
-                <Text style={styles.meta}>@{row.username}</Text>
-                <Text style={styles.meta}>Role hệ thống: {(row.role || "user").toUpperCase()}</Text>
-                <Text style={styles.meta}>Email: {row.email}</Text>
-                <Text style={styles.meta}>SĐT: {row.phone || "-"}</Text>
-                <Text style={styles.meta}>Ngày sinh: {row.dateOfBirth || "-"}</Text>
-                <Text style={styles.meta}>Tạo lúc: {row.createdAt || "-"}</Text>
+                <Text style={styles.title}>Thông tin tài khoản</Text>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Email</Text>
+                  <Text style={styles.infoValue}>{row.email || "-"}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Số điện thoại</Text>
+                  <Text style={styles.infoValue}>{row.phone || "-"}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Ngày sinh</Text>
+                  <Text style={styles.infoValue}>{row.dateOfBirth || "-"}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Ngày tạo</Text>
+                  <Text style={styles.infoValue}>{row.createdAt || "-"}</Text>
+                </View>
               </View>
 
               <View style={styles.card}>
                 <Text style={styles.title}>Gán room cho user</Text>
-                <Text style={styles.meta}>
+                <Text style={styles.metaBlock}>
                   Admin tạo room ở màn hình &quot;Tạo room / QR&quot;, sau đó gửi room_id cho user này để user nhập và lên FAMILY.
                 </Text>
-                <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/(admin)/room-management")}>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => router.push("/(admin)/room-management")}
+                  activeOpacity={0.9}
+                >
+                  <Feather name="home" size={16} color="#1D4ED8" />
                   <Text style={styles.secondaryTxt}>Đi tới màn hình tạo room</Text>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={[styles.deleteBtn, deleting && { opacity: 0.6 }]} onPress={onDelete} disabled={deleting}>
+              <TouchableOpacity
+                style={[styles.deleteBtn, deleting && { opacity: 0.6 }]}
+                onPress={onDelete}
+                disabled={deleting}
+                activeOpacity={0.9}
+              >
+                <Feather name="trash-2" size={16} color={COLORS.dangerText} />
                 <Text style={styles.deleteTxt}>{deleting ? "Đang xóa..." : "Xóa tài khoản"}</Text>
               </TouchableOpacity>
             </>
@@ -111,32 +164,115 @@ export default function AdminAccountDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  container: { flex: 1, backgroundColor: COLORS.bg },
   header: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
-  backBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
-  scrollContent: { padding: 16, gap: 10, paddingBottom: 24 },
-  card: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12, gap: 6 },
-  name: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  title: { fontSize: 14, fontWeight: "700", color: "#111827" },
-  meta: { fontSize: 12, color: "#6B7280" },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerTitle: { fontSize: 18, fontWeight: "900", color: COLORS.text },
+  headerSub: { marginTop: 2, fontSize: 12, fontWeight: "700", color: COLORS.sub },
+  scrollContent: { padding: 18, gap: 10, paddingBottom: 24 },
+  heroCard: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarTxt: { fontSize: 19, fontWeight: "900", color: COLORS.primary },
+  rolePill: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(86,50,140,0.10)",
+    borderColor: "rgba(86,50,140,0.28)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  rolePillTxt: { fontSize: 10, fontWeight: "900", color: COLORS.primary },
+  card: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+  },
+  name: { fontSize: 16, fontWeight: "900", color: COLORS.text },
+  title: { fontSize: 14, fontWeight: "900", color: COLORS.text },
+  meta: { fontSize: 12, color: COLORS.sub, fontWeight: "700" },
+  metaBlock: { fontSize: 12, color: COLORS.sub, fontWeight: "600", lineHeight: 18 },
+  infoRow: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 2,
+  },
+  infoLabel: { fontSize: 11, fontWeight: "800", color: COLORS.sub },
+  infoValue: { fontSize: 13, fontWeight: "800", color: COLORS.text },
   loading: { alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 30 },
-  loadingTxt: { color: "#6B7280", fontSize: 12 },
-  secondaryBtn: { backgroundColor: "#EEF2FF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 6 },
-  secondaryTxt: { color: "#1D4ED8", textAlign: "center", fontWeight: "700", fontSize: 13 },
-  deleteBtn: { backgroundColor: "#FEE2E2", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12 },
-  deleteTxt: { color: "#991B1B", textAlign: "center", fontWeight: "700", fontSize: 13 },
+  loadingTxt: { color: COLORS.sub, fontSize: 12 },
+  secondaryBtn: {
+    backgroundColor: COLORS.blueSoft,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: COLORS.blueBorder,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  secondaryTxt: { color: "#1D4ED8", textAlign: "center", fontWeight: "900", fontSize: 13 },
+  deleteBtn: {
+    backgroundColor: COLORS.dangerBg,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.dangerBorder,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  deleteTxt: { color: COLORS.dangerText, textAlign: "center", fontWeight: "900", fontSize: 13 },
   error: {
-    color: "#991B1B",
-    backgroundColor: "#FEE2E2",
+    color: COLORS.dangerText,
+    backgroundColor: COLORS.dangerBg,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,

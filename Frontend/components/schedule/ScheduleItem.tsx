@@ -3,6 +3,20 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { DailyScheduleItem } from "@/services/api";
 import { isScheduleMarkedDone } from "@/utils/scheduleMarkedDone";
 
+const COLORS = {
+  text: "#0F172A",
+  sub: "#64748B",
+  border: "rgba(148,163,184,0.22)",
+  chipBg: "rgba(255,255,255,0.72)",
+  chipBorder: "rgba(148,163,184,0.22)",
+  actionBg: "rgba(167,139,250,0.14)",
+  actionBorder: "rgba(167,139,250,0.28)",
+  actionText: "#56328C",
+  dangerBg: "rgba(239,68,68,0.12)",
+  dangerBorder: "rgba(239,68,68,0.22)",
+  dangerText: "#B91C1C",
+};
+
 type Props = {
   item: DailyScheduleItem;
   onEdit: (item: DailyScheduleItem) => void;
@@ -14,10 +28,10 @@ type Props = {
 };
 
 const TYPE_BG: Record<DailyScheduleItem["type"], string> = {
-  meal: "#DCFCE7",
-  exercise: "#FFEDD5",
-  rest: "#E5E7EB",
-  other: "#DBEAFE",
+  meal: "rgba(34,197,94,0.16)",
+  exercise: "rgba(245,158,11,0.18)",
+  rest: "rgba(148,163,184,0.18)",
+  other: "rgba(59,130,246,0.16)",
 };
 
 const TYPE_TEXT: Record<DailyScheduleItem["type"], string> = {
@@ -38,9 +52,14 @@ export default function ScheduleItem({
   const isDone = isScheduleMarkedDone(item);
   return (
     <View style={[styles.box, { backgroundColor: TYPE_BG[item.type] }]}>
-      <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
-        {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
-      </Text>
+      <View style={styles.topRow}>
+        <View style={styles.timeChip}>
+          <Text style={[styles.time, { color: TYPE_TEXT[item.type] }]}>
+            {String(item.start_time).slice(0, 5)} - {String(item.end_time).slice(0, 5)}
+          </Text>
+        </View>
+        {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
+      </View>
       <Text style={styles.title} numberOfLines={2}>
         {item.title}
       </Text>
@@ -54,19 +73,18 @@ export default function ScheduleItem({
           <Text style={styles.overdueText}>Đã qua lịch — chưa hoàn thành</Text>
         </View>
       )}
-      {isDone && <Text style={styles.doneBadge}>Đã xong</Text>}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onViewDetail?.(item)} activeOpacity={0.9}>
           <Text style={styles.actionText}>Chi tiết</Text>
         </TouchableOpacity>
         {!readonly && (
           <>
             {!isDone && (
-              <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)} activeOpacity={0.9}>
                 <Text style={styles.actionText}>Sửa</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item)}>
+            <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item)} activeOpacity={0.9}>
               <Text style={[styles.actionText, styles.deleteText]}>Xóa</Text>
             </TouchableOpacity>
           </>
@@ -78,32 +96,43 @@ export default function ScheduleItem({
 
 const styles = StyleSheet.create({
   box: {
-    borderRadius: 8,
-    padding: 8,
+    borderRadius: 16,
+    padding: 10,
     marginBottom: 6,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: COLORS.border,
+  },
+  topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  timeChip: {
+    backgroundColor: COLORS.chipBg,
+    borderWidth: 1,
+    borderColor: COLORS.chipBorder,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
   },
   time: {
     fontSize: 10,
-    fontWeight: "700",
-    marginBottom: 2,
+    fontWeight: "900",
   },
   title: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#111827",
+    fontWeight: "900",
+    color: COLORS.text,
+    marginTop: 6,
   },
   description: {
     fontSize: 11,
-    color: "#4B5563",
+    color: COLORS.sub,
     marginTop: 2,
+    fontWeight: "600",
   },
   overdueWrap: {
     marginTop: 4,
     alignSelf: "stretch",
     backgroundColor: "#FEF3C7",
-    borderRadius: 6,
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderWidth: 1,
@@ -116,11 +145,10 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   doneBadge: {
-    marginTop: 4,
     alignSelf: "flex-start",
     backgroundColor: "rgba(22,163,74,0.15)",
     color: "#166534",
-    borderRadius: 6,
+    borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,
     fontSize: 10,
@@ -133,20 +161,23 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   actionBtn: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 6,
+    backgroundColor: COLORS.actionBg,
+    borderWidth: 1,
+    borderColor: COLORS.actionBorder,
+    borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
   actionText: {
     fontSize: 10,
-    fontWeight: "700",
-    color: "#1D4ED8",
+    fontWeight: "900",
+    color: COLORS.actionText,
   },
   deleteBtn: {
-    backgroundColor: "#FEE2E2",
+    backgroundColor: COLORS.dangerBg,
+    borderColor: COLORS.dangerBorder,
   },
   deleteText: {
-    color: "#991B1B",
+    color: COLORS.dangerText,
   },
 });

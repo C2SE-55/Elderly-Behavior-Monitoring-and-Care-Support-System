@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -13,33 +13,40 @@ import {
 } from "react-native";
 import { router, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Avatar from "../../assets/images/avatar.png";
 import { api, logoutUser } from "../../services/api";
-const PRIMARY = "#4B2E83";
+const PRIMARY = "#56328C";
+const BG = "#F5F6FF";
+const CARD = "rgba(255,255,255,0.92)";
+const BORDER = "rgba(148,163,184,0.24)";
 
-// HEADER: giống trang Quản lý thông tin sức khỏe
 const ProfileHeader = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={headerStyles.container}>
-      <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+    <View style={[headerStyles.container, { paddingTop: Math.max(10, insets.top) }]}>
+      <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={headerStyles.backBtn}>
         <Ionicons name="arrow-back" size={22} color="#111827" />
       </TouchableOpacity>
       <Text style={headerStyles.title}>Thông tin cá nhân</Text>
-      <View style={{ width: 22 }} />
+      <View style={{ width: 36 }} />
     </View>
   );
 };
 
-// AVATAR: Ảnh đại diện + nút đổi hình (giống health)
-const ProfileAvatar = () => {
+const ProfileAvatar = ({ name }: { name: string }) => {
+  const letter = useMemo(() => String(name || "A").trim().charAt(0).toUpperCase() || "A", [name]);
   return (
-    <View style={avatarStyles.container}>
-      <Image source={Avatar} style={avatarStyles.avatar} />
-      <TouchableOpacity>
-        <Text style={avatarStyles.change}>Đổi hình đại diện</Text>
-      </TouchableOpacity>
+    <View style={avatarStyles.wrap}>
+      <View style={avatarStyles.avatarOuter}>
+        <Image source={Avatar} style={avatarStyles.avatar} />
+        <View style={avatarStyles.avatarBadge}>
+          <Text style={avatarStyles.avatarBadgeTxt}>{letter}</Text>
+        </View>
+      </View>
+      <Text style={avatarStyles.hint}>Ảnh đại diện</Text>
     </View>
   );
 };
@@ -67,15 +74,18 @@ const ProfileInput = ({
   return (
     <View style={inputStyles.wrapper}>
       <Text style={inputStyles.label}>{label}</Text>
-      <TextInput
-        style={inputStyles.input}
-        value={value}
-        editable={editable}
-        placeholder={placeholder}
-        placeholderTextColor="#999"
-        secureTextEntry={secure}
-        onChangeText={onChangeText}
-      />
+      <View style={[inputStyles.inputShell, !editable && inputStyles.inputShellDisabled]}>
+        <TextInput
+          style={[inputStyles.input, !editable && inputStyles.inputDisabled]}
+          value={value}
+          editable={editable}
+          placeholder={placeholder}
+          placeholderTextColor="#9CA3AF"
+          secureTextEntry={secure}
+          onChangeText={onChangeText}
+        />
+        {!editable && <Ionicons name="lock-closed-outline" size={16} color="#9CA3AF" />}
+      </View>
       {helperText ? (
         <Text style={inputStyles.helper}>{helperText}</Text>
       ) : null}
@@ -93,6 +103,7 @@ export default function ProfileScreen() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -231,187 +242,223 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={screenStyles.container}>
+    <SafeAreaView style={screenStyles.safe} edges={["bottom"]}>
       <ProfileHeader />
 
-      <KeyboardAvoidingView
-        style={screenStyles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <KeyboardAvoidingView style={screenStyles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={screenStyles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <ProfileAvatar />
+          <ProfileAvatar name={fullName || username || "Bạn"} />
 
-          <ProfileInput
-            label="Họ và tên"
-            placeholder="Nhập họ và tên"
-            value={fullName}
-            editable
-            onChangeText={setFullName}
-            helperText="Có thể thay đổi. Không được để trống nếu muốn cập nhật."
-          />
-          <View style={{ height: 4 }} />
-          <ProfileInput
-            label="Tên đăng nhập"
-            placeholder="Nhập username"
-            value={username}
-            editable={false}
-            helperText="Không thể thay đổi username."
-          />
-          <ProfileInput
-            label="Email"
-            placeholder="Nhập email"
-            value={email}
-            editable={false}
-            helperText="Không thể thay đổi email."
-          />
-          <ProfileInput
-            label="Số điện thoại"
-            placeholder="Nhập số điện thoại"
-            value={phone}
-            editable
-            onChangeText={setPhone}
-            helperText="Phải có đúng 10 chữ số (định dạng Việt Nam, ví dụ: 0912345678)."
-          />
-          <ProfileInput
-            label="Mật khẩu cũ"
-            placeholder="Nhập mật khẩu cũ"
-            value={oldPassword}
-            secure
-            editable
-            onChangeText={setOldPassword}
-          />
-          <ProfileInput
-            label="Mật khẩu mới"
-            placeholder="Nhập mật khẩu mới"
-            value={newPassword}
-            secure
-            editable
-            onChangeText={setNewPassword}
-            helperText="Mật khẩu mới tối thiểu 6 ký tự."
-          />
-          <ProfileInput
-            label="Xác nhận mật khẩu mới"
-            placeholder="Nhập lại mật khẩu mới"
-            value={confirmNewPassword}
-            secure
-            editable
-            onChangeText={setConfirmNewPassword}
-          />
+          <View style={screenStyles.sectionCard}>
+            <Text style={screenStyles.sectionTitle}>Tài khoản</Text>
+            <ProfileInput
+              label="Họ và tên"
+              placeholder="Nhập họ và tên"
+              value={fullName}
+              editable
+              onChangeText={setFullName}
+              helperText="Bạn có thể cập nhật tên và số điện thoại."
+            />
+            <ProfileInput label="Tên đăng nhập" placeholder="username" value={username} editable={false} helperText="Không thể thay đổi." />
+            <ProfileInput label="Email" placeholder="email" value={email} editable={false} helperText="Không thể thay đổi." />
+            <ProfileInput
+              label="Số điện thoại"
+              placeholder="0912345678"
+              value={phone}
+              editable
+              onChangeText={setPhone}
+              helperText="Ví dụ: 0912345678"
+            />
+          </View>
 
-          {error ? (
-            <Text style={screenStyles.errorText}>{error}</Text>
-          ) : null}
-          {success ? (
-            <Text style={screenStyles.successText}>{success}</Text>
-          ) : null}
+          <View style={screenStyles.sectionCard}>
+            <TouchableOpacity
+              style={screenStyles.sectionRowHead}
+              activeOpacity={0.9}
+              onPress={() => setShowPasswordFields((v) => !v)}
+            >
+              <View style={screenStyles.sectionRowLeft}>
+                <View style={screenStyles.sectionIcon}>
+                  <Ionicons name="lock-closed-outline" size={18} color={PRIMARY} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={screenStyles.sectionTitle}>Bảo mật</Text>
+                  <Text style={screenStyles.sectionSub}>Đổi mật khẩu (tuỳ chọn)</Text>
+                </View>
+              </View>
+              <Ionicons name={showPasswordFields ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={buttonStyles.button}
-            onPress={handleUpdateProfile}
-            disabled={loading}
-          >
-            <Text style={buttonStyles.text}>
-              {loading ? "Đang cập nhật..." : "Cập Nhật"}
-            </Text>
+            {showPasswordFields ? (
+              <View style={{ marginTop: 10 }}>
+                <ProfileInput
+                  label="Mật khẩu cũ"
+                  placeholder="Nhập mật khẩu cũ"
+                  value={oldPassword}
+                  secure
+                  editable
+                  onChangeText={setOldPassword}
+                />
+                <ProfileInput
+                  label="Mật khẩu mới"
+                  placeholder="Nhập mật khẩu mới"
+                  value={newPassword}
+                  secure
+                  editable
+                  onChangeText={setNewPassword}
+                  helperText="Tối thiểu 6 ký tự."
+                />
+                <ProfileInput
+                  label="Xác nhận mật khẩu mới"
+                  placeholder="Nhập lại mật khẩu mới"
+                  value={confirmNewPassword}
+                  secure
+                  editable
+                  onChangeText={setConfirmNewPassword}
+                />
+              </View>
+            ) : null}
+          </View>
+
+          {!!error && <Text style={screenStyles.errorText}>{error}</Text>}
+          {!!success && <Text style={screenStyles.successText}>{success}</Text>}
+
+          <TouchableOpacity style={[buttonStyles.button, loading && { opacity: 0.7 }]} onPress={handleUpdateProfile} disabled={loading}>
+            <Text style={buttonStyles.text}>{loading ? "Đang cập nhật..." : "Lưu thay đổi"}</Text>
           </TouchableOpacity>
         </ScrollView>
 
         {keyboardVisible && (
-          <TouchableOpacity
-            style={screenStyles.scrollDownButton}
-            onPress={handleScrollToEnd}
-          >
+          <TouchableOpacity style={screenStyles.scrollDownButton} onPress={handleScrollToEnd} activeOpacity={0.9}>
+            <Ionicons name="arrow-down" size={16} color="#FFFFFF" />
             <Text style={screenStyles.scrollDownText}>Cuộn xuống</Text>
           </TouchableOpacity>
         )}
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-// STYLES (giống health)
 const screenStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F5F5F5",
-  },
+  safe: { flex: 1, backgroundColor: BG },
   flex: {
     flex: 1,
   },
   content: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 18,
+    paddingBottom: 44,
+    gap: 12,
   },
   scrollDownButton: {
     position: "absolute",
     right: 20,
     bottom: 20,
     backgroundColor: PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   scrollDownText: {
     color: "white",
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "800",
   },
   errorText: {
-    marginTop: 12,
-    color: "red",
+    marginTop: 8,
+    color: "#B91C1C",
     fontSize: 13,
     textAlign: "center",
+    fontWeight: "700",
   },
   successText: {
-    marginTop: 12,
-    color: "green",
+    marginTop: 8,
+    color: "#047857",
     fontSize: 13,
     textAlign: "center",
+    fontWeight: "700",
+  },
+  sectionCard: {
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 14,
+  },
+  sectionTitle: { fontSize: 14, fontWeight: "900", color: "#111827" },
+  sectionSub: { marginTop: 2, fontSize: 12, fontWeight: "700", color: "#6B7280" },
+  sectionRowHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionRowLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  sectionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(167,139,250,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
   },
 });
 
 const headerStyles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    height: 80,
-    paddingTop: 25,
+    backgroundColor: BG,
     paddingHorizontal: 16,
+    paddingBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   title: {
     color: "#111827",
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "900",
     flex: 1,
     textAlign: "center",
   },
 });
 
 const avatarStyles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    marginTop: 20,
-    marginBottom: 20,
-  },
+  wrap: { alignItems: "center", marginTop: 6, marginBottom: 6 },
+  avatarOuter: { width: 110, height: 110, borderRadius: 55, padding: 4, backgroundColor: CARD, borderWidth: 1, borderColor: BORDER },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: "100%",
+    height: "100%",
+    borderRadius: 55,
   },
-  change: {
-    marginTop: 8,
-    color: PRIMARY,
-    fontSize: 13,
+  avatarBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: BG,
   },
+  avatarBadgeTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 14 },
+  hint: { marginTop: 10, fontSize: 12, fontWeight: "700", color: "#6B7280" },
 });
 
 const inputStyles = StyleSheet.create({
@@ -421,19 +468,28 @@ const inputStyles = StyleSheet.create({
   label: {
     fontSize: 13,
     marginBottom: 6,
-    color: "#333",
+    color: "#111827",
+    fontWeight: "800",
   },
-  input: {
-    backgroundColor: "#EEEEEE",
-    height: 45,
-    borderRadius: 8,
+  inputShell: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.28)",
+    borderRadius: 14,
     paddingHorizontal: 12,
-    fontSize: 14,
+    paddingVertical: 10,
   },
+  inputShellDisabled: { backgroundColor: "#F8FAFC" },
+  input: { flex: 1, fontSize: 14, color: "#0F172A", fontWeight: "700", paddingVertical: 0 },
+  inputDisabled: { color: "#6B7280" },
   helper: {
     marginTop: 4,
     fontSize: 11,
     color: "#6B7280",
+    fontWeight: "600",
   },
 });
 
@@ -441,13 +497,13 @@ const buttonStyles = StyleSheet.create({
   button: {
     backgroundColor: PRIMARY,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    marginTop: 6,
   },
   text: {
     color: "white",
-    fontWeight: "600",
+    fontWeight: "900",
   },
 });

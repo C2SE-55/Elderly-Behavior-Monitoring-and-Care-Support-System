@@ -25,24 +25,34 @@ import {
   subscribeActiveRoomChange,
   type MyRoomInfo,
 } from "../../services/api";
-const PRIMARY = "#4B2E83";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
+const PRIMARY = COLORS.primary;
 
 // HEADER: Thanh tiêu đề trên cùng
 const HealthHeader = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={headerStyles.container}>
-      {/* Nút back về màn trước */}
-      <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-        <Ionicons name="arrow-back" size={22} color="#111827" />
+    <View style={[headerStyles.container, { paddingTop: Math.max(10, insets.top) }]}>
+      <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={headerStyles.backBtn}>
+        <Ionicons name="arrow-back" size={20} color={COLORS.text} />
       </TouchableOpacity>
-
-      {/* Tiêu đề */}
-      <Text style={headerStyles.title}>Quản lý thông tin sức khỏe</Text>
-
-      {/* View rỗng để canh đều 2 bên icon */}
-      <View style={{ width: 22 }} />
+      <Text style={headerStyles.title} numberOfLines={1}>
+        Quản lý sức khỏe
+      </Text>
+      <View style={{ width: 36 }} />
     </View>
   );
 };
@@ -59,8 +69,10 @@ const HealthAvatar = ({ faceImageUrl, onUpload, loading, disabled }: HealthAvata
     ? { uri: faceImageUrl }
     : require("../../assets/images/avatar.png");
   return (
-    <View style={avatarStyles.container}>
-      <Image source={imageSource} style={avatarStyles.avatar} />
+    <View style={avatarStyles.wrap}>
+      <View style={avatarStyles.avatarOuter}>
+        <Image source={imageSource} style={avatarStyles.avatar} />
+      </View>
       <TouchableOpacity onPress={onUpload} disabled={loading || disabled}>
         {loading ? (
           <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 8 }} />
@@ -97,18 +109,21 @@ const HealthInput = ({
   return (
     <View style={inputStyles.wrapper}>
       <Text style={inputStyles.label}>{label}</Text>
-      <TextInput
-        style={[inputStyles.input, multiline && inputStyles.multiline]}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#999"
-        multiline={multiline}
-        numberOfLines={multiline ? numberOfLines ?? 3 : 1}
-        textAlignVertical={multiline ? "top" : "center"}
-        keyboardType={keyboardType}
-        editable={editable}
-      />
+      <View style={[inputStyles.inputShell, !editable && inputStyles.inputShellDisabled]}>
+        <TextInput
+          style={[inputStyles.input, multiline && inputStyles.multiline, !editable && inputStyles.inputDisabled]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          multiline={multiline}
+          numberOfLines={multiline ? numberOfLines ?? 3 : 1}
+          textAlignVertical={multiline ? "top" : "center"}
+          keyboardType={keyboardType}
+          editable={editable}
+        />
+        {!editable && <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />}
+      </View>
     </View>
   );
 };
@@ -142,30 +157,36 @@ const HealthTwoColumn = ({
       {/* Cột trái */}
       <View style={twoColStyles.col}>
         <Text style={twoColStyles.label}>{label1}</Text>
-        <View style={twoColStyles.unitWrapper}>
+        <View style={[twoColStyles.unitWrapper, !editable && twoColStyles.unitWrapperDisabled]}>
           <TextInput
             style={twoColStyles.input}
             value={value1}
             onChangeText={onChangeValue1}
             keyboardType="numeric"
             editable={editable}
+            placeholder="0"
+            placeholderTextColor="#94A3B8"
           />
           {unit1 && <Text style={twoColStyles.unit}>{unit1}</Text>}
+          {!editable && <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />}
         </View>
       </View>
 
       {/* Cột phải */}
       <View style={twoColStyles.col}>
         <Text style={twoColStyles.label}>{label2}</Text>
-        <View style={twoColStyles.unitWrapper}>
+        <View style={[twoColStyles.unitWrapper, !editable && twoColStyles.unitWrapperDisabled]}>
           <TextInput
             style={twoColStyles.input}
             value={value2}
             onChangeText={onChangeValue2}
             keyboardType="numeric"
             editable={editable}
+            placeholder="0"
+            placeholderTextColor="#94A3B8"
           />
           {unit2 && <Text style={twoColStyles.unit}>{unit2}</Text>}
+          {!editable && <Ionicons name="lock-closed-outline" size={16} color="#94A3B8" />}
         </View>
       </View>
     </View>
@@ -539,7 +560,7 @@ export default function HealthScreen() {
   };
 
   return (
-    <View style={screenStyles.container}>
+    <SafeAreaView style={screenStyles.safe} edges={["bottom"]}>
       <HealthHeader />
 
       <KeyboardAvoidingView
@@ -550,14 +571,21 @@ export default function HealthScreen() {
           ref={scrollRef}
           contentContainerStyle={screenStyles.content}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* Ảnh đại diện + nút đổi hình (lưu DB, dùng cho quét khuôn mặt nhận diện) */}
-          <HealthAvatar
-            faceImageUrl={faceImageUrl}
-            onUpload={handleChangeAvatar}
-            loading={loadingAvatar}
-            disabled={!canManageHealth}
-          />
+          <View style={screenStyles.sectionCard}>
+            <Text style={screenStyles.sectionTitle}>Hồ sơ</Text>
+            <HealthAvatar
+              faceImageUrl={faceImageUrl}
+              onUpload={handleChangeAvatar}
+              loading={loadingAvatar}
+              disabled={!canManageHealth}
+            />
+            <Text style={screenStyles.sectionHint}>
+              Ảnh khuôn mặt sẽ dùng cho tính năng nhận diện khi quét.
+            </Text>
+          </View>
 
           {!!permissionMessage && (
             <Text style={permissionMessage === "Chỉ xem" ? screenStyles.readonlyBadge : screenStyles.warnText}>
@@ -571,91 +599,97 @@ export default function HealthScreen() {
             <Text style={screenStyles.infoText}>Room: {roomInfo.room_id}</Text>
           )}
 
-          {/* Các trường thông tin sức khỏe */}
-          <HealthInput
-            placeholder="Nhập họ và tên"
-            label="Họ và tên"
-            value={fullName}
-            onChangeText={setFullName}
-            editable={canManageHealth}
-          />
-          <HealthInput
-            placeholder="Nhập tuổi của bạn"
-            label="Tuổi"
-            value={age}
-            onChangeText={setAge}
-            keyboardType="numeric"
-            editable={canManageHealth}
-          />
-
-          <HealthTwoColumn
-            label1="Chiều cao"
-            value1={height}
-            unit1="cm"
-            label2="Cân nặng"
-            value2={weight}
-            unit2="kg"
-            onChangeValue1={setHeight}
-            onChangeValue2={setWeight}
-            editable={canManageHealth}
-          />
-
-          {/* Nhóm máu (select) + huyết áp */}
-          <View style={bloodStyles.wrapper}>
-            <Text style={bloodStyles.label}>Nhóm máu</Text>
-            <View style={bloodStyles.chipRow}>
-              {BLOOD_TYPES.map((type) => {
-                const selected = bloodType === type;
-                return (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      bloodStyles.chip,
-                      selected && bloodStyles.chipSelected,
-                      !canManageHealth && bloodStyles.chipDisabled,
-                    ]}
-                    onPress={() => setBloodType(type)}
-                    disabled={!canManageHealth}
-                  >
-                    <Text
-                      style={[
-                        bloodStyles.chipText,
-                        selected && bloodStyles.chipTextSelected,
-                      ]}
-                    >
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+          <View style={screenStyles.sectionCard}>
+            <Text style={screenStyles.sectionTitle}>Chỉ số cơ bản</Text>
+            <HealthInput
+              placeholder="Nhập họ và tên"
+              label="Họ và tên"
+              value={fullName}
+              onChangeText={setFullName}
+              editable={canManageHealth}
+            />
+            <HealthInput
+              placeholder="Nhập tuổi"
+              label="Tuổi"
+              value={age}
+              onChangeText={setAge}
+              keyboardType="numeric"
+              editable={canManageHealth}
+            />
+            <HealthTwoColumn
+              label1="Chiều cao"
+              value1={height}
+              unit1="cm"
+              label2="Cân nặng"
+              value2={weight}
+              unit2="kg"
+              onChangeValue1={setHeight}
+              onChangeValue2={setWeight}
+              editable={canManageHealth}
+            />
           </View>
 
-          <HealthInput
-            label="Huyết áp (tâm thu)"
-            placeholder="Nhập huyết áp (mmHg)"
-            value={bloodPressure}
-            onChangeText={setBloodPressure}
-            keyboardType="numeric"
-            editable={canManageHealth}
-          />
+          <View style={screenStyles.sectionCard}>
+            <Text style={screenStyles.sectionTitle}>Tim mạch & nhóm máu</Text>
+            <View style={bloodStyles.wrapper}>
+              <Text style={bloodStyles.label}>Nhóm máu</Text>
+              <View style={bloodStyles.chipRow}>
+                {BLOOD_TYPES.map((type) => {
+                  const selected = bloodType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        bloodStyles.chip,
+                        selected && bloodStyles.chipSelected,
+                        !canManageHealth && bloodStyles.chipDisabled,
+                      ]}
+                      onPress={() => setBloodType(type)}
+                      disabled={!canManageHealth}
+                      activeOpacity={0.9}
+                    >
+                      <Text
+                        style={[
+                          bloodStyles.chipText,
+                          selected && bloodStyles.chipTextSelected,
+                        ]}
+                      >
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+            <HealthInput
+              label="Huyết áp (tâm thu)"
+              placeholder="mmHg (vd: 120)"
+              value={bloodPressure}
+              onChangeText={setBloodPressure}
+              keyboardType="numeric"
+              editable={canManageHealth}
+            />
+          </View>
 
-          <HealthInput
-            label="Bệnh nền"
-            placeholder="Nhập bệnh nền"
-            multiline
-            value={chronicDisease}
-            onChangeText={setChronicDisease}
-            editable={canManageHealth}
-          />
-          <HealthInput
-            label="Dị ứng"
-            placeholder="Nhập dị ứng"
-            multiline
-            value={allergy}
-            onChangeText={setAllergy}
-            editable={canManageHealth}
-          />
+          <View style={screenStyles.sectionCard}>
+            <Text style={screenStyles.sectionTitle}>Tiền sử</Text>
+            <HealthInput
+              label="Bệnh nền"
+              placeholder="Nhập bệnh nền"
+              multiline
+              value={chronicDisease}
+              onChangeText={setChronicDisease}
+              editable={canManageHealth}
+            />
+            <HealthInput
+              label="Dị ứng"
+              placeholder="Nhập dị ứng"
+              multiline
+              value={allergy}
+              onChangeText={setAllergy}
+              editable={canManageHealth}
+            />
+          </View>
 
           {/* Thông báo lỗi / thành công */}
           {error ? <Text style={screenStyles.errorText}>{error}</Text> : null}
@@ -676,62 +710,70 @@ export default function HealthScreen() {
           <TouchableOpacity
             style={screenStyles.scrollDownButton}
             onPress={handleScrollToEnd}
+            activeOpacity={0.9}
           >
+            <Ionicons name="arrow-down" size={16} color="#FFFFFF" />
             <Text style={screenStyles.scrollDownText}>Cuộn xuống</Text>
           </TouchableOpacity>
         )}
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 // STYLES CHO TỪNG PHẦN
 const screenStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F5F5F5",
-  },
+  safe: { flex: 1, backgroundColor: COLORS.bg },
   flex: {
     flex: 1,
   },
   content: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 28,
+    gap: 12,
   },
   scrollDownButton: {
     position: "absolute",
     right: 20,
     bottom: 20,
     backgroundColor: PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   scrollDownText: {
     color: "white",
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "900",
   },
   errorText: {
-    marginTop: 16,
-    color: "red",
+    marginTop: 10,
+    color: "#B91C1C",
     fontSize: 13,
     textAlign: "center",
+    fontWeight: "800",
   },
   successText: {
-    marginTop: 8,
-    color: "green",
+    marginTop: 10,
+    color: "#047857",
     fontSize: 13,
     textAlign: "center",
+    fontWeight: "800",
   },
   warnText: {
     marginBottom: 10,
     color: "#92400E",
     backgroundColor: "#FEF3C7",
-    borderRadius: 10,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 12,
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.35)",
+    fontWeight: "800",
   },
   readonlyBadge: {
     alignSelf: "flex-start",
@@ -742,75 +784,110 @@ const screenStyles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   infoText: {
     marginBottom: 8,
     color: "#475569",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
   },
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 22,
+    padding: 14,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 9 },
+    elevation: 4,
+  },
+  sectionTitle: { fontSize: 14, fontWeight: "900", color: COLORS.text },
+  sectionHint: { marginTop: 10, fontSize: 12, fontWeight: "700", color: COLORS.sub, lineHeight: 18, textAlign: "center" },
 });
 
 const headerStyles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    height: 80,
-    paddingTop: 25,
+    backgroundColor: COLORS.bg,
     paddingHorizontal: 16,
+    paddingBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   title: {
-    color: "#111827",
+    color: COLORS.text,
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "900",
     flex: 1,
     textAlign: "center",
   },
 });
 
 const avatarStyles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    // Để avatar nằm hoàn toàn dưới header, không bị che
-    marginTop: 20,
-    marginBottom: 20,
+  wrap: { alignItems: "center", marginTop: 10, marginBottom: 6 },
+  avatarOuter: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    padding: 4,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
+  avatar: { width: "100%", height: "100%", borderRadius: 56 },
   change: {
     marginTop: 8,
-    color: PRIMARY,
+    color: COLORS.primary,
     fontSize: 13,
+    fontWeight: "900",
   },
 });
 
 const inputStyles = StyleSheet.create({
   wrapper: {
-    marginBottom: 15,
+    marginBottom: 12,
   },
   label: {
     fontSize: 13,
     marginBottom: 6,
-    color: "#333",
+    color: COLORS.text,
+    fontWeight: "900",
   },
-  input: {
-    backgroundColor: "#EEEEEE",
-    height: 45,
-    borderRadius: 8,
+  inputShell: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.28)",
+    borderRadius: 16,
     paddingHorizontal: 12,
-    fontSize: 14,
+    paddingVertical: 11,
   },
+  inputShellDisabled: { backgroundColor: "#F8FAFC" },
+  input: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: "700", paddingVertical: 0 },
+  inputDisabled: { color: "#64748B" },
   multiline: {
-    height: 100,
-    paddingTop: 10,
+    minHeight: 92,
+    paddingTop: 0,
   },
 });
 
@@ -818,7 +895,7 @@ const twoColStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 15,
+    marginBottom: 12,
   },
   col: {
     width: "48%",
@@ -826,47 +903,59 @@ const twoColStyles = StyleSheet.create({
   label: {
     fontSize: 13,
     marginBottom: 6,
+    color: COLORS.text,
+    fontWeight: "900",
   },
   unitWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#EEEEEE",
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.28)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
+  unitWrapperDisabled: { backgroundColor: "#F8FAFC" },
   input: {
     flex: 1,
-    height: 45,
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: "800",
+    paddingVertical: 0,
   },
   unit: {
     fontSize: 12,
-    color: "#777",
+    color: COLORS.sub,
+    fontWeight: "800",
   },
 });
 
 const buttonStyles = StyleSheet.create({
   button: {
-    backgroundColor: PRIMARY,
+    backgroundColor: COLORS.primary,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    marginTop: 6,
   },
   text: {
     color: "white",
-    fontWeight: "600",
+    fontWeight: "900",
   },
 });
 
 const bloodStyles = StyleSheet.create({
   wrapper: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   label: {
     fontSize: 13,
     marginBottom: 6,
-    color: "#333",
+    color: COLORS.text,
+    fontWeight: "900",
   },
   chipRow: {
     flexDirection: "row",
@@ -876,25 +965,26 @@ const bloodStyles = StyleSheet.create({
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
-    backgroundColor: "#F9FAFB",
+    borderColor: COLORS.border,
+    backgroundColor: "rgba(255,255,255,0.90)",
   },
   chipSelected: {
-    backgroundColor: PRIMARY,
-    borderColor: PRIMARY,
+    backgroundColor: "rgba(167,139,250,0.24)",
+    borderColor: "rgba(167,139,250,0.65)",
   },
   chipDisabled: {
     opacity: 0.65,
   },
   chipText: {
     fontSize: 12,
-    color: "#111827",
+    color: COLORS.text,
+    fontWeight: "800",
   },
   chipTextSelected: {
-    color: "#FFFFFF",
-    fontWeight: "600",
+    color: COLORS.primary,
+    fontWeight: "900",
   },
 });
 

@@ -4,6 +4,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DailyScheduleItem } from "@/services/api";
 import { isScheduleMarkedDone } from "@/utils/scheduleMarkedDone";
 
+const COLORS = {
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
+
 type Props = {
   visible: boolean;
   item: DailyScheduleItem | null;
@@ -115,18 +125,25 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)" },
   scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 16 },
   card: {
-    backgroundColor: "#FFF",
-    borderRadius: 14,
+    backgroundColor: COLORS.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: 14,
     gap: 10,
     maxWidth: 520,
     width: "100%",
     alignSelf: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
-  title: { fontSize: 18, fontWeight: "700", color: "#111827" },
+  title: { fontSize: 18, fontWeight: "900", color: COLORS.text },
   futureBanner: {
     backgroundColor: "#E0E7FF",
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderWidth: 1,
@@ -135,7 +152,7 @@ const styles = StyleSheet.create({
   futureBannerText: { color: "#312E81", fontSize: 12, fontWeight: "700", lineHeight: 17 },
   overdueBanner: {
     backgroundColor: "#FEF3C7",
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderWidth: 1,
@@ -143,13 +160,13 @@ const styles = StyleSheet.create({
   },
   overdueBannerText: { color: "#92400E", fontSize: 12, fontWeight: "700", lineHeight: 17 },
   row: { gap: 4 },
-  label: { fontSize: 12, color: "#4B5563", fontWeight: "800" },
-  value: { fontSize: 14, color: "#111827", fontWeight: "600", lineHeight: 20 },
+  label: { fontSize: 12, color: COLORS.sub, fontWeight: "900" },
+  value: { fontSize: 14, color: COLORS.text, fontWeight: "700", lineHeight: 20 },
   actions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginTop: 2 },
   rightActions: { flexDirection: "row", gap: 8, alignItems: "center" },
-  doneBtn: { backgroundColor: "#16A34A", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
-  doneText: { color: "#FFF", fontSize: 12, fontWeight: "800" },
-  closeBtn: { backgroundColor: "#2563EB", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
-  closeText: { color: "#FFF", fontSize: 12, fontWeight: "800" },
+  doneBtn: { backgroundColor: "#16A34A", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
+  doneText: { color: "#FFF", fontSize: 12, fontWeight: "900" },
+  closeBtn: { backgroundColor: COLORS.primary, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
+  closeText: { color: "#FFF", fontSize: 12, fontWeight: "900" },
 });
 

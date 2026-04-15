@@ -1,33 +1,50 @@
 import { Tabs } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 
-const BLUE = "#2563EB";
-const GRAY = "#64748B";
+const COLORS = {
+  active: "#56328C",
+  inactive: "#64748B",
+  tabBg: "rgba(255,255,255,0.96)",
+  tabBorder: "rgba(148,163,184,0.22)",
+};
 
 export default function AdminTabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: BLUE,
-        tabBarInactiveTintColor: GRAY,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarActiveTintColor: COLORS.active,
+        tabBarInactiveTintColor: COLORS.inactive,
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "800",
+          marginTop: -1,
+          letterSpacing: 0.1,
+        },
+        tabBarItemStyle: {
+          borderRadius: 12,
+          marginHorizontal: 2,
+          paddingVertical: 2,
+        },
         tabBarStyle: {
           position: "absolute",
-          left: 12,
-          right: 12,
-          bottom: 3,
-          height: 70,
-          paddingBottom: 8,
-          paddingTop: 8,
-          backgroundColor: "#FFFFFF",
-          borderTopWidth: 0.5,
-          borderTopColor: "#E5E7EB",
-          borderRadius: 16,
-          shadowColor: "#000",
-          shadowOpacity: 0.12,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 6 },
+          left: 10,
+          right: 10,
+          bottom: 8,
+          height: 72,
+          paddingBottom: 9,
+          paddingTop: 9,
+          backgroundColor: COLORS.tabBg,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.tabBorder,
+          borderWidth: 1,
+          borderColor: COLORS.tabBorder,
+          borderRadius: 20,
+          shadowColor: "#0F172A",
+          shadowOpacity: 0.1,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 8 },
           elevation: 10,
         },
       }}
@@ -35,28 +52,22 @@ export default function AdminTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
+          title: "Tổng quan",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="home" size={size ?? 24} color={color} />
+            <Feather name="grid" size={size ?? 22} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="accounts"
         options={{
-          title: "Tài khoản",
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="users" size={size ?? 24} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
         name="alerts"
         options={{
-          title: "Cảnh báo",
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="bell" size={size ?? 24} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -64,7 +75,7 @@ export default function AdminTabLayout() {
         options={{
           title: "Cài đặt",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="settings" size={size ?? 24} color={color} />
+            <Feather name="settings" size={size ?? 22} color={color} />
           ),
         }}
       />

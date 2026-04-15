@@ -26,6 +26,17 @@ import {
 import CameraStreamView from "./CameraStreamView";
 const TAB_ACTIVE = "#56328C";
 const TAB_INACTIVE = "#A78BFA";
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+  dangerSoft: "rgba(239,68,68,0.12)",
+};
 const DEMO_ASSET_KEYS = new Set<string>(["video3", "videofall"]);
 
 function formatTime(date: Date) {
@@ -247,9 +258,9 @@ export default function CameraLiveScreen() {
 
     const cameraIdForHistory =
       liveAccess !== "loading" &&
-      liveAccess?.allowed &&
-      liveAccess?.camera_id != null &&
-      Number(liveAccess.camera_id) > 0
+        liveAccess?.allowed &&
+        liveAccess?.camera_id != null &&
+        Number(liveAccess.camera_id) > 0
         ? Number(liveAccess.camera_id)
         : null;
 
@@ -352,7 +363,9 @@ export default function CameraLiveScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: 15 + insets.top }]}>
         <TouchableOpacity onPress={() => goToHome()} hitSlop={8}>
-          <Ionicons name="arrow-back" size={22} />
+          <View style={styles.headerIconBtn}>
+            <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+          </View>
         </TouchableOpacity>
         <Text style={styles.title}>Camera Live</Text>
         <View style={{ width: 22 }} />
@@ -435,15 +448,16 @@ export default function CameraLiveScreen() {
         </View>
 
         <View style={styles.controlRow}>
-          <TouchableOpacity onPress={openFullscreen} hitSlop={12}>
-            <Ionicons name="expand-outline" size={22} color="#444" />
+          <TouchableOpacity onPress={openFullscreen} hitSlop={12} activeOpacity={0.9} style={styles.controlPill}>
+            <Ionicons name="expand-outline" size={18} color={COLORS.primary} />
+            <Text style={styles.controlPillText}>Toàn màn hình</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.dateRow}>
-          <Ionicons name="calendar-outline" size={18} color="#444" style={{ marginRight: 6 }} />
+          <Ionicons name="calendar-outline" size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
           <Text style={styles.dateText}>{formatDate(selectedEvent?.created_at)}</Text>
-          <Ionicons name="chevron-down" size={16} color="#444" />
+          <Ionicons name="chevron-down" size={16} color={COLORS.sub} />
         </View>
 
         <View style={styles.historyContainer}>
@@ -572,37 +586,37 @@ export default function CameraLiveScreen() {
 
           {!historyLoading && safetyFilter !== "all"
             ? flatDisplayHistory.map((item, index) => {
-                const isActive = item.id === selectedEvent?.id;
-                const eventTime = formatEventDateTime(item.created_at);
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.historyItem}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      setSelectedEventId(item.id);
-                      setPreviewVisible(true);
-                    }}
-                  >
-                    <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
+              const isActive = item.id === selectedEvent?.id;
+              const eventTime = formatEventDateTime(item.created_at);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.historyItem}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setSelectedEventId(item.id);
+                    setPreviewVisible(true);
+                  }}
+                >
+                  <Text style={styles.historyTimeLabel}>{eventTime.time.slice(0, 5)}</Text>
 
-                    <View style={styles.historyTimelineColumn}>
-                      <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
-                        <Ionicons name="person-outline" size={12} color="#6D5EF7" />
-                      </View>
-                      {index !== flatDisplayHistory.length - 1 ? <View style={styles.historyLine} /> : null}
+                  <View style={styles.historyTimelineColumn}>
+                    <View style={[styles.historyDot, isActive && styles.historyDotActive]}>
+                      <Ionicons name="person-outline" size={12} color="#6D5EF7" />
                     </View>
+                    {index !== flatDisplayHistory.length - 1 ? <View style={styles.historyLine} /> : null}
+                  </View>
 
-                    <View style={styles.historyTextBox}>
-                      <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
-                        {item.title || getEventNote(item)}
-                      </Text>
-                      <Text style={styles.historySubText}>{eventTime.time}</Text>
-                      <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
+                  <View style={styles.historyTextBox}>
+                    <Text style={[styles.historyTitle, isActive && styles.historyTitleActive]}>
+                      {item.title || getEventNote(item)}
+                    </Text>
+                    <Text style={styles.historySubText}>{eventTime.time}</Text>
+                    <Text style={styles.historyNoteText}>{getEventNote(item)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
             : null}
         </View>
       </ScrollView>
@@ -676,7 +690,7 @@ export default function CameraLiveScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F2F2F2",
+    backgroundColor: COLORS.bg,
   },
   content: {
     flex: 1,
@@ -687,20 +701,38 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 15,
     paddingBottom: 15,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderColor: "#eee",
+    backgroundColor: COLORS.bg,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   title: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "900",
+    color: COLORS.text,
   },
   cameraBox: {
-    padding: 10,
-    backgroundColor: "#fff",
+    padding: 12,
+    marginHorizontal: 12,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 22,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 9 },
+    elevation: 4,
   },
   cameraFrame: {
-    borderRadius: 6,
+    borderRadius: 18,
     overflow: "hidden",
     backgroundColor: "#000",
   },
@@ -735,14 +767,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   placeholderCamera: {
-    backgroundColor: "#eee",
+    backgroundColor: "#0B1220",
     justifyContent: "center",
     alignItems: "center",
   },
   placeholderText: {
     marginTop: 8,
     fontSize: 12,
-    color: "#666",
+    color: "#CBD5E1",
+    fontWeight: "700",
+    textAlign: "center",
   },
   overlayBadge: {
     position: "absolute",
@@ -759,7 +793,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 999,
+    fontWeight: "900",
   },
   fallText: {
     color: "#fecaca",
@@ -783,27 +818,43 @@ const styles = StyleSheet.create({
   },
   controlRow: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    paddingVertical: 12,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderColor: "#eee",
+    justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
+  controlPill: {
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  controlPillText: { color: COLORS.primary, fontSize: 12, fontWeight: "900" },
   dateRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 15,
+    marginHorizontal: 12,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 18,
   },
   dateText: {
     fontSize: 14,
     marginRight: 5,
+    color: COLORS.text,
+    fontWeight: "900",
   },
   historyContainer: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 14,
-    paddingTop: 10,
+    backgroundColor: "transparent",
+    paddingHorizontal: 12,
+    paddingTop: 12,
     paddingBottom: 20,
     minHeight: 260,
   },
@@ -825,25 +876,25 @@ const styles = StyleSheet.create({
   },
   filterBtn: {
     flex: 1,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F3F4F6",
-    paddingVertical: 8,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   filterBtnActive: {
-    backgroundColor: "#EEF2FF",
-    borderColor: "#C7D2FE",
+    backgroundColor: "rgba(167,139,250,0.18)",
+    borderColor: "rgba(167,139,250,0.55)",
   },
   filterBtnText: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#6B7280",
+    color: "#475569",
   },
   filterBtnTextActive: {
-    color: "#4F46E5",
+    color: COLORS.primary,
   },
   filterSectionTitle: {
     marginTop: 7,
@@ -860,14 +911,20 @@ const styles = StyleSheet.create({
   historyItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingVertical: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 18,
+    marginBottom: 10,
   },
   historyTimeLabel: {
     width: 52,
     fontSize: 15,
-    color: "#111827",
+    color: COLORS.text,
     paddingTop: 1,
-    fontWeight: "500",
+    fontWeight: "900",
   },
   historyTimelineColumn: {
     width: 24,
@@ -900,22 +957,24 @@ const styles = StyleSheet.create({
   },
   historyTitle: {
     fontSize: 15,
-    color: "#6366F1",
-    fontWeight: "500",
+    color: COLORS.primary,
+    fontWeight: "900",
   },
   historyTitleActive: {
-    color: "#4F46E5",
-    fontWeight: "700",
+    color: COLORS.primary,
+    fontWeight: "900",
   },
   historySubText: {
     marginTop: 2,
     fontSize: 13,
-    color: "#9CA3AF",
+    color: COLORS.sub,
+    fontWeight: "700",
   },
   historyNoteText: {
     marginTop: 2,
     fontSize: 12,
-    color: "#6B7280",
+    color: "#64748B",
+    fontWeight: "600",
   },
   previewOverlay: {
     flex: 1,
@@ -923,10 +982,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   previewCard: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
     padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   previewHeader: {
     flexDirection: "row",
@@ -936,13 +997,14 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#4F46E5",
+    fontWeight: "900",
+    color: COLORS.text,
   },
   previewDate: {
     marginTop: 4,
-    color: "#6B7280",
+    color: COLORS.sub,
     fontSize: 13,
+    fontWeight: "700",
   },
   previewImage: {
     width: "100%",
@@ -975,13 +1037,14 @@ const styles = StyleSheet.create({
   },
   previewNoteText: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#4F46E5",
+    fontWeight: "900",
+    color: COLORS.primary,
     marginBottom: 4,
   },
   previewInfoText: {
     fontSize: 14,
-    color: "#374151",
+    color: "#334155",
+    fontWeight: "700",
   },
   bottomNav: {
     flexDirection: "row",

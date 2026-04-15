@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated } from "react-native";
 import dayjs from "dayjs";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +27,18 @@ import WeekRangeCalendarModal from "./WeekRangeCalendarModal";
 
 type DayKey = DailyScheduleItem["day_of_week"];
 type SlotKey = "morning" | "noon" | "afternoon" | "evening";
+
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  dangerSoft: "rgba(239,68,68,0.12)",
+  warnSoft: "rgba(245,158,11,0.18)",
+};
 
 const DAYS: { key: DayKey; label: string }[] = [
   { key: "mon", label: "Thứ 2" },
@@ -154,6 +167,9 @@ export default function WeeklyCalendarScreen() {
   const insets = useSafeAreaInsets();
   const gridScrollRef = useRef<ScrollView | null>(null);
   const gridScrollXRef = useRef(0);
+  const todayPulseAnim = useRef(new Animated.Value(0)).current;
+  const todayPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [todayPulseOn, setTodayPulseOn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permissionLoading, setPermissionLoading] = useState(true);
   const [screenError, setScreenError] = useState("");
@@ -426,7 +442,22 @@ export default function WeeklyCalendarScreen() {
     setWeekOffset(0);
     // Defer scroll until layout re-renders current week.
     setTimeout(() => scrollToCurrentDayColumn(true), 50);
+
+    // UI-only: pulse highlight the "today" column.
+    if (todayPulseTimerRef.current) clearTimeout(todayPulseTimerRef.current);
+    setTodayPulseOn(true);
+    todayPulseAnim.setValue(0);
+    const beatIn = (ms: number) => Animated.timing(todayPulseAnim, { toValue: 1, duration: ms, useNativeDriver: true });
+    const beatOut = (ms: number) => Animated.timing(todayPulseAnim, { toValue: 0, duration: ms, useNativeDriver: true });
+    Animated.sequence([beatIn(220), beatOut(520), beatIn(220), beatOut(920)]).start();
+    todayPulseTimerRef.current = setTimeout(() => setTodayPulseOn(false), 2600);
   }, [scrollToCurrentDayColumn]);
+
+  useEffect(() => {
+    return () => {
+      if (todayPulseTimerRef.current) clearTimeout(todayPulseTimerRef.current);
+    };
+  }, []);
 
   /** So sánh mốc thời gian thực trên lịch (không rút gọn theo weekOffset — tránh coi nhầm thứ 5 tuần này là “đã qua” khi đang thứ 2). */
   const isPastDateTime = useCallback(
@@ -590,7 +621,9 @@ export default function WeeklyCalendarScreen() {
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={[styles.headerBar, { height: insets.top + 56, paddingTop: insets.top + 6 }]}>
         <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.navigate("/(tabs)"))} hitSlop={8}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
+          <View style={styles.headerIconBtn}>
+            <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+          </View>
         </TouchableOpacity>
         <Text style={styles.headerBarTitle}>Quản lý lịch sinh hoạt theo tuần</Text>
         <View style={{ width: 22 }} />
@@ -602,7 +635,8 @@ export default function WeeklyCalendarScreen() {
         nestedScrollEnabled
       >
         <View style={styles.weekNavRow}>
-          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)}>
+          <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w - 1)} activeOpacity={0.9}>
+            <Ionicons name="chevron-back" size={16} color={COLORS.primary} />
             <Text style={styles.weekBtnText}>Tuần trước</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -623,11 +657,13 @@ export default function WeeklyCalendarScreen() {
             </Text>
           </TouchableOpacity>
           <View style={styles.weekActionsRight}>
-            <TouchableOpacity style={styles.weekBtn} onPress={goToToday}>
-              <Text style={styles.weekBtnText}>Ngày hiện tại</Text>
+            <TouchableOpacity style={styles.weekBtn} onPress={goToToday} activeOpacity={0.9}>
+              <Ionicons name="today-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.weekBtnText}>Hôm nay</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)}>
+            <TouchableOpacity style={styles.weekBtn} onPress={() => setWeekOffset((w) => w + 1)} activeOpacity={0.9}>
               <Text style={styles.weekBtnText}>Tuần sau</Text>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -676,7 +712,30 @@ export default function WeeklyCalendarScreen() {
                   <Text style={styles.slotHeaderText}>Khung giờ</Text>
                 </View>
                 {visibleDays.map((d) => (
-                  <View key={d.key} style={styles.dayHeader}>
+                  <View
+                    key={d.key}
+                    style={[
+                      styles.dayHeader,
+                      weekOffset === 0 && d.key === currentDay && styles.todayHeader,
+                      todayPulseOn && weekOffset === 0 && d.key === currentDay && styles.todayHeaderPulse,
+                    ]}
+                  >
+                    {todayPulseOn && weekOffset === 0 && d.key === currentDay ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.todayHeaderGlow,
+                          {
+                            opacity: todayPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.05, 1.0] }),
+                            transform: [
+                              {
+                                scale: todayPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.05] }),
+                              },
+                            ],
+                          },
+                        ]}
+                      />
+                    ) : null}
                     <Text style={styles.dayHeaderText}>{d.label}</Text>
                     <Text style={styles.dayDateText}>{getDateForDay(d.key).format("DD/MM")}</Text>
                   </View>
@@ -689,20 +748,39 @@ export default function WeeklyCalendarScreen() {
                     <Text style={styles.slotLabel}>{slot.label}</Text>
                   </View>
                   {visibleDays.map((d) => (
-                    <TimeSlotCell
+                    <View
                       key={`${slot.key}-${d.key}`}
-                      dayKey={d.key}
-                      slotLabel={slot.label}
-                      schedules={getCellSchedules(d.key, slot.key)}
-                      isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
-                      readonly={!canManageSchedule}
-                      isPast={isPastSlot(d.key, slot.key)}
-                      isItemOverdueIncomplete={isItemOverdueIncomplete}
-                      onAdd={handleAdd}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onViewDetail={handleViewDetail}
-                    />
+                      style={[
+                        styles.dayCellWrap,
+                        weekOffset === 0 && d.key === currentDay && styles.todayCellWrap,
+                        todayPulseOn && weekOffset === 0 && d.key === currentDay && styles.todayCellWrapPulse,
+                      ]}
+                    >
+                      {todayPulseOn && weekOffset === 0 && d.key === currentDay ? (
+                        <Animated.View
+                          pointerEvents="none"
+                          style={[
+                            styles.todayCellGlow,
+                            {
+                              opacity: todayPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.05, 1.0] }),
+                            },
+                          ]}
+                        />
+                      ) : null}
+                      <TimeSlotCell
+                        dayKey={d.key}
+                        slotLabel={slot.label}
+                        schedules={getCellSchedules(d.key, slot.key)}
+                        isCurrent={weekOffset === 0 && currentDay === d.key && currentSlot === slot.key}
+                        readonly={!canManageSchedule}
+                        isPast={isPastSlot(d.key, slot.key)}
+                        isItemOverdueIncomplete={isItemOverdueIncomplete}
+                        onAdd={handleAdd}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onViewDetail={handleViewDetail}
+                      />
+                    </View>
                   ))}
                 </View>
               ))}
@@ -749,19 +827,27 @@ export default function WeeklyCalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
   headerBar: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.bg,
     height: 56,
     paddingTop: 6,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
   },
-  headerBarTitle: { color: "#111827", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerBarTitle: { color: COLORS.text, fontSize: 18, fontWeight: "900", flex: 1, textAlign: "center" },
   pageWrap: {
     paddingBottom: 16,
   },
@@ -774,51 +860,56 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   weekBtn: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 8,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.30)",
+    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   weekActionsRight: {
     flexDirection: "row",
     gap: 6,
   },
-  weekBtnText: { color: "#1D4ED8", fontSize: 12, fontWeight: "700" },
+  weekBtnText: { color: COLORS.primary, fontSize: 12, fontWeight: "900" },
   rangeSummaryBtn: {
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
     minWidth: 0,
     marginHorizontal: 6,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 9,
+    borderColor: COLORS.border,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     alignItems: "flex-start",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowRadius: 14,
+    elevation: 3,
   },
   rangeTopRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rangeSummaryLabel: { color: "#6B7280", fontSize: 10, fontWeight: "800" },
-  rangeSummaryValue: { marginTop: 2, color: "#111827", fontSize: 14, fontWeight: "900" },
+  rangeSummaryLabel: { color: COLORS.sub, fontSize: 10, fontWeight: "900" },
+  rangeSummaryValue: { marginTop: 2, color: COLORS.text, fontSize: 14, fontWeight: "900" },
   rangeSummaryBtnActive: {
-    borderColor: "#F97316",
-    backgroundColor: "#FFEDD5",
+    borderColor: "rgba(245,158,11,0.35)",
+    backgroundColor: COLORS.warnSoft,
   },
-  rangeSummaryLabelActive: { color: "#9A3412" },
-  rangeSummaryValueActive: { color: "#9A3412" },
-  weekHint: { color: "#64748B", fontSize: 11, fontWeight: "700", marginHorizontal: 12, marginBottom: 6 },
+  rangeSummaryLabelActive: { color: "#92400E" },
+  rangeSummaryValueActive: { color: "#92400E" },
+  weekHint: { color: COLORS.sub, fontSize: 11, fontWeight: "800", marginHorizontal: 12, marginBottom: 6 },
   errorText: {
     color: "#991B1B",
     backgroundColor: "#FEE2E2",
     marginHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 7,
     fontSize: 12,
@@ -828,7 +919,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEF3C7",
     marginHorizontal: 12,
     marginTop: 8,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 7,
     fontSize: 12,
@@ -838,7 +929,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEF3C7",
     marginHorizontal: 12,
     marginTop: 8,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 7,
     fontSize: 12,
@@ -869,21 +960,21 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: COLORS.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#FFF",
+    backgroundColor: COLORS.card,
     minHeight: 32,
     alignItems: "center",
     justifyContent: "center",
   },
   filterChipActive: {
-    borderColor: "#2563EB",
-    backgroundColor: "#DBEAFE",
+    borderColor: "rgba(167,139,250,0.55)",
+    backgroundColor: "rgba(167,139,250,0.18)",
   },
-  filterText: { color: "#4B5563", fontSize: 12, fontWeight: "600", lineHeight: 16 },
-  filterTextActive: { color: "#1D4ED8", fontWeight: "800" },
+  filterText: { color: "#475569", fontSize: 12, fontWeight: "700", lineHeight: 16 },
+  filterTextActive: { color: COLORS.primary, fontWeight: "900" },
   loadingWrap: { paddingVertical: 30, alignItems: "center", gap: 8 },
   loadingText: { color: "#6B7280", fontSize: 12 },
   grid: {
@@ -898,33 +989,78 @@ const styles = StyleSheet.create({
   },
   slotHeader: {
     width: 110,
-    borderRadius: 10,
-    backgroundColor: "#E2E8F0",
+    borderRadius: 16,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     justifyContent: "center",
     alignItems: "center",
     padding: 8,
   },
-  slotHeaderText: { fontWeight: "700", fontSize: 12, color: "#0F172A" },
+  slotHeaderText: { fontWeight: "900", fontSize: 12, color: COLORS.text },
   dayHeader: {
     width: 185,
-    borderRadius: 10,
-    backgroundColor: "#E2E8F0",
+    borderRadius: 16,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     justifyContent: "center",
     alignItems: "center",
     padding: 8,
+    overflow: "hidden",
   },
-  dayHeaderText: { fontWeight: "700", fontSize: 12, color: "#0F172A" },
-  dayDateText: { marginTop: 2, fontSize: 10, color: "#64748B", fontWeight: "600" },
+  todayHeader: {
+    borderColor: "rgba(167,139,250,0.95)",
+    backgroundColor: "rgba(167,139,250,0.22)",
+    shadowColor: "#56328C",
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 7,
+  },
+  todayHeaderPulse: {
+    borderColor: "rgba(167,139,250,0.85)",
+  },
+  todayHeaderGlow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(167,139,250,0.34)",
+  },
+  dayHeaderText: { fontWeight: "900", fontSize: 12, color: COLORS.text },
+  dayDateText: { marginTop: 2, fontSize: 10, color: COLORS.sub, fontWeight: "700" },
   bodyRow: {
     flexDirection: "row",
     gap: 8,
     marginBottom: 8,
     alignItems: "stretch",
   },
+  dayCellWrap: {
+    width: 185,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  todayCellWrap: {
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.90)",
+    backgroundColor: "rgba(167,139,250,0.10)",
+    shadowColor: "#56328C",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+  },
+  todayCellWrapPulse: {
+    borderColor: "rgba(167,139,250,1)",
+  },
+  todayCellGlow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(167,139,250,0.22)",
+  },
   slotLabelCell: {
     width: 110,
-    borderRadius: 10,
-    backgroundColor: "#F1F5F9",
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderWidth: 1,
+    borderColor: COLORS.border,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 8,
@@ -933,7 +1069,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#334155",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "900",
     lineHeight: 16,
   },
 });

@@ -25,6 +25,17 @@ import {
   setRoomChatNotifPrefCached,
 } from "@/services/roomChatSocket";
 
+const COLORS = {
+  bg: "#F5F6FF",
+  card: "rgba(255,255,255,0.92)",
+  border: "rgba(148,163,184,0.22)",
+  text: "#0F172A",
+  sub: "#64748B",
+  primary: "#56328C",
+  primarySoft: "rgba(167,139,250,0.16)",
+  primaryBorder: "rgba(167,139,250,0.30)",
+};
+
 type Row = {
   room_id: number;
   room_name: string;
@@ -381,13 +392,11 @@ export default function RoomChatListScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  safeArea: { flex: 1, backgroundColor: COLORS.bg },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.bg,
   },
   headerTopRow: {
     flexDirection: "row",
@@ -400,13 +409,15 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 10,
-    backgroundColor: "#EDE9FE",
-    borderRadius: 10,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    borderRadius: 999,
     alignSelf: "flex-start",
   },
-  homeBtnText: { fontSize: 13, fontWeight: "800", color: "#56328C" },
-  title: { fontSize: 20, fontWeight: "800", color: "#0F172A" },
-  sub: { marginTop: 4, fontSize: 12, color: "#64748B" },
+  homeBtnText: { fontSize: 13, fontWeight: "900", color: COLORS.primary },
+  title: { fontSize: 22, fontWeight: "900", color: COLORS.text },
+  sub: { marginTop: 4, fontSize: 12, color: COLORS.sub, fontWeight: "700" },
   searchWrap: {
     marginTop: 12,
     flexDirection: "row",
@@ -414,31 +425,36 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: "#F1F5F9",
+    borderRadius: 18,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
   },
-  searchInput: { flex: 1, fontSize: 14, fontWeight: "600", color: "#0F172A" },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: "700", color: COLORS.text },
   empty: { marginTop: 18, textAlign: "center", color: "#64748B", fontSize: 14 },
   rowCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     padding: 12,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
-  rowCardUnread: { borderColor: "#C7D2FE", backgroundColor: "#EEF2FF" },
+  rowCardUnread: { borderColor: "rgba(167,139,250,0.55)", backgroundColor: "rgba(167,139,250,0.16)" },
   avatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#EDE9FE",
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: "#C4B5FD",
+    borderColor: COLORS.primaryBorder,
     alignItems: "center",
     justifyContent: "center",
   },

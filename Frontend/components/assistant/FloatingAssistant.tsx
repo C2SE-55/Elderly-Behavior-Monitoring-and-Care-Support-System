@@ -730,6 +730,12 @@ const FloatingAssistant: React.FC = () => {
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dx) + Math.abs(gestureState.dy) > 2,
+        onMoveShouldSetPanResponderCapture: (_evt, gestureState) => Math.abs(gestureState.dx) + Math.abs(gestureState.dy) > 2,
+        onPanResponderTerminationRequest: () => false,
+        // Quan trọng: chặn ScrollView/native responder phía sau khi kéo bubble
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: () => {
           gestureRef.current = { startX: positionRef.current.x, startY: positionRef.current.y, moved: false };
         },
@@ -1423,21 +1429,23 @@ const FloatingAssistant: React.FC = () => {
   return (
     <>
       {/* Nút trợ lý ảo trôi nổi — thiết kế mới */}
-      <Animated.View
-        style={[
-          styles.botContainer,
-          { transform: animatedPos.getTranslateTransform() },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <View style={styles.botShadow}>
-          <View style={styles.botCircle}>
-            <View style={styles.botInnerCircle}>
-              <ChatbotLogo size={36} color="#FFFFFF" />
+      {!chatOpen && (
+        <Animated.View
+          style={[
+            styles.botContainer,
+            { transform: animatedPos.getTranslateTransform() },
+          ]}
+          {...panResponder.panHandlers}
+        >
+          <View style={styles.botShadow}>
+            <View style={styles.botCircle}>
+              <View style={styles.botInnerCircle}>
+                <ChatbotLogo size={36} color="#FFFFFF" />
+              </View>
             </View>
           </View>
-        </View>
-      </Animated.View>
+        </Animated.View>
+      )}
 
       {chatOpen && (
         <View
@@ -1859,7 +1867,7 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.06,
     shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10   },
+    shadowOffset: { width: 0, height: 10 },
 
     elevation: 6,
   },

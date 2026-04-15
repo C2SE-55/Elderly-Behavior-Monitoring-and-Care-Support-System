@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import {
   deleteNotificationLog,
   getNotificationLogs,
@@ -43,6 +44,7 @@ export default function NotificationsScreen() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [myRole, setMyRole] = useState<RoomMemberRole | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const mutatingRef = useRef(false);
 
   const groupKeyOf = useCallback((it: NotificationLogEntry) => {
@@ -55,6 +57,7 @@ export default function NotificationsScreen() {
     if (mutatingRef.current) return;
     const rows = await getNotificationLogs();
     setLogs(rows);
+    setLastLoadedAt(new Date());
   }, []);
 
   useEffect(() => {
@@ -195,16 +198,49 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Text style={styles.title}>Thông báo</Text>
+        <View>
+          <Text style={styles.title}>Thông báo</Text>
+          <Text style={styles.subTitle}>
+            {lastLoadedAt ? `Cập nhật ${dayjs(lastLoadedAt).format("HH:mm")}` : "Đang đồng bộ…"}
+          </Text>
+        </View>
         <TouchableOpacity
           style={[styles.markAllBtn, unreadCount === 0 && styles.markAllBtnDisabled]}
           activeOpacity={0.9}
           onPress={() => void handleMarkAllRead()}
           disabled={unreadCount === 0}
         >
-          <Text style={[styles.markAllText, unreadCount === 0 && styles.markAllTextDisabled]}>Đã đọc tất cả</Text>
-          {!!unreadCount && <View style={styles.dot} />}
+          <Ionicons name="checkmark-done-outline" size={18} color={unreadCount === 0 ? "#9CA3AF" : "#1D4ED8"} />
+          <Text style={[styles.markAllText, unreadCount === 0 && styles.markAllTextDisabled]}>Đã đọc</Text>
+          {!!unreadCount && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeTxt}>{unreadCount > 99 ? "99+" : String(unreadCount)}</Text>
+            </View>
+          )}
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.heroCard}>
+        <View style={styles.heroTop}>
+          <View style={styles.heroIcon}>
+            <Ionicons name="notifications-outline" size={18} color="#56328C" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroTitle}>Tổng quan</Text>
+            <Text style={styles.heroDesc}>Theo dõi cảnh báo, nhắc nhở và tin nhắn trong phòng.</Text>
+          </View>
+        </View>
+        <View style={styles.heroStatsRow}>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>Chưa đọc</Text>
+            <Text style={styles.heroStatValue}>{unreadCount}</Text>
+          </View>
+          <View style={styles.heroDivider} />
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>Tất cả</Text>
+            <Text style={styles.heroStatValue}>{dedupedLogs.length}</Text>
+          </View>
+        </View>
       </View>
       <View style={styles.filterWrap}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -260,53 +296,97 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F5F6FF",
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    paddingTop: 10,
+    paddingBottom: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FFF",
+    backgroundColor: "#F5F6FF",
   },
-  title: { fontSize: 18, fontWeight: "800", color: "#111827" },
+  title: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  subTitle: { marginTop: 2, fontSize: 12, fontWeight: "700", color: "#6B7280" },
   markAllBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#EEF2FF",
-    borderRadius: 12,
+    backgroundColor: "rgba(59,130,246,0.10)",
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(59,130,246,0.22)",
   },
-  markAllBtnDisabled: { backgroundColor: "#F3F4F6" },
+  markAllBtnDisabled: { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" },
   markAllText: { color: "#1D4ED8", fontWeight: "900", fontSize: 12 },
   markAllTextDisabled: { color: "#9CA3AF" },
-  dot: { width: 8, height: 8, borderRadius: 99, backgroundColor: "#EF4444" },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 7,
+  },
+  badgeTxt: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
+
+  heroCard: {
+    marginTop: 4,
+    marginHorizontal: 16,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#EEF2FF",
+    padding: 14,
+    shadowColor: "#0B1220",
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 1,
+  },
+  heroTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  heroIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(167,139,250,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(167,139,250,0.28)",
+  },
+  heroTitle: { fontSize: 13, fontWeight: "900", color: "#111827" },
+  heroDesc: { marginTop: 2, fontSize: 12, fontWeight: "600", color: "#6B7280", lineHeight: 18 },
+  heroStatsRow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
+  heroStat: { flex: 1 },
+  heroStatLabel: { fontSize: 11, fontWeight: "800", color: "#6B7280" },
+  heroStatValue: { marginTop: 3, fontSize: 18, fontWeight: "900", color: "#56328C" },
+  heroDivider: { width: 1, height: 32, backgroundColor: "#EEF2FF" },
+
   filterWrap: {
-    backgroundColor: "#FFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    marginTop: 10,
+    backgroundColor: "transparent",
   },
   filterRow: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     gap: 8,
   },
   filterChip: {
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: "#E5E7EB",
     borderRadius: 999,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   filterChipActive: {
-    backgroundColor: "#EEF2FF",
-    borderColor: "#C7D2FE",
+    backgroundColor: "rgba(91,58,158,0.10)",
+    borderColor: "rgba(91,58,158,0.20)",
   },
   filterChipText: {
     fontSize: 12,
@@ -314,6 +394,6 @@ const styles = StyleSheet.create({
     color: "#4B5563",
   },
   filterChipTextActive: {
-    color: "#1D4ED8",
+    color: "#56328C",
   },
 });
