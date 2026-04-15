@@ -29,6 +29,7 @@ const formatWhen = (iso: string) => {
 
 const iconForEntry = (entry: NotificationLogEntry): keyof typeof Ionicons.glyphMap => {
   if (entry.type === "room-message") return "chatbubbles-outline";
+  if (entry.type === "support-message") return "chatbox-ellipses-outline";
   if (entry.type === "medication") return "medkit-outline";
   if (entry.type === "weekly-schedule") return "calendar-outline";
   if (entry.type === "care-confirmation") return "checkmark-done-circle-outline";

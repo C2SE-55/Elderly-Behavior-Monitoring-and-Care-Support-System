@@ -1,9 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getCurrentUser, logoutUser } from "@/services/api";
+import { getCurrentUser, getSupportUnreadCount, logoutUser } from "@/services/api";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
 type SettingsRowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -36,6 +37,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const user = getCurrentUser() as { role?: string; fullName?: string; username?: string } | null;
+  const [supportUnread, setSupportUnread] = useState(0);
 
   const onLogout = () => {
     const run = () => {
@@ -56,6 +58,34 @@ export default function SettingsScreen() {
   const name = user?.fullName || user?.username || "Tài khoản";
   const roleLabel = useMemo(() => String(user?.role || "user").toUpperCase(), [user?.role]);
   const avatarLetter = useMemo(() => String(name).trim().charAt(0).toUpperCase() || "A", [name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadUnread = async () => {
+      try {
+        const count = await getSupportUnreadCount();
+        if (!cancelled) setSupportUnread(Number(count || 0));
+      } catch {
+        if (!cancelled) setSupportUnread(0);
+      }
+    };
+    void loadUnread();
+    const timer = setInterval(() => void loadUnread(), 5000);
+
+    const socket = connectRoomChatSocket();
+    const onSupportMessage = (payload: any) => {
+      const senderId = Number(payload?.message?.sender_user_id || 0);
+      const myId = Number((getCurrentUser() as any)?.id || 0);
+      if (senderId > 0 && myId > 0 && senderId === myId) return;
+      void loadUnread();
+    };
+    socket?.on("support:message:new", onSupportMessage);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      getRoomChatSocket()?.off("support:message:new", onSupportMessage);
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -99,6 +129,14 @@ export default function SettingsScreen() {
           title="Quản lý room"
           subtitle="Tham gia phòng, chia sẻ mã, phân quyền thành viên"
           onPress={() => router.push("/(screens)/room-access")}
+        />
+        <SettingsRow
+          icon="chatbubble-ellipses-outline"
+          iconColor="#4F46E5"
+          iconBg="rgba(79,70,229,0.12)"
+          title={supportUnread > 0 ? `Hỗ trợ trực tiếp (${supportUnread})` : "Hỗ trợ trực tiếp"}
+          subtitle="Trao đổi nhanh với admin để xử lý thắc mắc"
+          onPress={() => router.push("/(screens)/support-chat")}
         />
 
         <Text style={styles.sectionTitle}>Phiên đăng nhập</Text>

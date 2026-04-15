@@ -5,7 +5,8 @@ export type NotificationLogType =
   | "medication"
   | "system"
   | "care-confirmation"
-  | "room-message";
+  | "room-message"
+  | "support-message";
 
 export type NotificationLogEntry = {
   id: string;

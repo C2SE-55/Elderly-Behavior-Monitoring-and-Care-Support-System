@@ -216,7 +216,7 @@ export default function HomepageUserScreen() {
 
         <View style={styles.grid}>
           {TILES.map((t) => (
-            <TouchableOpacity key={t.id} style={styles.tile} activeOpacity={0.9} onPress={() => ensureAuthed(() => router.push(t.route))}>
+            <TouchableOpacity key={t.id} style={styles.tile} activeOpacity={0.9} onPress={() => ensureAuthed(() => router.push(t.route as any))}>
               <View style={[styles.tileIcon, { backgroundColor: `${t.color}14`, borderColor: `${t.color}2E` }]}>
                 <Ionicons name={t.icon} size={22} color={t.color} />
               </View>
@@ -231,10 +231,9 @@ export default function HomepageUserScreen() {
           ))}
         </View>
 
-        <View style={{ height: 18 }} />
-        <FloatingAssistant />
         <View style={{ height: 28 }} />
       </ScrollView>
+      <FloatingAssistant />
     </SafeAreaView>
   );
 }

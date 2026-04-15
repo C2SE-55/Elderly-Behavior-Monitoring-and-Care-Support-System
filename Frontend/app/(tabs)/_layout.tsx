@@ -258,6 +258,62 @@ export default function TabLayout() {
     };
     socket.on("message:new", onMessageNew);
 
+    const onSupportMessageNew = (payload: any) => {
+      const msg = payload?.message;
+      if (!msg) return;
+      if (myUserId && Number(msg.sender_user_id || 0) === myUserId) return;
+      const sender = String(msg.sender_name || "Admin").trim() || "Admin";
+      const content = String(msg.content || "").trim();
+      const preview = content.length > 80 ? `${content.slice(0, 77)}…` : content;
+      const title = "Tin nhắn hỗ trợ mới";
+      const body = `${sender}: ${preview || "Bạn có tin nhắn hỗ trợ mới."}`;
+
+      void (async () => {
+        try {
+          const Notifications = await import("expo-notifications");
+          const perms = await Notifications.getPermissionsAsync();
+          if (!perms.granted) {
+            const req = await Notifications.requestPermissionsAsync();
+            if (!req.granted) return;
+          }
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title,
+              body,
+              sound: true,
+              data: {
+                type: "support-message",
+                conversation_id: Number(payload?.conversationId || msg?.conversation_id || 0) || null,
+                sender_name: sender,
+                content,
+                sent_at: msg.created_at,
+              },
+            },
+            trigger: null,
+          });
+        } catch {
+          // ignore
+        }
+      })();
+
+      void appendNotificationLog({
+        type: "support-message",
+        title,
+        body,
+        data: {
+          type: "support-message",
+          conversation_id: Number(payload?.conversationId || msg?.conversation_id || 0) || null,
+          sender_name: sender,
+          content,
+          sent_at: msg.created_at,
+        },
+        read: false,
+      })
+        .then(() => refreshUnreadCount())
+        .catch(() => {});
+    };
+    socket.on("support:message:new", onSupportMessageNew);
+
     const unsubRoom = subscribeActiveRoomChange(() => {
       void joinActiveRoom();
     });
@@ -280,6 +336,7 @@ export default function TabLayout() {
       clearInterval(prefTimer);
       socket.off("medication:intake", onIntake);
       socket.off("message:new", onMessageNew);
+      socket.off("support:message:new", onSupportMessageNew);
     };
   }, [refreshUnreadCount]);
 
@@ -332,6 +389,32 @@ export default function TabLayout() {
         }}
       />
 
+      {/* SCAN QR - centered tab */}
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: "Quét mã",
+          tabBarShowLabel: false,
+          tabBarStyle: { display: "none" },
+          tabBarButton: ({ onPress, accessibilityState }) => {
+            const focused = accessibilityState?.selected === true;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={onPress}
+                style={[styles.scanBtnWrap, focused && styles.scanBtnWrapFocused]}
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã vào phòng"
+              >
+                <View style={styles.scanBtn}>
+                  <Ionicons name="qr-code-outline" size={24} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            );
+          },
+        }}
+      />
+
       {/* NOTIFICATIONS */}
       <Tabs.Screen
         name="notifications"
@@ -363,32 +446,6 @@ export default function TabLayout() {
               color={color}
             />
           ),
-        }}
-      />
-
-      {/* SCAN QR - highlighted button (placed after Settings) */}
-      <Tabs.Screen
-        name="scan"
-        options={{
-          title: "Quét mã",
-          tabBarShowLabel: false,
-          tabBarStyle: { display: "none" },
-          tabBarButton: ({ onPress, accessibilityState }) => {
-            const focused = accessibilityState?.selected === true;
-            return (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={onPress}
-                style={[styles.scanBtnWrap, focused && styles.scanBtnWrapFocused]}
-                accessibilityRole="button"
-                accessibilityLabel="Quét mã vào phòng"
-              >
-                <View style={styles.scanBtn}>
-                  <Ionicons name="qr-code-outline" size={24} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            );
-          },
         }}
       />
 

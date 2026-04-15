@@ -1444,3 +1444,112 @@ export const deleteRoomNote = async (roomId: number, noteId: number): Promise<vo
   await api.delete(`/rooms/${roomId}/notes/${noteId}`);
 };
 
+export type SupportMessageSeenBy = {
+  user_id: number;
+  user_name: string;
+  read_at: string;
+};
+
+export type SupportChatMessage = {
+  id: number;
+  conversation_id: number;
+  sender_user_id: number;
+  sender_name: string;
+  content: string;
+  created_at: string;
+  seen_by: SupportMessageSeenBy[];
+  is_mine?: boolean;
+};
+
+export type SupportConversation = {
+  id: number;
+  user_id: number;
+  user_name: string;
+  assigned_admin_user_id: number | null;
+  unread_count?: number;
+  last_message_id?: number | null;
+  last_sender_user_id?: number | null;
+  last_sender_name?: string | null;
+  last_content?: string | null;
+  last_sent_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type SupportMessagesPage = {
+  conversation: SupportConversation;
+  items: SupportChatMessage[];
+  has_more: boolean;
+  next_before_id: number | null;
+};
+
+export const getSupportConversation = async (userId?: number): Promise<SupportConversation> => {
+  const res = await api.get("/support-chat/conversation", {
+    params: userId ? { user_id: userId } : {},
+  });
+  return (res.data?.data ?? null) as SupportConversation;
+};
+
+export const getSupportConversationsForAdmin = async (): Promise<SupportConversation[]> => {
+  const res = await api.get("/support-chat/conversations");
+  return Array.isArray(res.data?.data) ? (res.data.data as SupportConversation[]) : [];
+};
+
+export const getSupportMessages = async (
+  userId?: number,
+  params?: { limit?: number; before_id?: number }
+): Promise<SupportMessagesPage> => {
+  const res = await api.get("/support-chat/conversation/messages", {
+    params: {
+      ...(userId ? { user_id: userId } : {}),
+      limit: params?.limit ?? 100,
+      ...(params?.before_id ? { before_id: params.before_id } : {}),
+    },
+  });
+  const data = res.data?.data ?? {};
+  return {
+    conversation: (data.conversation ?? null) as SupportConversation,
+    items: Array.isArray(data.items) ? (data.items as SupportChatMessage[]) : [],
+    has_more: !!data.has_more,
+    next_before_id: Number(data.next_before_id || 0) || null,
+  };
+};
+
+export const sendSupportMessage = async (content: string, userId?: number): Promise<SupportChatMessage> => {
+  const res = await api.post("/support-chat/conversation/messages", {
+    content,
+    ...(userId ? { user_id: userId } : {}),
+  });
+  return (res.data?.data ?? null) as SupportChatMessage;
+};
+
+export const markSupportMessagesRead = async (
+  payload: { message_ids?: number[]; read_until_id?: number },
+  userId?: number
+): Promise<{ read_count: number; seen_updates: Array<{ message_id: number; seen_by: SupportMessageSeenBy[] }> }> => {
+  const res = await api.post("/support-chat/conversation/messages/read", {
+    ...payload,
+    ...(userId ? { user_id: userId } : {}),
+  });
+  return (
+    res.data?.data ?? {
+      read_count: 0,
+      seen_updates: [],
+    }
+  );
+};
+
+export const getSupportUnreadCount = async (userId?: number): Promise<number> => {
+  const res = await api.get("/support-chat/conversation/unread-count", {
+    params: userId ? { user_id: userId } : {},
+  });
+  return Number(res.data?.data?.unread_count || 0);
+};
+
+export const sendSupportTyping = async (payload: { isTyping: boolean; userName?: string }, userId?: number) => {
+  await api.post("/support-chat/conversation/typing", {
+    ...payload,
+    ...(userId ? { user_id: userId } : {}),
+  });
+};
+

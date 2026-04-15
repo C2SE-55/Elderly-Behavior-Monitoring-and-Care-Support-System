@@ -67,8 +67,24 @@ export default function RootLayout() {
           }}
           initialRouteName="index"
         >
-          <Stack.Screen name="(tabs)" options={{ animation: "fade_from_bottom", animationDuration: 220 }} />
-          <Stack.Screen name="(admin)" options={{ animation: "fade_from_bottom", animationDuration: 220 }} />
+          <Stack.Screen
+            name="(tabs)"
+            options={{
+              animation: "fade_from_bottom",
+              animationDuration: 220,
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
+          <Stack.Screen
+            name="(admin)"
+            options={{
+              animation: "fade_from_bottom",
+              animationDuration: 220,
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
           <Stack.Screen name="(auths)" options={{ animation: "fade", animationDuration: 180 }} />
           <Stack.Screen name="(homepages)" options={{ animation: "fade", animationDuration: 180 }} />
           <Stack.Screen name="(screens)" options={{ animation: "slide_from_right", animationDuration: 230 }} />

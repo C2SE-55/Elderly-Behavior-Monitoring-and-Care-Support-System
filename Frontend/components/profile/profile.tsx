@@ -255,7 +255,6 @@ export default function ProfileScreen() {
           <ProfileAvatar name={fullName || username || "Bạn"} />
 
           <View style={screenStyles.sectionCard}>
-            <Text style={screenStyles.sectionTitle}>Tài khoản</Text>
             <ProfileInput
               label="Họ và tên"
               placeholder="Nhập họ và tên"
