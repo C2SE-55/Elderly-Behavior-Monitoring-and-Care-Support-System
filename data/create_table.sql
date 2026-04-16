@@ -252,3 +252,46 @@ CREATE TABLE family_messages (
     FOREIGN KEY (profile_id) REFERENCES health_profiles(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 21) Support Conversations
+CREATE TABLE IF NOT EXISTS support_conversations (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL UNIQUE,
+  assigned_admin_user_id INT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- 22) Support Messages
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  conversation_id INT NOT NULL,
+  sender_user_id INT NOT NULL,
+  content TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  FOREIGN KEY (conversation_id) REFERENCES support_conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 23) Support Message Reads
+CREATE TABLE IF NOT EXISTS support_message_reads (
+  message_id INT NOT NULL,
+  user_id INT NOT NULL,
+  read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (message_id, user_id),
+  FOREIGN KEY (message_id) REFERENCES support_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Index (giống code ensureIndex)
+CREATE INDEX idx_support_messages_conversation_id_id
+  ON support_messages(conversation_id, id);
+
+CREATE INDEX idx_support_reads_user_message
+  ON support_message_reads(user_id, message_id);
+
+CREATE INDEX idx_support_conversations_updated_at
+  ON support_conversations(updated_at);
