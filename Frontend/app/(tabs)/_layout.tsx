@@ -88,10 +88,14 @@ export default function TabLayout() {
       }
     };
     void syncRole();
-    const t = setInterval(() => void syncRole(), 10_000);
+    const unsub = subscribeActiveRoomChange(() => {
+      // Role can change immediately after switching active room.
+      // Refresh right away so tab menu updates in real time.
+      void syncRole();
+    });
     return () => {
       cancelled = true;
-      clearInterval(t);
+      unsub();
     };
   }, []);
 
@@ -389,32 +393,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* SCAN QR - centered tab */}
-      <Tabs.Screen
-        name="scan"
-        options={{
-          title: "Quét mã",
-          tabBarShowLabel: false,
-          tabBarStyle: { display: "none" },
-          tabBarButton: ({ onPress, accessibilityState }) => {
-            const focused = accessibilityState?.selected === true;
-            return (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={onPress}
-                style={[styles.scanBtnWrap, focused && styles.scanBtnWrapFocused]}
-                accessibilityRole="button"
-                accessibilityLabel="Quét mã vào phòng"
-              >
-                <View style={styles.scanBtn}>
-                  <Ionicons name="qr-code-outline" size={24} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            );
-          },
-        }}
-      />
-
       {/* NOTIFICATIONS */}
       <Tabs.Screen
         name="notifications"
@@ -446,6 +424,32 @@ export default function TabLayout() {
               color={color}
             />
           ),
+        }}
+      />
+
+      {/* SCAN QR - right tab */}
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: "Quét mã",
+          tabBarShowLabel: false,
+          tabBarStyle: { display: "none" },
+          tabBarButton: ({ onPress, accessibilityState }) => {
+            const focused = accessibilityState?.selected === true;
+            return (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={onPress}
+                style={[styles.scanBtnWrap, focused && styles.scanBtnWrapFocused]}
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã vào phòng"
+              >
+                <View style={styles.scanBtn}>
+                  <Ionicons name="qr-code-outline" size={24} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
+            );
+          },
         }}
       />
 

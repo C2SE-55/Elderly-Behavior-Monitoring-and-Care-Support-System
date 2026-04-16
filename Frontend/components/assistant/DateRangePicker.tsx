@@ -64,9 +64,9 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
   const [draftDate, setDraftDate] = useState<Date>(new Date());
   const [error, setError] = useState("");
   const [selectedMeals, setSelectedMeals] = useState<Record<MealKey, boolean>>({
-    breakfast: true,
-    lunch: true,
-    dinner: true,
+    breakfast: false,
+    lunch: false,
+    dinner: false,
   });
 
   const rangeDays = useMemo(() => {
@@ -156,6 +156,11 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
     setError("");
   };
 
+  const isQuickPresetActive = (preset: QuickPreset) => {
+    const { start, end } = preset.getRange();
+    return dayjs(startDate).isSame(start, "day") && dayjs(endDate).isSame(end, "day");
+  };
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Bạn muốn tạo thực đơn từ ngày nào đến ngày nào?</Text>
@@ -169,12 +174,16 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
         {QUICK_PRESETS.map((p) => (
           <TouchableOpacity
             key={p.key}
-            style={[styles.quickChip, disabled && styles.dateBtnDisabled]}
+            style={[
+              styles.quickChip,
+              isQuickPresetActive(p) && styles.quickChipActive,
+              disabled && styles.dateBtnDisabled,
+            ]}
             onPress={() => applyQuickPreset(p)}
             disabled={disabled}
             activeOpacity={0.85}
           >
-            <Text style={styles.quickChipText}>{p.label}</Text>
+            <Text style={[styles.quickChipText, isQuickPresetActive(p) && styles.quickChipTextActive]}>{p.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -209,6 +218,7 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
           style={[styles.mealChip, selectedMeals.breakfast && styles.mealChipActive]}
           onPress={() => toggleMeal("breakfast")}
           disabled={disabled}
+          activeOpacity={0.85}
         >
           <Text style={[styles.mealChipText, selectedMeals.breakfast && styles.mealChipTextActive]}>Sáng</Text>
         </TouchableOpacity>
@@ -216,6 +226,7 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
           style={[styles.mealChip, selectedMeals.lunch && styles.mealChipActive]}
           onPress={() => toggleMeal("lunch")}
           disabled={disabled}
+          activeOpacity={0.85}
         >
           <Text style={[styles.mealChipText, selectedMeals.lunch && styles.mealChipTextActive]}>Trưa</Text>
         </TouchableOpacity>
@@ -223,6 +234,7 @@ export default function DateRangePicker({ disabled, onGenerate }: Props) {
           style={[styles.mealChip, selectedMeals.dinner && styles.mealChipActive]}
           onPress={() => toggleMeal("dinner")}
           disabled={disabled}
+          activeOpacity={0.85}
         >
           <Text style={[styles.mealChipText, selectedMeals.dinner && styles.mealChipTextActive]}>Tối</Text>
         </TouchableOpacity>
@@ -316,10 +328,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#A5B4FC",
   },
+  quickChipActive: {
+    backgroundColor: "#4338CA",
+    borderColor: "#3730A3",
+    shadowColor: "#4338CA",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   quickChipText: {
     fontSize: 12,
     fontWeight: "800",
     color: "#3730A3",
+  },
+  quickChipTextActive: {
+    color: "#FFFFFF",
   },
   row: {
     flexDirection: "row",
@@ -384,13 +408,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#C7D2FE",
     borderRadius: 999,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F8FAFF",
     alignItems: "center",
     paddingVertical: 7,
   },
   mealChipActive: {
-    backgroundColor: "#4338CA",
-    borderColor: "#4338CA",
+    backgroundColor: "#4F46E5",
+    borderColor: "#3730A3",
+    shadowColor: "#4338CA",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   mealChipText: {
     fontSize: 12,
