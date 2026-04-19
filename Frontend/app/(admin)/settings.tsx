@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { getCurrentUser, getSupportConversationsForAdmin, logoutUser } from "@/services/api";
-import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
+import { getCurrentUser, logoutUser } from "@/services/api";
 
 const COLORS = {
   bg: "#F5F6FF",
@@ -15,8 +14,6 @@ const COLORS = {
   primary: "#56328C",
   primarySoft: "rgba(167,139,250,0.16)",
   primaryBorder: "rgba(167,139,250,0.34)",
-  blueSoft: "rgba(37,99,235,0.10)",
-  blueBorder: "rgba(37,99,235,0.24)",
   dangerBg: "#FEE2E2",
   dangerBorder: "rgba(239,68,68,0.35)",
   dangerText: "#991B1B",
@@ -25,33 +22,9 @@ const COLORS = {
 export default function AdminSettingsScreen() {
   const router = useRouter();
   const me = getCurrentUser() as { username?: string; fullName?: string; role?: string } | null;
-  const [supportUnread, setSupportUnread] = useState(0);
   const displayName = me?.fullName || me?.username || "Admin";
   const role = (me?.role || "admin").toUpperCase();
   const avatarLetter = String(displayName).trim().charAt(0).toUpperCase() || "A";
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadUnread = async () => {
-      try {
-        const rows = await getSupportConversationsForAdmin();
-        const total = (rows || []).reduce((acc, it) => acc + Number(it.unread_count || 0), 0);
-        if (!cancelled) setSupportUnread(total);
-      } catch {
-        if (!cancelled) setSupportUnread(0);
-      }
-    };
-    void loadUnread();
-    const timer = setInterval(() => void loadUnread(), 5000);
-    const socket = connectRoomChatSocket();
-    const onSupportMessage = () => void loadUnread();
-    socket?.on("support:message:new", onSupportMessage);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      getRoomChatSocket()?.off("support:message:new", onSupportMessage);
-    };
-  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -83,22 +56,21 @@ export default function AdminSettingsScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.menuRow}
-          onPress={() => router.push("/(screens)/admin-support-chat")}
-          activeOpacity={0.9}
-        >
-          <View style={[styles.rowIconWrap, { backgroundColor: COLORS.blueSoft, borderColor: COLORS.blueBorder }]}>
-            <Feather name="message-square" size={18} color="#1D4ED8" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.menuText}>
-              Hỗ trợ trực tiếp {supportUnread > 0 ? `(${supportUnread})` : ""}
-            </Text>
-            <Text style={styles.menuMeta}>Trao đổi real-time với user để giải đáp nhanh</Text>
-          </View>
-          <Feather name="chevron-right" size={18} color={COLORS.text} />
-        </TouchableOpacity>
+        <View style={styles.rbacCard}>
+          <Text style={styles.rbacTitle}>Trạng thái phân quyền (RBAC)</Text>
+          <Text style={styles.rbacLine}>• CRUD user</Text>
+          <Text style={styles.rbacLine}>• Tạo room / room_id / QR payload</Text>
+          <Text style={styles.rbacLine}>• Mỗi room có đúng 1 HOST duy nhất</Text>
+          <Text style={styles.rbacLine}>• Family toàn quyền quản lý trong room</Text>
+          <Text style={styles.rbacLine}>• Caregiver chỉ đọc, quyền mở rộng bằng toggle</Text>
+          <TouchableOpacity
+            style={styles.roomMgmtBtn}
+            onPress={() => router.push("/(admin)/room-management")}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.roomMgmtBtnTxt}>Đi tới quản lý room</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={styles.logoutRow}
@@ -181,16 +153,24 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   rolePillTxt: { color: "#2E1065", fontSize: 10, fontWeight: "900" },
-  menuRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#FFFFFF",
-    padding: 12,
-    borderRadius: 12,
+  rbacCard: {
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
+    borderRadius: 18,
+    padding: 14,
+    gap: 6,
   },
+  rbacTitle: { fontSize: 14, fontWeight: "900", color: COLORS.text, marginBottom: 4 },
+  rbacLine: { fontSize: 13, fontWeight: "600", color: COLORS.text, lineHeight: 20 },
+  roomMgmtBtn: {
+    marginTop: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  roomMgmtBtnTxt: { color: "#FFF", fontSize: 14, fontWeight: "900" },
   rowIconWrap: {
     width: 34,
     height: 34,
@@ -199,7 +179,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
-  menuText: { fontSize: 14, color: COLORS.text, fontWeight: "900" },
   menuMeta: { fontSize: 12, color: COLORS.sub, marginTop: 2, fontWeight: "600" },
   logoutRow: {
     flexDirection: "row",

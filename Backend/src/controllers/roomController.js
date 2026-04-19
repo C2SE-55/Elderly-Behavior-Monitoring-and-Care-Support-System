@@ -360,10 +360,6 @@ exports.getMedicationIntakeStats = async (req, res) => {
     if (!roomId || Number.isNaN(roomId)) {
       return sendFail(res, "roomId không hợp lệ", HTTP_STATUS.BAD_REQUEST);
     }
-    const period = String(req.query.period || "day").toLowerCase();
-    if (!["day", "week", "month"].includes(period)) {
-      return sendFail(res, "period phải là day, week hoặc month", HTTP_STATUS.BAD_REQUEST);
-    }
 
     const context = await resolveAccessContext(req, req.userId);
     if (!context.roomId || Number(context.roomId) !== roomId) {
@@ -373,16 +369,34 @@ exports.getMedicationIntakeStats = async (req, res) => {
       return sendFail(res, "Chỉ người thân (host) xem được thống kê", HTTP_STATUS.FORBIDDEN);
     }
 
-    const pad2 = (n) => String(n).padStart(2, "0");
-    const now = new Date();
-    const defaultAnchor = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-    const anchor = String(req.query.anchor || defaultAnchor).trim().slice(0, 10);
+    const hostProfileUserId = context.hostUserId || req.userId;
+    const from = String(req.query.from || "").trim().slice(0, 10);
+    const to = String(req.query.to || "").trim().slice(0, 10);
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
 
-    const data = await MedicationSystem.listMedicationIntakeStats(req.userId, roomId, period, anchor);
+    let data;
+    if (iso.test(from) && iso.test(to)) {
+      data = await MedicationSystem.listMedicationIntakeStatsForDateRange(hostProfileUserId, roomId, from, to);
+    } else {
+      const period = String(req.query.period || "day").toLowerCase();
+      if (!["day", "week", "month"].includes(period)) {
+        return sendFail(res, "period phải là day, week hoặc month", HTTP_STATUS.BAD_REQUEST);
+      }
+
+      const pad2 = (n) => String(n).padStart(2, "0");
+      const now = new Date();
+      const defaultAnchor = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+      const anchor = String(req.query.anchor || defaultAnchor).trim().slice(0, 10);
+
+      data = await MedicationSystem.listMedicationIntakeStats(hostProfileUserId, roomId, period, anchor);
+    }
     return sendSuccess(res, data, "Lấy thống kê uống thuốc thành công", HTTP_STATUS.OK);
   } catch (error) {
     if (error?.code === "INVALID_STATS_RANGE") {
       return sendFail(res, "Tham số anchor hoặc period không hợp lệ", HTTP_STATUS.BAD_REQUEST);
+    }
+    if (error?.code === "STATS_RANGE_TOO_LARGE") {
+      return sendFail(res, "Khoảng thời gian quá dài (tối đa 400 ngày)", HTTP_STATUS.BAD_REQUEST);
     }
     console.error("Lỗi thống kê uống thuốc:", error);
     return sendError(res, "Không thể lấy thống kê uống thuốc", HTTP_STATUS.INTERNAL_ERROR);

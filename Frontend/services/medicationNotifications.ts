@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import type { TodayScheduleItem } from "./api";
+import { getCurrentUser, type TodayScheduleItem } from "./api";
 import { appendNotificationLog } from "./notificationLog";
 
 const MEDICATION_CHANNEL_ID = "medication-reminders";
@@ -107,6 +107,7 @@ export const rescheduleMedicationNotifications = async (
   opts?: RescheduleMedicationOptions
 ): Promise<void> => {
   if (Platform.OS === "web") return;
+  if (String(getCurrentUser()?.role || "").toLowerCase() === "admin") return;
 
   await ensureNotificationHandler();
   const Notifications = await import("expo-notifications");

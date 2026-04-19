@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getCurrentUser } from "./api";
 
 export type NotificationLogType =
   | "weekly-schedule"
@@ -17,6 +18,13 @@ export type NotificationLogEntry = {
   data?: Record<string, any>;
   read: boolean;
 };
+
+const isAdminSession = (): boolean =>
+  String(getCurrentUser()?.role || "").toLowerCase() === "admin";
+
+/** Phiên admin: không ghi log loại khác support-message (tránh té ngã, nhắc thuốc, v.v.). */
+const shouldSkipAppendForAdmin = (entry: Omit<NotificationLogEntry, "id" | "createdAt">): boolean =>
+  isAdminSession() && entry.type !== "support-message";
 
 const STORAGE_KEY = "ebms.notificationLogs.v1";
 const MAX_LOGS = 200;
@@ -70,6 +78,8 @@ export async function clearNotificationLogs(): Promise<void> {
 }
 
 export async function appendNotificationLog(entry: Omit<NotificationLogEntry, "id" | "createdAt">): Promise<void> {
+  if (shouldSkipAppendForAdmin(entry)) return;
+
   const current = await getNotificationLogs();
   const now = Date.now();
 
@@ -104,6 +114,19 @@ export async function markAllNotificationLogsRead(): Promise<void> {
   if (!current.length) return;
   const updated = current.map((it) => (it.read ? it : { ...it, read: true }));
   await writeLogs(updated);
+}
+
+/** Đánh dấu đã đọc mọi log thuộc một type (ví dụ admin chỉ xử lý `support-message`). */
+export async function markAllNotificationLogsReadByType(type: NotificationLogType): Promise<void> {
+  const current = await getNotificationLogs();
+  if (!current.length) return;
+  let changed = false;
+  const updated = current.map((it) => {
+    if (it.type !== type || it.read) return it;
+    changed = true;
+    return { ...it, read: true };
+  });
+  if (changed) await writeLogs(updated);
 }
 
 export async function markNotificationLogRead(id: string): Promise<void> {

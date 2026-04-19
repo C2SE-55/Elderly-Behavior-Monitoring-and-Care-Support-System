@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { getCameraEventHistory, getMyRoom, type CameraHistoryEvent } from "@/services/api";
+import { getCameraEventHistory, getCurrentUser, getMyRoom, type CameraHistoryEvent } from "@/services/api";
 import { appendNotificationLog } from "@/services/notificationLog";
 
 const lastSeenKeyFor = (roomId?: string | null, role?: string | null) =>
@@ -102,6 +102,7 @@ const notifyDevice = async (title: string, body: string, data: Record<string, an
 };
 
 export async function pollSafetyEventsOnce(): Promise<void> {
+  if (String(getCurrentUser()?.role || "").toLowerCase() === "admin") return;
   const room = await getMyRoom().catch(() => null);
   if (!room) return;
   // Safety alerts should be visible to both host and caretaker.

@@ -443,6 +443,27 @@ export type AdminUserAccount = {
   role?: string | null;
 };
 
+/** Thống kê dashboard admin: `user` không tính admin, `rooms` = tổng bản ghi `rooms`. */
+export type AdminAccountOverviewStats = {
+  user: number;
+  rooms: number;
+  admin: number;
+  other: number;
+  registeredTotal: number;
+};
+
+export const getAdminAccountOverview = async (): Promise<AdminAccountOverviewStats> => {
+  const res = await api.get("/auth/admin/account-overview");
+  const d = res.data?.data as Record<string, unknown> | undefined;
+  return {
+    user: Number(d?.user ?? 0),
+    rooms: Number(d?.rooms ?? 0),
+    admin: Number(d?.admin ?? 0),
+    other: Number(d?.other ?? 0),
+    registeredTotal: Number(d?.registeredTotal ?? 0),
+  };
+};
+
 export const getMyProfile = async (): Promise<AuthProfile> => {
   const res = await api.get("/auth/profile");
   return res.data?.data;
@@ -517,6 +538,16 @@ export const adminCreateUser = async (payload: {
 };
 
 export type RoomMemberRole = "host" | "caretaker";
+
+/** Nhãn hiển thị vai trong phòng (API/DB vẫn dùng enum `caretaker`). */
+export function formatMemberRoleLabel(role: RoomMemberRole | string | null | undefined): string | null {
+  const r = String(role || "")
+    .trim()
+    .toLowerCase();
+  if (r === "host") return "HOST";
+  if (r === "caretaker") return "CAREGIVER";
+  return null;
+}
 
 export type RoomMember = {
   user_id: number;
@@ -1242,6 +1273,23 @@ export const getMedicationIntakeStats = async (
   }
   return {
     range: data.range || { start: "", end: "", period: params.period },
+    items: Array.isArray(data.items) ? data.items : [],
+  };
+};
+
+export const getMedicationIntakeStatsRange = async (
+  roomId: number,
+  params: { from: string; to: string }
+): Promise<MedicationIntakeStatsResponse> => {
+  const res = await api.get(`/rooms/${roomId}/medication-intake-stats`, {
+    params: { from: params.from.slice(0, 10), to: params.to.slice(0, 10) },
+  });
+  const data = res.data?.data;
+  if (!data || typeof data !== "object") {
+    return { range: { start: "", end: "", period: "range" }, items: [] };
+  }
+  return {
+    range: data.range || { start: "", end: "", period: "range" },
     items: Array.isArray(data.items) ? data.items : [],
   };
 };

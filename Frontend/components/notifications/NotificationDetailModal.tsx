@@ -34,12 +34,15 @@ export default function NotificationDetailModal({
   visible,
   item,
   myRole,
+  adminSupportInbox,
   onClose,
   onAfterConfirm,
 }: {
   visible: boolean;
   item: NotificationLogEntry | null;
   myRole: RoomMemberRole | null;
+  /** Admin tab Thông báo: tin `support-message` mở chat hỗ trợ thay vì nút xác nhận chung. */
+  adminSupportInbox?: boolean;
   onClose: () => void;
   onAfterConfirm?: () => void;
 }) {
@@ -86,6 +89,23 @@ export default function NotificationDetailModal({
           roomName,
         }
       : null;
+  }, [item]);
+
+  /** Admin inbox: mở đúng hội thoại hỗ trợ với user (theo payload socket / append log). */
+  const adminSupportTarget = useMemo(() => {
+    if (!item || item.type !== "support-message") return null;
+    const d: any = item.data || {};
+    const userId =
+      Number(d?.conversation_user_id ?? d?.conversationUserId ?? d?.user_id ?? 0) || null;
+    const nameFromData = safeName(d?.sender_name);
+    const nameFromBody = (() => {
+      const b = safeName(item.body);
+      const idx = b.indexOf(":");
+      if (idx > 0) return b.slice(0, idx).trim();
+      return "";
+    })();
+    const userName = nameFromData || nameFromBody || (userId ? `User #${userId}` : "");
+    return { userId, userName };
   }, [item]);
 
   const safety = useMemo(() => {
@@ -244,6 +264,12 @@ export default function NotificationDetailModal({
     return item.read ? "Đã đọc" : "Chưa đọc";
   }, [item]);
 
+  const supportMessageStatusText = useMemo(() => {
+    if (!item) return null;
+    if (item.type !== "support-message") return null;
+    return item.read ? "Đã đọc" : "Chưa đọc";
+  }, [item]);
+
   const handleConfirm = async () => {
     if (!item || !myRole) return;
     if (!canConfirm) return;
@@ -330,7 +356,10 @@ export default function NotificationDetailModal({
                 <View style={styles.metaRow}>
                   <Text style={styles.metaLabel}>Trạng thái</Text>
                   <Text style={styles.metaValue}>
-                    {safetyStatusText || roomMessageStatusText || (care ? statusText : genericStatusText)}
+                    {safetyStatusText ||
+                      roomMessageStatusText ||
+                      supportMessageStatusText ||
+                      (care ? statusText : genericStatusText)}
                   </Text>
                 </View>
               </ScrollView>
@@ -349,6 +378,31 @@ export default function NotificationDetailModal({
                     }}
                   >
                     <Text style={styles.linkText}>Mở chat</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : adminSupportInbox && item.type === "support-message" ? (
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={[styles.linkBtn]}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      onClose();
+                      const uid = adminSupportTarget?.userId;
+                      if (uid) {
+                        router.push({
+                          pathname: "/(screens)/support-chat",
+                          params: {
+                            userId: String(uid),
+                            userName: String(adminSupportTarget?.userName || ""),
+                            title: "Hỗ trợ trực tiếp",
+                          },
+                        });
+                      } else {
+                        router.push("/(screens)/admin-support-chat");
+                      }
+                    }}
+                  >
+                    <Text style={styles.linkText}>{adminSupportTarget?.userId ? "Mở chat" : "Mở hội thoại hỗ trợ"}</Text>
                   </TouchableOpacity>
                 </View>
               ) : safety?.eventId ? (

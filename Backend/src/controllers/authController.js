@@ -279,6 +279,20 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
+// [ADMIN] Thống kê số tài khoản theo vai trò (user_roles + room_members)
+exports.getAdminAccountOverview = async (req, res) => {
+  try {
+    if (req.userRole !== "admin") {
+      return sendError(res, "Chỉ admin có quyền xem thống kê tài khoản", HTTP_STATUS.FORBIDDEN);
+    }
+    const stats = await User.getAdminAccountOverview();
+    return sendSuccess(res, stats, "Lấy thống kê tài khoản thành công");
+  } catch (error) {
+    console.error("Lỗi thống kê tài khoản admin:", error);
+    return sendError(res, "Không thể lấy thống kê tài khoản", HTTP_STATUS.INTERNAL_ERROR);
+  }
+};
+
 // [ADMIN] Lấy tất cả thông tin tài khoản người dùng
 exports.getAllUsers = async (req, res) => {
   try {

@@ -54,7 +54,7 @@ export default function SignupScreen() {
 
   const usernameRuleMessage = (value: string) => {
     const v = String(value || "").trim();
-    if (v.length < 6) return "Tên đăng nhập phải có ít nhất 6 ký tự.";
+    if (v.length < 6) return "Tên đăng nhập phải có ít nhất 6 ký tự gồm chữ và số";
     if (!/^[A-Za-z0-9]+$/.test(v)) return "Tên đăng nhập chỉ gồm chữ cái và số.";
     if (!/[A-Za-z]/.test(v) || !/[0-9]/.test(v)) return "Tên đăng nhập phải chứa cả chữ và số.";
     return "";

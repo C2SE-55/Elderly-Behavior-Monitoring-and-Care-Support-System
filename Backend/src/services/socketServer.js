@@ -137,7 +137,12 @@ const emitSupportToParticipants = async (conversationId, eventName, payload) => 
 };
 
 const emitSupportMessageNew = async (conversationId, message) => {
-  await emitSupportToParticipants(conversationId, "support:message:new", { conversationId, message });
+  const conversation = await SupportChat.getConversationById(conversationId);
+  await emitSupportToParticipants(conversationId, "support:message:new", {
+    conversationId,
+    conversation_user_id: conversation ? Number(conversation.user_id) : null,
+    message,
+  });
 };
 
 const emitSupportMessageSeen = async (conversationId, update) => {

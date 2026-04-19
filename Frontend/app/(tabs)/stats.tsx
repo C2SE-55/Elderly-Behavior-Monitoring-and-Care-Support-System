@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import dayjs from "dayjs";
 import {
   getMedicationIntakeStats,
@@ -16,6 +17,7 @@ import {
   MedicationIntakeStatItem,
   MedicationIntakeStatsResponse,
   MyRoomInfo,
+  subscribeActiveRoomChange,
 } from "@/services/api";
 import WeekRangeCalendarModal from "@/components/schedule/WeekRangeCalendarModal";
 
@@ -71,8 +73,17 @@ export default function StatsScreen() {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadRoom();
+    }, [loadRoom])
+  );
+
   useEffect(() => {
-    void loadRoom();
+    const unsub = subscribeActiveRoomChange(() => {
+      void loadRoom();
+    });
+    return unsub;
   }, [loadRoom]);
 
   const loadStats = useCallback(async () => {
@@ -117,13 +128,27 @@ export default function StatsScreen() {
     return { total, taken, skipped, adherence };
   }, [statsData]);
 
-  const renderRow = ({ item }: { item: MedicationIntakeStatItem }) => (
+  const renderRow = ({ item }: { item: MedicationIntakeStatItem }) => {
+    const isTaken = item.status === "taken";
+    const isMissed = item.status === "missed";
+    const statusLabel = isTaken ? "Đã uống" : isMissed ? "Quá giờ" : "Bỏ qua";
+    return (
     <View style={styles.itemCard}>
       <View style={styles.itemTop}>
         <Text style={styles.itemTime}>{dayjs(item.taken_time).format("DD/MM • HH:mm")}</Text>
-        <View style={[styles.statusPill, item.status === "taken" ? styles.statusTaken : styles.statusSkipped]}>
-          <Text style={[styles.statusPillText, item.status === "taken" ? styles.statusTakenText : styles.statusSkippedText]}>
-            {item.status === "taken" ? "Đã uống" : "Bỏ qua"}
+        <View
+          style={[
+            styles.statusPill,
+            isTaken ? styles.statusTaken : isMissed ? styles.statusMissed : styles.statusSkipped,
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusPillText,
+              isTaken ? styles.statusTakenText : isMissed ? styles.statusMissedText : styles.statusSkippedText,
+            ]}
+          >
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -137,6 +162,7 @@ export default function StatsScreen() {
       </Text>
     </View>
   );
+  };
 
   if (roomLoading) {
     return (
@@ -196,15 +222,21 @@ export default function StatsScreen() {
 
             <View style={styles.summaryGrid}>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Tổng lần ghi nhận</Text>
+                <View style={styles.summaryLabelWrap}>
+                  <Text style={styles.summaryLabel}>Tổng lần ghi nhận</Text>
+                </View>
                 <Text style={styles.summaryValue}>{summary.total}</Text>
               </View>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Đã uống</Text>
+                <View style={styles.summaryLabelWrap}>
+                  <Text style={styles.summaryLabel}>Đã uống</Text>
+                </View>
                 <Text style={[styles.summaryValue, { color: "#059669" }]}>{summary.taken}</Text>
               </View>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Bỏ qua</Text>
+                <View style={styles.summaryLabelWrap}>
+                  <Text style={styles.summaryLabel}>Bỏ qua / quá giờ</Text>
+                </View>
                 <Text style={[styles.summaryValue, { color: "#DC2626" }]}>{summary.skipped}</Text>
               </View>
             </View>
@@ -335,17 +367,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#56328C",
     borderRadius: 999,
   },
-  summaryGrid: { flexDirection: "row", gap: 10, marginTop: 10 },
+  summaryGrid: { flexDirection: "row", gap: 10, marginTop: 10, alignItems: "stretch" },
   summaryCard: {
     flex: 1,
+    flexDirection: "column",
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#EEF2FF",
     borderRadius: 14,
     padding: 10,
   },
-  summaryLabel: { fontSize: 11, color: "#64748B", fontWeight: "700" },
-  summaryValue: { marginTop: 4, fontSize: 18, color: "#0F172A", fontWeight: "900" },
+  summaryLabelWrap: {
+    minHeight: 40,
+    justifyContent: "flex-start",
+  },
+  summaryLabel: { fontSize: 11, lineHeight: 15, color: "#64748B", fontWeight: "700" },
+  summaryValue: { marginTop: 6, fontSize: 18, color: "#0F172A", fontWeight: "900" },
   periodRow: { flexDirection: "row", gap: 8, marginTop: 16 },
   periodChip: {
     paddingVertical: 8,
@@ -402,9 +439,11 @@ const styles = StyleSheet.create({
   },
   statusTaken: { backgroundColor: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.30)" },
   statusSkipped: { backgroundColor: "rgba(239,68,68,0.12)", borderColor: "rgba(239,68,68,0.30)" },
+  statusMissed: { backgroundColor: "rgba(245,158,11,0.16)", borderColor: "rgba(217,119,6,0.35)" },
   statusPillText: { fontSize: 11, fontWeight: "800" },
   statusTakenText: { color: "#047857" },
   statusSkippedText: { color: "#B91C1C" },
+  statusMissedText: { color: "#B45309" },
   medName: { fontSize: 14, fontWeight: "700", color: "#0F172A" },
   itemMeta: { fontSize: 12, color: "#64748B", marginTop: 3, fontWeight: "600" },
   itemActor: { fontSize: 12, color: "#56328C", marginTop: 6, fontWeight: "700" },

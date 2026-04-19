@@ -90,6 +90,51 @@ class User {
     }
   }
 
+  /**
+   * Thống kê admin dashboard:
+   * - registeredTotal: mọi dòng `users`
+   * - admin: số user có role admin (DISTINCT)
+   * - user: tài khoản không phải admin = registeredTotal - admin (tránh lệch do NOT EXISTS / dữ liệu user_roles)
+   * - rooms: max(bảng `rooms`, DISTINCT room_id trong `room_members`) để vẫn thấy phòng khi dữ liệu lệch
+   */
+  static async getAdminAccountOverview() {
+    const connection = await pool.getConnection();
+    try {
+      const [totalRows] = await connection.execute(`SELECT COUNT(*) AS c FROM users`);
+      const registeredTotal = Number(totalRows[0]?.c || 0);
+
+      const [adminRows] = await connection.execute(
+        `SELECT COUNT(DISTINCT ur.user_id) AS c
+         FROM user_roles ur
+         INNER JOIN roles r ON r.id = ur.role_id
+         WHERE LOWER(TRIM(r.name)) = 'admin'`
+      );
+      const admin = Number(adminRows[0]?.c || 0);
+
+      const user = Math.max(0, registeredTotal - admin);
+
+      const [roomTableRows] = await connection.execute(`SELECT COUNT(*) AS c FROM rooms`);
+      const roomsFromTable = Number(roomTableRows[0]?.c || 0);
+
+      const [memberRows] = await connection.execute(
+        `SELECT COUNT(DISTINCT room_id) AS c FROM room_members`
+      );
+      const roomsFromMembers = Number(memberRows[0]?.c || 0);
+
+      const rooms = Math.max(roomsFromTable, roomsFromMembers);
+
+      return {
+        user,
+        rooms,
+        admin,
+        other: 0,
+        registeredTotal,
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
   // Tìm kiếm người dùng theo tên (username hoặc full_name)
   static async searchByName(keyword) {
     const connection = await pool.getConnection();

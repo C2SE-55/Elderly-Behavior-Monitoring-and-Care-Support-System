@@ -616,18 +616,9 @@ class MedicationSystem {
     return null;
   }
 
-  static async listMedicationIntakeStats(hostUserId, roomId, period, anchorYmd) {
-    const range = this.resolveMedicationStatsRange(period, anchorYmd);
-    if (!range) {
-      const err = new Error("INVALID_STATS_RANGE");
-      err.code = "INVALID_STATS_RANGE";
-      throw err;
-    }
-    const connection = await pool.getConnection();
-    try {
-      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
-      const params = [profileId, range.start, range.end];
-      const sqlWithActor = `SELECT
+  static async _fetchMedicationIntakeStatRows(connection, profileId, startYmd, endYmd) {
+    const params = [profileId, startYmd, endYmd];
+    const sqlWithActor = `SELECT
            ml.id AS log_id,
            ml.taken_time,
            ml.status,
@@ -641,11 +632,11 @@ class MedicationSystem {
          INNER JOIN medications m ON m.id = s.medication_id
          LEFT JOIN users u ON u.id = ml.acted_by_user_id
          WHERE m.profile_id = ?
-           AND ml.status IN ('taken', 'skipped')
+           AND ml.status IN ('taken', 'skipped', 'missed')
            AND DATE(ml.taken_time) >= ?
            AND DATE(ml.taken_time) <= ?
          ORDER BY ml.taken_time DESC`;
-      const sqlNoActor = `SELECT
+    const sqlNoActor = `SELECT
            ml.id AS log_id,
            ml.taken_time,
            ml.status,
@@ -656,32 +647,83 @@ class MedicationSystem {
          INNER JOIN medication_schedules s ON s.id = ml.schedule_id
          INNER JOIN medications m ON m.id = s.medication_id
          WHERE m.profile_id = ?
-           AND ml.status IN ('taken', 'skipped')
+           AND ml.status IN ('taken', 'skipped', 'missed')
            AND DATE(ml.taken_time) >= ?
            AND DATE(ml.taken_time) <= ?
          ORDER BY ml.taken_time DESC`;
-      let rows;
-      try {
-        [rows] = await connection.execute(sqlWithActor, params);
-      } catch (e) {
-        if (e?.code === "ER_BAD_FIELD_ERROR") {
-          [rows] = await connection.execute(sqlNoActor, params);
-        } else {
-          throw e;
-        }
+    let rows;
+    try {
+      [rows] = await connection.execute(sqlWithActor, params);
+    } catch (e) {
+      if (e?.code === "ER_BAD_FIELD_ERROR") {
+        [rows] = await connection.execute(sqlNoActor, params);
+      } else {
+        throw e;
       }
+    }
+    return rows.map((row) => ({
+      log_id: Number(row.log_id),
+      taken_time: row.taken_time,
+      status: String(row.status || ""),
+      schedule_id: Number(row.schedule_id),
+      alarm_time: String(row.alarm_time || "").slice(0, 5),
+      medication_name: row.medication_name ? String(row.medication_name) : "",
+      acted_by_user_id: row.acted_by_user_id != null ? Number(row.acted_by_user_id) : null,
+      acted_by_name: row.acted_by_name ? String(row.acted_by_name) : null,
+    }));
+  }
+
+  static async listMedicationIntakeStats(hostUserId, roomId, period, anchorYmd) {
+    const range = this.resolveMedicationStatsRange(period, anchorYmd);
+    if (!range) {
+      const err = new Error("INVALID_STATS_RANGE");
+      err.code = "INVALID_STATS_RANGE";
+      throw err;
+    }
+    const connection = await pool.getConnection();
+    try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
+      const items = await this._fetchMedicationIntakeStatRows(connection, profileId, range.start, range.end);
       return {
         range: { start: range.start, end: range.end, period: range.period },
-        items: rows.map((row) => ({
-          log_id: Number(row.log_id),
-          taken_time: row.taken_time,
-          status: String(row.status || ""),
-          schedule_id: Number(row.schedule_id),
-          alarm_time: String(row.alarm_time || "").slice(0, 5),
-          medication_name: row.medication_name ? String(row.medication_name) : "",
-          acted_by_user_id: row.acted_by_user_id != null ? Number(row.acted_by_user_id) : null,
-          acted_by_name: row.acted_by_name ? String(row.acted_by_name) : null,
-        })),
+        items,
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async listMedicationIntakeStatsForDateRange(hostUserId, roomId, fromYmd, toYmd) {
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    const a = String(fromYmd || "").trim().slice(0, 10);
+    const b = String(toYmd || "").trim().slice(0, 10);
+    if (!iso.test(a) || !iso.test(b)) {
+      const err = new Error("INVALID_STATS_RANGE");
+      err.code = "INVALID_STATS_RANGE";
+      throw err;
+    }
+    let start = a <= b ? a : b;
+    let end = a <= b ? b : a;
+    const t0 = new Date(`${start}T00:00:00`);
+    const t1 = new Date(`${end}T00:00:00`);
+    if (Number.isNaN(t0.getTime()) || Number.isNaN(t1.getTime())) {
+      const err = new Error("INVALID_STATS_RANGE");
+      err.code = "INVALID_STATS_RANGE";
+      throw err;
+    }
+    const spanDays = Math.floor((t1 - t0) / 86400000) + 1;
+    if (spanDays > 400) {
+      const err = new Error("STATS_RANGE_TOO_LARGE");
+      err.code = "STATS_RANGE_TOO_LARGE";
+      throw err;
+    }
+    const connection = await pool.getConnection();
+    try {
+      const profileId = await this.getOrCreateProfileIdByRoom(roomId, hostUserId, connection);
+      const items = await this._fetchMedicationIntakeStatRows(connection, profileId, start, end);
+      return {
+        range: { start, end, period: "range" },
+        items,
       };
     } finally {
       connection.release();

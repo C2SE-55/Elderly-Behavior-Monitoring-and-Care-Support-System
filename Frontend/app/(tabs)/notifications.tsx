@@ -12,13 +12,15 @@ import {
 } from "@/services/notificationLog";
 import NotificationList from "@/components/notifications/NotificationList";
 import NotificationDetailModal from "@/components/notifications/NotificationDetailModal";
-import { getMyRoom, type RoomMemberRole } from "@/services/api";
+import { getCurrentUser, getMyRoom, type RoomMemberRole } from "@/services/api";
+import { Redirect } from "expo-router";
 import dayjs from "dayjs";
 import { isNotificationEntryConfirmed, safetyKindFromEntry } from "@/components/notifications/notificationTypes";
 
 type FilterKey =
   | "all"
   | "confirmed"
+  | "support-message"
   | "room-message"
   | "medication"
   | "weekly-schedule"
@@ -30,6 +32,7 @@ type FilterKey =
 const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: "all", label: "Tất cả" },
   { key: "confirmed", label: "Đã xác nhận" },
+  { key: "support-message", label: "Hỗ trợ" },
   { key: "room-message", label: "Tin nhắn phòng" },
   { key: "medication", label: "Nhắc thuốc" },
   { key: "weekly-schedule", label: "Lịch sinh hoạt" },
@@ -194,6 +197,10 @@ export default function NotificationsScreen() {
     // ensure UI reflects latest read status after closing
     void load();
   }, [load]);
+
+  if (String(getCurrentUser()?.role || "").toLowerCase() === "admin") {
+    return <Redirect href="/(admin)/alerts" />;
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>

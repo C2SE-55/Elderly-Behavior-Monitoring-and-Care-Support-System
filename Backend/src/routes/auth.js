@@ -13,6 +13,12 @@ router.get("/profile", verifyToken, authController.getProfile);
 router.put("/profile", verifyToken, authController.updateProfile);
 
 // Routes chỉ dành cho ADMIN
+router.get(
+  "/admin/account-overview",
+  verifyToken,
+  checkRole(["admin"]),
+  authController.getAdminAccountOverview
+);
 router.get("/admin/users", verifyToken, checkRole(["admin"]), authController.getAllUsers); // Xem tất cả tài khoản
 router.get("/admin/search", verifyToken, checkRole(["admin"]), authController.searchUsers); // Tìm kiếm tài khoản theo tên
 router.get("/admin/users/:id", verifyToken, checkRole(["admin"]), authController.getUserById); // Xem chi tiết một tài khoản

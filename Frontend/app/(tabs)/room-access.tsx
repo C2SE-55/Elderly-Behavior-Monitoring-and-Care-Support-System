@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import {
+  formatMemberRoleLabel,
   getActiveRoomId,
   getCurrentUser,
   getMyRoom,
@@ -234,7 +235,7 @@ export default function RoomAccessScreen() {
                     </View>
                   </View>
                   <Text style={styles.meta}>
-                    {r.member_role.toUpperCase()} · room_id_int: {r.id}
+                    {formatMemberRoleLabel(r.member_role) || r.member_role.toUpperCase()} · room_id_int: {r.id}
                   </Text>
                 </TouchableOpacity>
               );

@@ -1,10 +1,38 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { getCurrentUser, getSupportUnreadCount, logoutUser } from "@/services/api";
+import {
+  formatMemberRoleLabel,
+  getActiveRoomId,
+  getCurrentUser,
+  getMyRooms,
+  getSupportUnreadCount,
+  logoutUser,
+  subscribeActiveRoomChange,
+  subscribeAuthChange,
+  type MyRoomSummary,
+} from "@/services/api";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
+
+/** Vai hiển thị ở Cài đặt: theo phòng đang dùng; không có phòng thì theo role tài khoản. */
+function resolveSettingsRoleBadge(accountRole: string | undefined, rooms: MyRoomSummary[]): string {
+  const acc = String(accountRole || "user")
+    .trim()
+    .toLowerCase();
+  if (acc === "admin") return "ADMIN";
+
+  const activeId = getActiveRoomId();
+  const byActive =
+    activeId && rooms.length ? rooms.find((x) => Number(x.id) === Number(activeId)) : undefined;
+  const picked = byActive || (rooms.length ? rooms[0] : undefined);
+  const fromRoom = formatMemberRoleLabel(picked?.member_role);
+  if (fromRoom) return fromRoom;
+
+  return acc.replace(/-/g, "_").toUpperCase() || "USER";
+}
 
 type SettingsRowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -38,6 +66,9 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const user = getCurrentUser() as { role?: string; fullName?: string; username?: string } | null;
   const [supportUnread, setSupportUnread] = useState(0);
+  const [roleBadge, setRoleBadge] = useState(() =>
+    resolveSettingsRoleBadge(user?.role, [])
+  );
 
   const onLogout = () => {
     const run = () => {
@@ -56,8 +87,32 @@ export default function SettingsScreen() {
   };
 
   const name = user?.fullName || user?.username || "Tài khoản";
-  const roleLabel = useMemo(() => String(user?.role || "user").toUpperCase(), [user?.role]);
   const avatarLetter = useMemo(() => String(name).trim().charAt(0).toUpperCase() || "A", [name]);
+
+  const refreshRoleBadge = useCallback(async () => {
+    const u = getCurrentUser() as { role?: string } | null;
+    try {
+      const rooms = await getMyRooms();
+      setRoleBadge(resolveSettingsRoleBadge(u?.role, rooms));
+    } catch {
+      setRoleBadge(resolveSettingsRoleBadge(u?.role, []));
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshRoleBadge();
+    }, [refreshRoleBadge])
+  );
+
+  useEffect(() => {
+    const offRoom = subscribeActiveRoomChange(() => void refreshRoleBadge());
+    const offAuth = subscribeAuthChange(() => void refreshRoleBadge());
+    return () => {
+      offRoom();
+      offAuth();
+    };
+  }, [refreshRoleBadge]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +167,7 @@ export default function SettingsScreen() {
               </Text>
               <View style={styles.rolePill}>
                 <Ionicons name="shield-checkmark-outline" size={14} color="#2E1065" />
-                <Text style={styles.rolePillTxt}>{roleLabel}</Text>
+                <Text style={styles.rolePillTxt}>{roleBadge}</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#6B7280" />
