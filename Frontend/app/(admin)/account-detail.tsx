@@ -5,6 +5,24 @@ import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AdminUserAccount, adminDeleteUser, getAdminUserById } from "@/services/api";
 
+/** Lấy phần ngày (YYYY-MM-DD) từ ISO hoặc chuỗi tương tự, hiển thị DD/MM/YYYY — không nối thêm giờ/múi giờ. */
+function formatDateOnly(value: string | null | undefined): string {
+  if (value == null || String(value).trim() === "") return "-";
+  const raw = String(value).trim();
+  const head = raw.includes("T") ? raw.split("T")[0]! : raw.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(head);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const t = Date.parse(raw);
+  if (!Number.isNaN(t)) {
+    const d = new Date(t);
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const yyyy = d.getUTCFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  return raw;
+}
+
 const COLORS = {
   bg: "#F5F6FF",
   card: "rgba(255,255,255,0.94)",
@@ -123,11 +141,11 @@ export default function AdminAccountDetailScreen() {
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ngày sinh</Text>
-                  <Text style={styles.infoValue}>{row.dateOfBirth || "-"}</Text>
+                  <Text style={styles.infoValue}>{formatDateOnly(row.dateOfBirth)}</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ngày tạo</Text>
-                  <Text style={styles.infoValue}>{row.createdAt || "-"}</Text>
+                  <Text style={styles.infoValue}>{formatDateOnly(row.createdAt)}</Text>
                 </View>
               </View>
 

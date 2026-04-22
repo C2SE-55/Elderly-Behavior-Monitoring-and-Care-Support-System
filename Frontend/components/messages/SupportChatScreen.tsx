@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import dayjs from "dayjs";
@@ -64,6 +65,14 @@ export default function SupportChatScreen() {
   const beforeIdRef = useRef<number | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<FlatList<SupportChatMessage> | null>(null);
+  const prevLoadingRef = useRef(true);
+
+  const scrollToLatest = useCallback((animated: boolean) => {
+    const run = () => listRef.current?.scrollToEnd({ animated });
+    requestAnimationFrame(run);
+    setTimeout(run, 80);
+    setTimeout(run, 200);
+  }, []);
 
   const loadInitial = useCallback(async () => {
     if (isAdmin && !targetUserId) {
@@ -113,13 +122,25 @@ export default function SupportChatScreen() {
     void loadInitial();
   }, [loadInitial]);
 
+  /** Khi loadInitial xong (loading true → false), nhảy xuống tin mới nhất — không gọi khi chỉ prepend tin cũ. */
   useEffect(() => {
-    if (!messages.length) return;
-    const t = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 50);
-    return () => clearTimeout(t);
-  }, [messages.length]);
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+    if (wasLoading && !loading && messages.length > 0) {
+      scrollToLatest(false);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 320);
+    }
+  }, [loading, messages.length, scrollToLatest]);
+
+  /** Mỗi lần vào màn hình, cuộn xuống cuối (sau khi đã có tin). */
+  useFocusEffect(
+    useCallback(() => {
+      if (loading || messages.length === 0) return;
+      scrollToLatest(false);
+      const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 280);
+      return () => clearTimeout(t);
+    }, [loading, messages.length, scrollToLatest])
+  );
 
   useEffect(() => {
     const socket = connectRoomChatSocket();
@@ -133,6 +154,7 @@ export default function SupportChatScreen() {
         if (prev.some((x) => x.id === msg.id)) return prev;
         return [...prev, msg];
       });
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
       if (Number(msg.sender_user_id) !== myUserId) {
         void markSupportMessagesRead({ message_ids: [msg.id] }, targetUserId);
       }
@@ -194,6 +216,7 @@ export default function SupportChatScreen() {
     emitTyping(false);
     try {
       await sendSupportMessage(content, targetUserId);
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     } catch {
       // keep UX stable; message list will sync from socket/poll
     }

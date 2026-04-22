@@ -13,6 +13,7 @@ import {
   subscribeRoomChatNotifPrefCacheChange,
 } from "@/services/roomChatSocket";
 import { pollSafetyEventsOnce } from "@/services/safetyNotifications";
+import { SUPPORT_NOTIFICATION_TITLE } from "@/components/notifications/notificationTypes";
 
 const PRIMARY = "#A78BFA";   // tím nhạt
 const ACTIVE = "#56328C";    // tím đậm
@@ -154,12 +155,8 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === "web") return;
     const socket = connectRoomChatSocket();
     if (!socket) return;
-
-    const me = getCurrentUser() as { id?: number; fullName?: string; username?: string } | null;
-    const myUserId = Number(me?.id || 0);
 
     let cancelled = false;
     const refreshChatPrefs = async () => {
@@ -195,6 +192,8 @@ export default function TabLayout() {
     socket.on("medication:intake", onIntake);
 
     const onMessageNew = (payload: any) => {
+      const me = getCurrentUser() as { id?: number } | null;
+      const myUserId = Number(me?.id || 0);
       const msg = payload?.message;
       const roomId = Number(payload?.roomId || msg?.room_id || 0);
       if (!roomId || !msg) return;
@@ -213,35 +212,36 @@ export default function TabLayout() {
       const title = `Phòng ${roomName} có tin nhắn mới`;
       const body = sender ? `${sender}: ${preview}` : preview || "Có tin nhắn mới trong phòng.";
 
-      // Local push notification (works even when user is outside chat screen).
-      void (async () => {
-        try {
-          const Notifications = await import("expo-notifications");
-          const perms = await Notifications.getPermissionsAsync();
-          if (!perms.granted) {
-            const req = await Notifications.requestPermissionsAsync();
-            if (!req.granted) return;
-          }
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title,
-              body,
-              sound: true,
-              data: {
-                type: "room-message",
-                room_id: roomId,
-                room_name: roomName,
-                sender_name: sender || null,
-                content,
-                sent_at: msg.created_at,
+      if (Platform.OS !== "web") {
+        void (async () => {
+          try {
+            const Notifications = await import("expo-notifications");
+            const perms = await Notifications.getPermissionsAsync();
+            if (!perms.granted) {
+              const req = await Notifications.requestPermissionsAsync();
+              if (!req.granted) return;
+            }
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title,
+                body,
+                sound: true,
+                data: {
+                  type: "room-message",
+                  room_id: roomId,
+                  room_name: roomName,
+                  sender_name: sender || null,
+                  content,
+                  sent_at: msg.created_at,
+                },
               },
-            },
-            trigger: null,
-          });
-        } catch {
-          // ignore
-        }
-      })();
+              trigger: null,
+            });
+          } catch {
+            // ignore
+          }
+        })();
+      }
 
       void appendNotificationLog({
         type: "room-message",
@@ -263,42 +263,54 @@ export default function TabLayout() {
     socket.on("message:new", onMessageNew);
 
     const onSupportMessageNew = (payload: any) => {
+      const me = getCurrentUser() as { id?: number; role?: string } | null;
+      const myUserId = Number(me?.id || 0);
+      const myRole = String(me?.role || "user").toLowerCase();
       const msg = payload?.message;
       if (!msg) return;
+      const conversationUserId = Number(payload?.conversation_user_id ?? payload?.conversationUserId ?? 0);
+      if (myRole !== "admin" && conversationUserId > 0 && myUserId > 0 && conversationUserId !== myUserId) {
+        return;
+      }
       if (myUserId && Number(msg.sender_user_id || 0) === myUserId) return;
       const sender = String(msg.sender_name || "Admin").trim() || "Admin";
       const content = String(msg.content || "").trim();
       const preview = content.length > 80 ? `${content.slice(0, 77)}…` : content;
-      const title = "Tin nhắn hỗ trợ mới";
+      const title = SUPPORT_NOTIFICATION_TITLE;
       const body = `${sender}: ${preview || "Bạn có tin nhắn hỗ trợ mới."}`;
+      const conversationId = Number(payload?.conversationId || msg?.conversation_id || 0) || null;
+      const messageId = Number(msg?.id || 0) || null;
 
-      void (async () => {
-        try {
-          const Notifications = await import("expo-notifications");
-          const perms = await Notifications.getPermissionsAsync();
-          if (!perms.granted) {
-            const req = await Notifications.requestPermissionsAsync();
-            if (!req.granted) return;
-          }
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title,
-              body,
-              sound: true,
-              data: {
-                type: "support-message",
-                conversation_id: Number(payload?.conversationId || msg?.conversation_id || 0) || null,
-                sender_name: sender,
-                content,
-                sent_at: msg.created_at,
+      if (Platform.OS !== "web") {
+        void (async () => {
+          try {
+            const Notifications = await import("expo-notifications");
+            const perms = await Notifications.getPermissionsAsync();
+            if (!perms.granted) {
+              const req = await Notifications.requestPermissionsAsync();
+              if (!req.granted) return;
+            }
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title,
+                body,
+                sound: true,
+                data: {
+                  type: "support-message",
+                  conversation_id: conversationId,
+                  message_id: messageId,
+                  sender_name: sender,
+                  content,
+                  sent_at: msg.created_at,
+                },
               },
-            },
-            trigger: null,
-          });
-        } catch {
-          // ignore
-        }
-      })();
+              trigger: null,
+            });
+          } catch {
+            // ignore
+          }
+        })();
+      }
 
       void appendNotificationLog({
         type: "support-message",
@@ -306,7 +318,9 @@ export default function TabLayout() {
         body,
         data: {
           type: "support-message",
-          conversation_id: Number(payload?.conversationId || msg?.conversation_id || 0) || null,
+          conversation_id: conversationId,
+          conversation_user_id: conversationUserId || undefined,
+          message_id: messageId,
           sender_name: sender,
           content,
           sent_at: msg.created_at,

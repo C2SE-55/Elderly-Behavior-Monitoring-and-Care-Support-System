@@ -3,7 +3,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { getAdminUsers, getCurrentUser } from "@/services/api";
+import { getAdminAccountOverview, getCurrentUser, getSupportConversationsForAdmin } from "@/services/api";
+import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
 const COLORS = {
   bg: "#F5F6FF",
@@ -18,44 +19,43 @@ const COLORS = {
   userSoft: "rgba(37,99,235,0.10)",
   familyAccent: "#7C3AED",
   familySoft: "rgba(124,58,237,0.12)",
-  careAccent: "#0D9488",
-  careSoft: "rgba(13,148,136,0.12)",
   dangerBg: "#FEE2E2",
   dangerBorder: "rgba(239,68,68,0.35)",
   dangerText: "#991B1B",
 };
 
-type StatTone = "primary" | "user" | "family" | "care";
-
-const STAT_TONES: Record<
-  StatTone,
-  { icon: keyof typeof Ionicons.glyphMap; accent: string; soft: string; border: string }
-> = {
-  primary: {
-    icon: "people-outline",
-    accent: COLORS.primary,
-    soft: COLORS.primarySoft,
-    border: COLORS.primaryBorder,
-  },
-  user: {
-    icon: "person-outline",
-    accent: COLORS.userAccent,
-    soft: COLORS.userSoft,
-    border: "rgba(37,99,235,0.22)",
-  },
-  family: {
-    icon: "home-outline",
-    accent: COLORS.familyAccent,
-    soft: COLORS.familySoft,
-    border: "rgba(124,58,237,0.22)",
-  },
-  care: {
-    icon: "heart-outline",
-    accent: COLORS.careAccent,
-    soft: COLORS.careSoft,
-    border: "rgba(13,148,136,0.22)",
-  },
+const OVERVIEW = {
+  peopleBg: "#E0E7FF",
+  peopleIcon: "#1E40AF",
+  roomBg: "#F3E8FF",
+  roomIcon: "#6B21A8",
 };
+
+function OverviewStatColumn({
+  icon,
+  iconBg,
+  iconColor,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <View style={styles.overviewCol}>
+      <View style={[styles.overviewIconWrap, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon} size={22} color={iconColor} />
+      </View>
+      <Text style={styles.overviewStatLabel}>{label}</Text>
+      <View style={styles.overviewValueSlot}>
+        <Text style={styles.overviewValueText}>{value}</Text>
+      </View>
+    </View>
+  );
+}
 
 export default function AdminHomepage() {
   const router = useRouter();
@@ -63,20 +63,17 @@ export default function AdminHomepage() {
   const me = getCurrentUser() as { fullName?: string; username?: string } | null;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [usersCount, setUsersCount] = useState(0);
-  const [familyCount, setFamilyCount] = useState(0);
-  const [caregiverCount, setCaregiverCount] = useState(0);
+  const [roomCount, setRoomCount] = useState(0);
   const [userCount, setUserCount] = useState(0);
+  const [supportUnread, setSupportUnread] = useState(0);
 
   const loadSummary = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
-      const rows = await getAdminUsers();
-      setUsersCount(rows.length);
-      setFamilyCount(rows.filter((x) => String(x.role || "").toLowerCase() === "family").length);
-      setCaregiverCount(rows.filter((x) => String(x.role || "").toLowerCase() === "caregiver").length);
-      setUserCount(rows.filter((x) => String(x.role || "").toLowerCase() === "user").length);
+      const c = await getAdminAccountOverview();
+      setUserCount(c.user);
+      setRoomCount(c.rooms);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Không tải được dữ liệu dashboard admin.");
     } finally {
@@ -88,9 +85,32 @@ export default function AdminHomepage() {
     loadSummary();
   }, [loadSummary]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadSupportUnread = async () => {
+      try {
+        const rows = await getSupportConversationsForAdmin();
+        const total = (rows || []).reduce((acc, it) => acc + Number(it.unread_count || 0), 0);
+        if (!cancelled) setSupportUnread(total);
+      } catch {
+        if (!cancelled) setSupportUnread(0);
+      }
+    };
+    void loadSupportUnread();
+    const timer = setInterval(() => void loadSupportUnread(), 5000);
+    const socket = connectRoomChatSocket();
+    const onSupportMessage = () => void loadSupportUnread();
+    socket?.on("support:message:new", onSupportMessage);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      getRoomChatSocket()?.off("support:message:new", onSupportMessage);
+    };
+  }, []);
+
   const displayName = useMemo(() => me?.fullName || me?.username || "Admin", [me?.fullName, me?.username]);
   const avatarLetter = useMemo(() => String(displayName).trim().charAt(0).toUpperCase() || "A", [displayName]);
-  const totalAccounts = Math.max(0, usersCount);
+  const userPlusRooms = userCount + roomCount;
 
   const tabBarPad = Math.max(insets.bottom, 12) + 78;
 
@@ -128,31 +148,76 @@ export default function AdminHomepage() {
         )}
 
         <View style={styles.overviewCard}>
-          <View style={styles.sectionHead}>
-            <View>
-              <Text style={styles.sectionTitle}>Tổng quan tài khoản</Text>
-              <Text style={styles.sectionMeta}>Số liệu hệ thống hiện tại</Text>
+          <Text style={styles.overviewMainTitle}>Tổng quan hệ thống</Text>
+          {loading ? (
+            <View style={styles.loadingBelowHead}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.loadingTxt}>Đang tải…</Text>
             </View>
-            <View style={styles.totalInlinePill}>
-              <Text style={styles.totalInlineValue}>{totalAccounts}</Text>
-              <Text style={styles.totalInlineLabel}>Tổng tài khoản</Text>
-            </View>
-            {loading ? (
-              <View style={styles.loadingInline}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.loadingTxt}>Đang tải…</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.statGrid}>
-            <StatCard tone="user" label="USER" value={userCount} />
-            <StatCard tone="family" label="HOST" value={familyCount} />
-            <StatCard tone="care" label="CAREGIVER" value={caregiverCount} />
+          ) : null}
+          <View style={styles.overviewTripleRow}>
+            <OverviewStatColumn
+              icon="home-outline"
+              iconBg={OVERVIEW.peopleBg}
+              iconColor={OVERVIEW.peopleIcon}
+              label="Tổng"
+              value={userPlusRooms}
+            />
+            <OverviewStatColumn
+              icon="people-outline"
+              iconBg={OVERVIEW.peopleBg}
+              iconColor={OVERVIEW.peopleIcon}
+              label="USER"
+              value={userCount}
+            />
+            <OverviewStatColumn
+              icon="bed-outline"
+              iconBg={OVERVIEW.roomBg}
+              iconColor={OVERVIEW.roomIcon}
+              label="PHÒNG"
+              value={roomCount}
+            />
           </View>
         </View>
 
+        {supportUnread > 0 ? (
+          <TouchableOpacity
+            style={styles.supportBanner}
+            onPress={() => router.push("/(screens)/admin-support-chat")}
+            activeOpacity={0.9}
+          >
+            <View style={styles.supportBannerIcon}>
+              <Ionicons name="notifications" size={20} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.supportBannerTitle}>Tin nhắn hỗ trợ chưa đọc</Text>
+              <Text style={styles.supportBannerSub}>
+                Bạn có {supportUnread} tin từ user — chạm để xem và trả lời
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#4C1D95" />
+          </TouchableOpacity>
+        ) : null}
+
         <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Thao tác nhanh</Text>
         <Text style={styles.sectionHint}>Các chức năng quản trị chính của hệ thống</Text>
+
+        <TouchableOpacity
+          style={styles.actionCard}
+          onPress={() => router.push("/(screens)/admin-support-chat")}
+          activeOpacity={0.92}
+        >
+          <View style={[styles.actionIconWrap, { backgroundColor: COLORS.userSoft, borderColor: "rgba(37,99,235,0.22)" }]}>
+            <Ionicons name="chatbubbles-outline" size={22} color={COLORS.userAccent} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.actionTitle}>
+              Hỗ trợ trực tiếp{supportUnread > 0 ? ` (${supportUnread})` : ""}
+            </Text>
+            <Text style={styles.actionSub}>Trao đổi real-time với user để giải đáp nhanh</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.sub} />
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.actionCard}
@@ -205,43 +270,17 @@ export default function AdminHomepage() {
           activeOpacity={0.92}
         >
           <View style={[styles.actionIconWrap, { backgroundColor: "#FFFFFF", borderColor: COLORS.border }]}>
-            <Ionicons name="alert-circle-outline" size={22} color={COLORS.careAccent} />
+            <Ionicons name="notifications-outline" size={22} color={COLORS.primary} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.actionTitle}>Cảnh báo hệ thống</Text>
-            <Text style={styles.actionSub}>Theo dõi các cảnh báo và sự kiện bất thường</Text>
+            <Text style={styles.actionTitle}>Thông báo</Text>
+            <Text style={styles.actionSub}>Chỉ tin hỗ trợ từ user — không có tab té ngã hay nhắc thuốc</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={COLORS.sub} />
         </TouchableOpacity>
 
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function StatCard({
-  tone,
-  label,
-  value,
-}: {
-  tone: StatTone;
-  label: string;
-  value: number;
-}) {
-  const t = STAT_TONES[tone];
-  return (
-    <View style={[styles.statCard, { borderColor: t.border, backgroundColor: COLORS.card }]}>
-      <View
-        style={[
-          styles.statIconWrap,
-          { backgroundColor: t.soft, borderColor: t.border },
-        ]}
-      >
-        <Ionicons name={t.icon} size={18} color={t.accent} />
-      </View>
-      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
-      <Text style={[styles.statValue, { color: t.accent }]}>{value}</Text>
-    </View>
   );
 }
 
@@ -299,65 +338,76 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   errorTxt: { flex: 1, color: COLORS.dangerText, fontSize: 12, fontWeight: "700", lineHeight: 18 },
+  supportBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#EDE9FE",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+  },
+  supportBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  supportBannerTitle: { fontSize: 14, fontWeight: "900", color: "#2E1065" },
+  supportBannerSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: "#5B21B6", lineHeight: 17 },
   overviewCard: {
     backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: "rgba(191,219,254,0.45)",
     borderRadius: 20,
-    padding: 12,
-    gap: 10,
+    padding: 16,
+    gap: 12,
     shadowColor: "#0F172A",
     shadowOpacity: 0.03,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 1,
   },
-
-  sectionHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
-  sectionTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text },
-  sectionMeta: { marginTop: 2, fontSize: 12, color: COLORS.sub, fontWeight: "700" },
-  totalInlinePill: {
-    marginLeft: 8,
+  overviewMainTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text, lineHeight: 20 },
+  overviewTripleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 6,
+    paddingTop: 4,
+  },
+  overviewCol: { flex: 1, minWidth: 0, alignItems: "center", gap: 8 },
+  overviewIconWrap: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.primaryBorder,
-    backgroundColor: COLORS.primarySoft,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 102,
   },
-  totalInlineValue: { color: COLORS.primary, fontSize: 16, fontWeight: "900", lineHeight: 18 },
-  totalInlineLabel: { marginTop: 1, color: COLORS.primary, fontSize: 10, fontWeight: "800" },
+  overviewStatLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: COLORS.text,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  overviewValueSlot: {
+    minHeight: 44,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  overviewValueText: { fontSize: 22, fontWeight: "900", color: COLORS.primary, textAlign: "center" },
+
+  sectionTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text, lineHeight: 20 },
   sectionSpaced: { marginTop: 8 },
   sectionHint: { marginTop: -4, fontSize: 12, fontWeight: "700", color: COLORS.sub, lineHeight: 17 },
-  loadingInline: { flexDirection: "row", alignItems: "center", gap: 6 },
+  loadingBelowHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   loadingTxt: { fontSize: 12, fontWeight: "700", color: COLORS.sub },
-
-  statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2 },
-  statCard: {
-    width: "31.8%",
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 1,
-    gap: 8,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  statIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  statLabel: { fontSize: 11, fontWeight: "800", color: COLORS.sub, lineHeight: 15 },
-  statValue: { fontSize: 26, fontWeight: "900" },
 
   actionCard: {
     flexDirection: "row",

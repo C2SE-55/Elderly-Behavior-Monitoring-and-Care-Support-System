@@ -95,3 +95,15 @@ export function isNotificationEntryConfirmed(entry: NotificationLogEntry): boole
   return !!(g.confirmations?.host || g.confirmations?.caretaker);
 }
 
+/** Tiêu đề thống nhất cho log/push tin hỗ trợ (đồng bộ với admin tab & append log). */
+export const SUPPORT_NOTIFICATION_TITLE = "Tin nhắn hỗ trợ";
+
+/** Inbox admin: chỉ tin `support-message` đúng luồng hỗ trợ (bỏ log lạ cùng type nếu có). */
+export function isSupportNotificationForAdminInbox(entry: NotificationLogEntry): boolean {
+  if (!entry || entry.type !== "support-message") return false;
+  const title = String(entry.title || "").trim();
+  if (title === SUPPORT_NOTIFICATION_TITLE) return true;
+  if (!title) return true;
+  return false;
+}
+

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { getCameraEventHistory, getMyRoom, type CameraHistoryEvent } from "@/services/api";
+import { getCameraEventHistory, getCurrentUser, getMyRoom, type CameraHistoryEvent } from "@/services/api";
 import { appendNotificationLog } from "@/services/notificationLog";
 
 const lastSeenKeyFor = (roomId?: string | null, role?: string | null) =>
@@ -45,9 +45,9 @@ const isSafetyEvent = (ev: CameraHistoryEvent) =>
 const titleFor = (ev: CameraHistoryEvent) =>
   ev.source_type === "left_safe_zone_event" ? "Rời khỏi vùng an toàn" : "Cảnh báo té ngã";
 
-const COOLDOWN_MS = 5 * 60 * 1000; // 5 phút
-const cooldownKeyFor = (roomId?: string | number | null, safetyType?: string) =>
-  `ebms.safety.pushCooldown.v1.${String(roomId || "no-room")}.${String(safetyType || "unknown")}`;
+/** Tránh hai lần schedule cùng một event_id trong vài giây (poll tab + poll màn camera). */
+const recentOsNotifyAt = new Map<number, number>();
+const OS_NOTIFY_DEBOUNCE_MS = 4000;
 
 let _Notifications: typeof import("expo-notifications") | null = null;
 const getNotifications = async () => {
@@ -56,30 +56,22 @@ const getNotifications = async () => {
   return _Notifications;
 };
 
-const shouldSendPush = async (roomId: string | number | null | undefined, safetyType: string) => {
-  try {
-    const key = cooldownKeyFor(roomId, safetyType);
-    const raw = await AsyncStorage.getItem(key);
-    const lastAt = raw ? Number(raw) : 0;
-    const now = Date.now();
-    if (lastAt && Number.isFinite(lastAt) && now - lastAt < COOLDOWN_MS) {
-      return false;
-    }
-    await AsyncStorage.setItem(key, String(now));
-    return true;
-  } catch {
-    // best-effort: if storage fails, still allow sending
-    return true;
-  }
-};
-
 const notifyDevice = async (title: string, body: string, data: Record<string, any>) => {
   if (Platform.OS === "web") return;
   try {
-    const safetyType = String((data as any)?.safety_type || "unknown");
-    const roomId = (data as any)?.room_id ?? null;
-    const ok = await shouldSendPush(roomId, safetyType);
-    if (!ok) return;
+    const eventId = Number((data as any)?.event_id || 0);
+    if (eventId > 0) {
+      const now = Date.now();
+      const prev = recentOsNotifyAt.get(eventId) || 0;
+      if (now - prev < OS_NOTIFY_DEBOUNCE_MS) return;
+      if (recentOsNotifyAt.size > 200) {
+        const cut = now - 60_000;
+        for (const [id, t] of recentOsNotifyAt) {
+          if (t < cut) recentOsNotifyAt.delete(id);
+        }
+      }
+      recentOsNotifyAt.set(eventId, now);
+    }
 
     const Notifications = await getNotifications();
     const perms = await Notifications.getPermissionsAsync();
@@ -102,6 +94,7 @@ const notifyDevice = async (title: string, body: string, data: Record<string, an
 };
 
 export async function pollSafetyEventsOnce(): Promise<void> {
+  if (String(getCurrentUser()?.role || "").toLowerCase() === "admin") return;
   const room = await getMyRoom().catch(() => null);
   if (!room) return;
   // Safety alerts should be visible to both host and caretaker.
