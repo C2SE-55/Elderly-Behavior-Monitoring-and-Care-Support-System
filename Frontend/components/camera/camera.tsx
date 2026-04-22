@@ -23,6 +23,7 @@ import {
   type CameraHistoryEvent,
   type CameraLiveAccessResponse,
 } from "../../services/api";
+import { pollSafetyEventsOnce } from "../../services/safetyNotifications";
 import CameraStreamView from "./CameraStreamView";
 const TAB_ACTIVE = "#56328C";
 const TAB_INACTIVE = "#A78BFA";
@@ -285,6 +286,10 @@ export default function CameraLiveScreen() {
           if (prev && safetyItems.some((item) => item.id === prev)) return prev;
           return safetyItems[0]?.id ?? null;
         });
+        // Đồng bộ ngay với luồng thông báo app (không chờ interval 5s trên tab).
+        if (safetyItems.length > 0) {
+          void pollSafetyEventsOnce();
+        }
       } catch {
         if (!mounted) return;
         setHistoryError("Chưa tải được lịch sử cảnh báo");
@@ -294,7 +299,7 @@ export default function CameraLiveScreen() {
     };
 
     loadHistory(true);
-    const interval = setInterval(() => loadHistory(false), 10000);
+    const interval = setInterval(() => loadHistory(false), 4000);
 
     return () => {
       mounted = false;
