@@ -62,7 +62,7 @@ export default function TimeSlotCell({
         {extraCount > 0 ? <Text style={styles.moreText}>+{extraCount} hoạt động khác</Text> : null}
       </View>
       <View style={styles.cellFooter}>
-        {!readonly && !isPast ? (
+        {!readonly && !isPast && !hasSchedules ? (
           <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => onAdd(dayKey)}>
             <Text style={styles.addBtnText}>+ Thêm lịch</Text>
           </TouchableOpacity>
