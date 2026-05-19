@@ -4,7 +4,6 @@ import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import ScheduleReminderLayer from "@/components/schedule/ScheduleReminderLayer";
 import { getCurrentUser, getMyRoom, getRoomChatNotificationPrefs, subscribeActiveRoomChange } from "@/services/api";
-import { handleRemoteMedicationIntake } from "@/services/medicationIntakeSync";
 import { appendNotificationLog, getNotificationLogs, subscribeNotificationLogChange } from "@/services/notificationLog";
 import {
   connectRoomChatSocket,
@@ -186,11 +185,6 @@ export default function TabLayout() {
     void joinActiveRoom();
     const prefTimer = setInterval(() => void refreshChatPrefs(), 20_000);
 
-    const onIntake = (payload: unknown) => {
-      void handleRemoteMedicationIntake(payload);
-    };
-    socket.on("medication:intake", onIntake);
-
     const onMessageNew = (payload: any) => {
       const me = getCurrentUser() as { id?: number } | null;
       const myUserId = Number(me?.id || 0);
@@ -352,7 +346,6 @@ export default function TabLayout() {
       unsubRoom();
       unsubPref();
       clearInterval(prefTimer);
-      socket.off("medication:intake", onIntake);
       socket.off("message:new", onMessageNew);
       socket.off("support:message:new", onSupportMessageNew);
     };

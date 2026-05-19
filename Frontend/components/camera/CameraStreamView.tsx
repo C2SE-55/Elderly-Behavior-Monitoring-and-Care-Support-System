@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { Image, Platform, StyleSheet, Text, View } from "react-native";
 import { ResizeMode, Video } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
@@ -38,8 +38,12 @@ type Props = {
   mjpegUrl: string;
 };
 
-export default function CameraStreamView({ style, fit, assetKey, mjpegUrl }: Props) {
+function CameraStreamView({ style, fit, assetKey, mjpegUrl }: Props) {
   const bundled = assetKey && DEMO_SOURCES[assetKey] ? DEMO_SOURCES[assetKey] : null;
+  const webViewSource = useMemo(
+    () => ({ html: buildStreamHtml(mjpegUrl, fit) }),
+    [fit, mjpegUrl]
+  );
 
   if (bundled) {
     return (
@@ -69,7 +73,7 @@ export default function CameraStreamView({ style, fit, assetKey, mjpegUrl }: Pro
 
   return (
     <WebView
-      source={{ html: buildStreamHtml(mjpegUrl, fit) }}
+      source={webViewSource}
       style={style as any}
       scrollEnabled={false}
       originWhitelist={["*"]}
@@ -77,6 +81,8 @@ export default function CameraStreamView({ style, fit, assetKey, mjpegUrl }: Pro
     />
   );
 }
+
+export default memo(CameraStreamView);
 
 const styles = StyleSheet.create({
   placeholder: {

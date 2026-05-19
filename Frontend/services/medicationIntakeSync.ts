@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { getMyRoom, getTodaySchedules } from "@/services/api";
 import { ensureNotificationPermission, rescheduleMedicationNotifications } from "@/services/medicationNotifications";
 import { dismissMedicationReminderLogsForMedicationSlot } from "@/services/notificationLog";
@@ -45,4 +46,28 @@ export async function handleRemoteMedicationIntake(payload: unknown): Promise<vo
 
   const schedules = await getTodaySchedules().catch(() => []);
   await rescheduleMedicationNotifications(schedules, { allowDaily: roomAllowsDaily(room) });
+}
+
+/**
+ * Lên lịch nhắc thuốc trên thiết bị (host + caregiver được phép nhận).
+ * Gọi từ root layout để máy caregiver vẫn có OS notification dù không mở tab Nhắc uống thuốc.
+ */
+export async function syncMedicationOsNotificationsFromServer(): Promise<void> {
+  if (Platform.OS === "web") return;
+  const room = await getMyRoom().catch(() => null);
+  if (!room?.id) return;
+
+  const wantsNotifications =
+    room.member_role === "host" || !!room.can_receive_medication_notifications;
+  if (!wantsNotifications) return;
+
+  const ok = await ensureNotificationPermission().catch(() => false);
+  if (!ok) return;
+
+  const schedules = await getTodaySchedules().catch(() => []);
+  await rescheduleMedicationNotifications(schedules, {
+    allowDaily: roomAllowsDaily(room),
+    allowSnooze: true,
+    snoozeMinutes: 5,
+  });
 }

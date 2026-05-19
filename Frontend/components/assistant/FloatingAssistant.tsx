@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -678,9 +679,16 @@ const FloatingAssistant: React.FC = () => {
   const [applyingByDate, setApplyingByDate] = useState<Record<string, boolean>>({});
   const [plannerToast, setPlannerToast] = useState("");
   const [templates, setTemplates] = useState<MealPlanTemplate[]>([]);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const mealPlanFade = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
+  const chatCardHeight = useMemo(() => {
+    const normalHeight = Math.min((height - insets.top - insets.bottom) * 0.8, 760);
+    if (Platform.OS !== "ios" || keyboardHeight <= 0) return normalHeight;
+    const availableHeight = height - insets.top - keyboardHeight - 12;
+    return Math.max(360, Math.min(normalHeight, availableHeight));
+  }, [insets.bottom, insets.top, keyboardHeight]);
 
   const resolveUserId = useCallback(() => {
     const user = getCurrentUser() as any;
@@ -1422,6 +1430,20 @@ const FloatingAssistant: React.FC = () => {
     }
   }, [chatOpen, loadLatestSession]);
 
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const showSub = Keyboard.addListener("keyboardWillShow", (event) => {
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   if (permissionLoading || !canUseChatbot) {
     return null;
   }
@@ -1461,15 +1483,15 @@ const FloatingAssistant: React.FC = () => {
         >
           <KeyboardAvoidingView
             style={styles.keyboardAvoid}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 50 : 0}
+            behavior={Platform.OS === "ios" ? "position" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
           >
             <View
               style={[
                 styles.chatCard,
                 {
                   width: Math.min(width * 0.92, 520),
-                  height: Math.min((height - insets.top - insets.bottom) * 0.8, 760),
+                  height: chatCardHeight,
                 },
               ]}
             >
@@ -1846,7 +1868,7 @@ const styles = StyleSheet.create({
   keyboardAvoid: {
     flex: 1,
     width: "100%",
-    justifyContent: "center",
+    justifyContent: "flex-end",
     alignItems: "center",
   },
   chatCard: {

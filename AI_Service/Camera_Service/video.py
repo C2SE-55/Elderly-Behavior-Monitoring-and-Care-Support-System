@@ -345,25 +345,90 @@ def processor_factory(args):
     return processor, model
 
 def _configure_webcam_capture(capture):
-    """Yêu cầu độ phân giải + buffer nhỏ (iVCam / webcam ảo hay mặc định 640x480 → nhòe khi scale).
+    """Yêu cầu độ phân giải + buffer nhỏ.
 
-    Biến môi trường: WEBCAM_WIDTH, WEBCAM_HEIGHT (mặc định 960x540, nhẹ hơn 720p). Đặt 0 để không ép.
+    Webcam ảo (iVCam, OBS VirtualCam): ép 960x540 thường gây buffer lỗi / nhiễu hình với DirectShow.
+    Mặc định 640x480 (ổn định hơn); tùy chỉnh WEBCAM_WIDTH / WEBCAM_HEIGHT.
+    WEBCAM_APPLY_RESOLUTION=0: không set width/height (để driver chọn mode native).
     """
+    apply_res = os.environ.get("WEBCAM_APPLY_RESOLUTION", "1").lower() not in ("0", "false", "no", "")
     try:
-        w = int(os.environ.get("WEBCAM_WIDTH", "960"))
-        h = int(os.environ.get("WEBCAM_HEIGHT", "540"))
+        w = int(os.environ.get("WEBCAM_WIDTH", "640"))
+        h = int(os.environ.get("WEBCAM_HEIGHT", "480"))
     except ValueError:
-        w, h = 960, 540
-    if w > 0 and h > 0:
+        w, h = 640, 480
+    if apply_res and w > 0 and h > 0:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(w))
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(h))
+    elif not apply_res:
+        w, h = 0, 0
     try:
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     except Exception:
         pass
     aw = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     ah = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-    LOG.info("Webcam: yêu cầu %dx%d, OpenCV thực tế: %dx%d", w, h, aw, ah)
+    if apply_res:
+        LOG.info("Webcam: yêu cầu %dx%d, OpenCV thực tế: %dx%d", w, h, aw, ah)
+    else:
+        LOG.info("Webcam: không ép độ phân giải, OpenCV thực tế: %dx%d", aw, ah)
+
+
+def _webcam_backend_candidates():
+    """Thứ tự backend Windows. MSMF thường ổn định hơn với webcam ảo (iVCam); DSHOW tốt cho USB truyền thống.
+
+    WEBCAM_CAPTURE_BACKEND: auto (mặc định) | msmf | dshow | any
+    """
+    if sys.platform != "win32":
+        return [("default", None)]
+    raw = (os.environ.get("WEBCAM_CAPTURE_BACKEND", "auto") or "auto").strip().lower()
+    msmf = getattr(cv2, "CAP_MSMF", 1400)
+    dshow = getattr(cv2, "CAP_DSHOW", 700)
+    if raw == "dshow":
+        return [("dshow", dshow)]
+    if raw == "msmf":
+        return [("msmf", msmf)]
+    if raw == "any":
+        return [("default", None)]
+    # auto: thử MSMF → DSHOW → API mặc định
+    return [("msmf", msmf), ("dshow", dshow), ("default", None)]
+
+
+def _open_webcam_capture(idx):
+    """Mở webcam index, chọn backend và xác nhận đọc được ít nhất vài frame (tránh isOpened() giả)."""
+    idx = int(idx) if idx is not None else 0
+    for name, api in _webcam_backend_candidates():
+        if api is None:
+            cap = cv2.VideoCapture(idx)
+        else:
+            cap = cv2.VideoCapture(idx, api)
+        if not cap.isOpened():
+            LOG.warning("Webcam index %s: backend %s không mở được", idx, name)
+            try:
+                cap.release()
+            except Exception:
+                pass
+            continue
+        _configure_webcam_capture(cap)
+        good = 0
+        for _ in range(15):
+            g, fr = cap.read()
+            if g and fr is not None and getattr(fr, "size", 0) > 0 and len(fr.shape) >= 2:
+                good += 1
+                if good >= 2:
+                    LOG.info("Webcam index %s: dùng backend %s (đã xác nhận frame hợp lệ)", idx, name)
+                    return cap
+        LOG.warning(
+            "Webcam index %s: backend %s mở được nhưng frame không ổn định — thử backend khác",
+            idx,
+            name,
+        )
+        try:
+            cap.release()
+        except Exception:
+            pass
+    LOG.error("Webcam index %s: không mở được với bất kỳ backend nào", idx)
+    return cv2.VideoCapture(idx)
 
 
 def reconnect(capture, RTSPURL):
@@ -408,11 +473,12 @@ def inference(args, stream, stream_state=None):
     
     if isinstance(RTSPURL, int):
         idx = RTSPURL if RTSPURL is not None else 0
-        # Windows: CAP_DSHOW ổn định hơn với webcam USB (tránh read() luôn None → ready=false).
         if sys.platform == "win32":
-            capture = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            capture = _open_webcam_capture(idx)
         else:
             capture = cv2.VideoCapture(idx)
+            if capture.isOpened():
+                _configure_webcam_capture(capture)
     else:
         # file path or URL (rtsp, http, etc.)
         capture = cv2.VideoCapture(RTSPURL, cv2.CAP_FFMPEG)
@@ -460,6 +526,12 @@ def inference(args, stream, stream_state=None):
     last_no_person_snapshot_ts = 0.0
     no_person_snapshot_run = 0
 
+    try:
+        webcam_reopen_threshold = max(10, int(os.environ.get("WEBCAM_REOPEN_AFTER_BAD_FRAMES", "45")))
+    except ValueError:
+        webcam_reopen_threshold = 45
+    webcam_bad_streak = 0
+
     for frame_i, (ax, ax_second) in enumerate(animation.iter()):
         grabbed, image = capture.read()
         input_fps = capture.get(cv2.CAP_PROP_FPS)
@@ -480,6 +552,31 @@ def inference(args, stream, stream_state=None):
                         capture, online, droppedFrames = reconnect(capture, RTSPURL)
                         
                 continue
+
+        # Webcam index: bỏ frame hỏng (ret=False / buffer rác — hay gặp với DirectShow + webcam ảo)
+        if isinstance(RTSPURL, int):
+            if not grabbed or image is None or getattr(image, "size", 0) <= 0:
+                webcam_bad_streak += 1
+                if webcam_bad_streak >= webcam_reopen_threshold and online:
+                    LOG.warning(
+                        "Webcam index %s: %s frame lỗi liên tiếp — thử mở lại capture",
+                        RTSPURL,
+                        webcam_bad_streak,
+                    )
+                    try:
+                        capture.release()
+                    except Exception:
+                        pass
+                    if sys.platform == "win32":
+                        capture = _open_webcam_capture(RTSPURL)
+                    else:
+                        capture = cv2.VideoCapture(RTSPURL)
+                        if capture.isOpened():
+                            _configure_webcam_capture(capture)
+                    online = capture.isOpened()
+                    webcam_bad_streak = 0
+                continue
+            webcam_bad_streak = 0
             
         elif image is None:
             # Video file hết: lặp lại (loop) thay vì dừng, để stream không tắt
@@ -504,8 +601,16 @@ def inference(args, stream, stream_state=None):
         if float(scale) != 1.0:
             image = cv2.resize(image, None, fx=float(scale), fy=float(scale))
             LOG.debug('resized image size: %s', image.shape)
-        
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif len(image.shape) == 3 and image.shape[2] == 4:
+            image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
+        elif len(image.shape) == 3 and image.shape[2] == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            LOG.debug("Bỏ frame: shape không hỗ trợ %s", getattr(image, "shape", None))
+            continue
         
         if ax is None:
             ax, ax_second = animation.frame_init(image)

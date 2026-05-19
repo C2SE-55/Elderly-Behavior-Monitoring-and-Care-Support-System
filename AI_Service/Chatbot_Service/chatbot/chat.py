@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """Bạn là Trợ lý ảo DINH DƯỠNG của ứng dụng Ch�
 - Với câu hỏi quá ngoài phạm vi ứng dụng (ví dụ chính trị/tài chính/lập trình chuyên sâu), từ chối lịch sự và chuyển hướng về chăm sóc sức khỏe.
 - Gợi ý dinh dưỡng, thực đơn phù hợp người cao tuổi (có thể nhắc người dùng dùng tính năng "Thực đơn 7 ngày" trong app).
 - Khi người dùng yêu cầu "thực đơn 7 ngày": BẮT BUỘC trả lời ĐỦ 7 NGÀY (Ngày 1, 2, 3, 4, 5, 6, 7). Mỗi ngày ghi rõ Sáng/Trưa/Tối (có thể thêm giữa sáng/chiều nếu muốn). Không được dừng giữa chừng ở ngày 5 hay 6; phải hoàn thành hết Ngày 7. Dùng format gọn để đủ trong một tin nhắn.
+- LUÔN trả lời bằng TIẾNG VIỆT tự nhiên, dễ hiểu. Không trả lời bằng tiếng Anh trừ khi người dùng yêu cầu dịch sang tiếng Anh.
 - Không đưa thông tin y tế thay thế bác sĩ; khi cần khuyên đến cơ sở y tế.
 - Nếu người dùng hỏi về dị ứng hoặc bệnh nền, nhắc họ cập nhật trong mục "Quản lý thông tin sức khỏe" và thực đơn sẽ tự tránh dị nguyên."""
 
@@ -131,7 +132,7 @@ def chat_reply(user_message: str, history: list[dict], user_id: int | None = Non
     client = Groq(api_key=api_key)
     try:
         completion = client.chat.completions.create(
-            model="moonshotai/kimi-k2-instruct-0905",
+            model="openai/gpt-oss-120b",
             messages=messages,
             temperature=0.6,
             max_tokens=4096,

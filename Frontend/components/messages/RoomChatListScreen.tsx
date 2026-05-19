@@ -296,14 +296,13 @@ export default function RoomChatListScreen() {
           </TouchableOpacity>
         </View>
         <Text style={styles.title}>Tin nhắn</Text>
-        <Text style={styles.sub}>Giống Messenger: tìm kiếm + hội thoại</Text>
 
         <View style={styles.searchWrap}>
           <Feather name="search" size={16} color="#64748B" />
           <TextInput
             value={q}
             onChangeText={setQ}
-            placeholder="Tìm theo room hoặc nội dung..."
+            placeholder="Tìm theo room..."
             placeholderTextColor="#94A3B8"
             style={styles.searchInput}
           />

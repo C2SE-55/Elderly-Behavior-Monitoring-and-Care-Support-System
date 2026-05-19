@@ -20,6 +20,77 @@ FCT_PATH = BASE_DIR / "dataset" / "D3_5a_SMILING_FCT_Vietnam_180713_protected.xl
 _food_df = None
 
 
+def _looks_like_english(text: str) -> bool:
+    if not text:
+        return False
+    s = str(text).strip().lower()
+    if not s:
+        return False
+    english_markers = [
+        "with",
+        "and",
+        "served",
+        "grilled",
+        "stir-fried",
+        "steamed",
+        "salad",
+        "soup",
+        "rice",
+        "roll",
+        "mixed",
+        "on the side",
+        "small",
+        "breakfast",
+        "lunch",
+        "dinner",
+    ]
+    return any(m in s for m in english_markers)
+
+
+def _needs_vietnamese_localization(result: dict) -> bool:
+    meal_plan = result.get("mealPlan") if isinstance(result, dict) else None
+    if isinstance(meal_plan, list):
+        for day in meal_plan:
+            meals = (day or {}).get("meals", {})
+            for key in ("breakfast", "lunch", "dinner"):
+                food = ((meals or {}).get(key) or {}).get("food", "")
+                if _looks_like_english(food):
+                    return True
+    for text_key in ("benefits", "warnings", "recommendations"):
+        if _looks_like_english(result.get(text_key, "")):
+            return True
+    return False
+
+
+def _localize_result_to_vietnamese(client: Groq, result: dict) -> dict | None:
+    prompt = f"""Bạn là biên tập viên dinh dưỡng tiếng Việt.
+Hãy CHUYỂN TOÀN BỘ nội dung tiếng Anh trong JSON sau sang tiếng Việt tự nhiên, dễ hiểu.
+QUY TẮC:
+- GIỮ NGUYÊN cấu trúc JSON, key, số liệu calories/protein/carbs/fat.
+- Chỉ đổi các chuỗi mô tả (food, benefits, warnings, recommendations) sang tiếng Việt.
+- Không thêm bớt ngày, không đổi số.
+- Trả về DUY NHẤT 1 JSON hợp lệ, không markdown.
+
+JSON đầu vào:
+{json.dumps(result, ensure_ascii=False)}
+"""
+    try:
+        completion = client.chat.completions.create(
+            model="openai/gpt-oss-120b",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=4096,
+            top_p=1,
+        )
+        content = (completion.choices[0].message.content or "").strip()
+        parsed = extract_json_from_text(content)
+        if isinstance(parsed, dict):
+            return parsed
+        return None
+    except Exception:
+        return None
+
+
 def get_food_dataset():
     """Load dataset món ăn Việt Nam (id, food_name, meal_type, region, calories, protein_g, carbs_g, fat_g)."""
     global _food_df
@@ -146,6 +217,8 @@ YÊU CẦU NGHIÊM NGẶT:
 6. Khẩu phần phù hợp người cao tuổi: dễ tiêu hóa, ít muối, ít dầu mỡ.
 7. Tính toán dinh dưỡng ước tính (calories, protein, carbs, fat) theo chuẩn USDA/bảng dinh dưỡng.
 8. Điền benefits, warnings, recommendations ngắn gọn. Trong 'warnings' phải xác nhận đã tránh hoàn toàn các dị ứng đã nêu (nếu có).
+9. Toàn bộ nội dung phải viết bằng TIẾNG VIỆT: tên món trong food, benefits, warnings, recommendations. Không dùng tiếng Anh.
+10. Nếu tham khảo món có tên tiếng Anh thì BẮT BUỘC chuyển thành tên món tương đương bằng tiếng Việt (ví dụ "grilled salmon" -> "cá hồi nướng").
 
 ĐỊNH DẠNG ĐẦU RA: CHỈ TRẢ VỀ MỘT KHỐI JSON DUY NHẤT, KHÔNG KÈM TEXT NÀO KHÁC.
 
@@ -234,7 +307,7 @@ def generate_meal_plan(user_id: int) -> dict:
 
     try:
         completion = client.chat.completions.create(
-            model="moonshotai/kimi-k2-instruct-0905",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.6,
             max_tokens=4096,
@@ -271,6 +344,16 @@ def generate_meal_plan(user_id: int) -> dict:
         "warnings": result.get("warnings", ""),
         "recommendations": result.get("recommendations", ""),
     }
+    if _needs_vietnamese_localization(out):
+        localized = _localize_result_to_vietnamese(client, out)
+        if isinstance(localized, dict):
+            out = {
+                "mealPlan": localized.get("mealPlan", out.get("mealPlan", [])),
+                "totalDailyCalories": localized.get("totalDailyCalories", out.get("totalDailyCalories", 0)),
+                "benefits": localized.get("benefits", out.get("benefits", "")),
+                "warnings": localized.get("warnings", out.get("warnings", "")),
+                "recommendations": localized.get("recommendations", out.get("recommendations", "")),
+            }
     if "error" in result:
         out["error"] = result["error"]
     return out

@@ -2,6 +2,12 @@ const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
+const { emitMedicationSchedulesChanged } = require("../services/socketServer");
+
+const notifyMedicationSchedulesChanged = (roomId) => {
+  if (!roomId) return;
+  void emitMedicationSchedulesChanged(roomId).catch(() => {});
+};
 
 exports.createSchedules = async (req, res) => {
   try {
@@ -14,6 +20,7 @@ exports.createSchedules = async (req, res) => {
       );
     }
     const data = await MedicationSystem.createSchedules(context.hostUserId, context.roomId, req.body || {});
+    notifyMedicationSchedulesChanged(context.roomId);
     return sendSuccess(res, data, "Tạo lịch uống thuốc thành công", HTTP_STATUS.CREATED);
   } catch (error) {
     if (error?.code === "INVALID_ALARM_TIME") {
@@ -87,6 +94,7 @@ exports.updateSchedule = async (req, res) => {
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }
+    notifyMedicationSchedulesChanged(context.roomId);
     return sendSuccess(res, { id: scheduleId }, "Cập nhật lịch uống thành công", HTTP_STATUS.OK);
   } catch (error) {
     if (error?.code === "INVALID_ALARM_TIME") {
@@ -116,6 +124,7 @@ exports.deleteSchedulesForSlot = async (req, res) => {
       context.roomId,
       alarmTime
     );
+    notifyMedicationSchedulesChanged(context.roomId);
     return sendSuccess(
       res,
       { deleted: result.deleted, schedule_ids: result.schedule_ids },
@@ -150,6 +159,7 @@ exports.deleteSchedule = async (req, res) => {
     if (!ok) {
       return sendFail(res, "Không tìm thấy lịch uống", HTTP_STATUS.NOT_FOUND);
     }
+    notifyMedicationSchedulesChanged(context.roomId);
     return sendSuccess(res, { id: scheduleId }, "Xóa lịch uống thành công", HTTP_STATUS.OK);
   } catch (error) {
     console.error("Lỗi xóa lịch uống:", error);

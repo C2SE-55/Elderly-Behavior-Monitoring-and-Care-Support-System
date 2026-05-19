@@ -20,6 +20,7 @@ Nguồn video:
     + YOLO_HALF=auto          -> FP16 trên GPU (mặc định auto); YOLO_HALF=0 tắt
   Phát hiện té (bbox + spread keypoint + vai–hông; mặc định không kiểm tra “sàn”):
     + FALL_REQUIRE_FLOOR=1       -> bật kiểm tra gần sàn (mặc định tắt)
+    + FALL_USE_SLUMPED_HINT=1    -> té ngồi/sụp (camera 2: run_camera_webcam.ps1)
     + FALL_LEG_VETO=0            -> tắt lọc “chân dưới hông” nếu cần tinh chỉnh
     + FALL_FB1_MIN_STREAK=5      -> số frame liên tiếp mới cho fallback keypoint đếm +1
   Ví dụ (Windows): set VIDEO_SOURCE=D:\\videos\\room1.mp4
@@ -97,6 +98,9 @@ def _get_video_source():
     - USE_DEMO_VIDEO=1: tương thích ngược (không bắt buộc nữa).
     - USE_WEBCAM=1 + VIDEO_SOURCE=0: luôn webcam 0 (bỏ qua demo).
     - VIDEO_SOURCE=1,2,...: webcam chỉ số đó.
+
+    Webcam ảo (iVCam) trên Windows: nếu hình nhiễu / FPS rất thấp, thử
+    WEBCAM_CAPTURE_BACKEND=msmf hoặc dshow; WEBCAM_APPLY_RESOLUTION=0 giữ mode gốc của driver.
     """
     raw = os.environ.get("VIDEO_SOURCE", "").strip()
     default_file = _get_default_video_path()

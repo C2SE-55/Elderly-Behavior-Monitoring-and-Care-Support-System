@@ -43,7 +43,13 @@ export default function TimeSlotCell({
   const primarySchedules = hasSchedules ? schedules.slice(0, 1) : [];
   const extraCount = hasSchedules ? Math.max(0, schedules.length - primarySchedules.length) : 0;
   return (
-    <View style={[styles.cell, isCurrent && styles.currentCell, isPast && styles.disabledCell]}>
+    <View
+      style={[
+        styles.cell,
+        isCurrent && styles.currentCell,
+        isPast && styles.disabledCell,
+      ]}
+    >
       <View style={styles.cellBody}>
         {hasSchedules ? (
           primarySchedules.map((item) => (
@@ -70,11 +76,6 @@ export default function TimeSlotCell({
           <Text style={styles.disabledText}>Đã qua thời gian</Text>
         ) : null}
       </View>
-      {isCurrent && (
-        <View style={styles.currentBadge}>
-          <Text style={styles.currentBadgeText}>Đang diễn ra ({slotLabel})</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -106,7 +107,13 @@ const styles = StyleSheet.create({
   },
   currentCell: {
     borderColor: COLORS.primaryBorder,
-    backgroundColor: "rgba(167,139,250,0.12)",
+    borderWidth: 1.5,
+    backgroundColor: "rgba(167,139,250,0.24)",
+    shadowColor: "#56328C",
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   disabledCell: {
     opacity: 0.65,
@@ -142,20 +149,5 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     fontSize: 10,
     fontWeight: "600",
-  },
-  currentBadge: {
-    marginTop: 8,
-    backgroundColor: "rgba(167,139,250,0.18)",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: COLORS.primaryBorder,
-  },
-  currentBadgeText: {
-    color: COLORS.primary,
-    fontSize: 10,
-    fontWeight: "900",
   },
 });

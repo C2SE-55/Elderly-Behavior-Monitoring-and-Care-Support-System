@@ -14,7 +14,7 @@ except ImportError:
 
 from .. import core
 from ..core import pipeline_config
-from ..core.falldetector import lying_hint_from_keypoints
+from ..core.falldetector import lying_hint_from_keypoints, min_lying_bbox_aspect
 
 LOG = logging.getLogger(__name__)
 
@@ -593,7 +593,7 @@ class KeypointPainter:
                 ha += 4.0
             if ha <= 1e-6 or wa * ha <= 200:
                 continue
-            if wa < pipeline_config.FALL_CLEARLY_LYING_ASPECT * ha:
+            if wa < min_lying_bbox_aspect(ann.data) * ha:
                 continue
             hint_strong = True
             break
@@ -619,7 +619,7 @@ class KeypointPainter:
                     h_ = h_ + 4
                 if h_ <= 1e-6 or w_ * h_ <= 200:
                     continue
-                if w_ < pipeline_config.FALL_CLEARLY_LYING_ASPECT * h_:
+                if w_ < min_lying_bbox_aspect(ann.data) * h_:
                     continue
                 on_floor = True
                 if pipeline_config.FALL_REQUIRE_FLOOR and frame_height is not None and frame_height > 0:

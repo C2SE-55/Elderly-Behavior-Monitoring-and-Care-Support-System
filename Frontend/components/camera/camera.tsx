@@ -40,10 +40,6 @@ const COLORS = {
 };
 const DEMO_ASSET_KEYS = new Set<string>(["video3", "videofall"]);
 
-function formatTime(date: Date) {
-  return date.toTimeString().slice(0, 5);
-}
-
 function formatDate(value?: string | null) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) {
@@ -114,7 +110,6 @@ export default function CameraLiveScreen() {
   const params = useLocalSearchParams<{ eventId?: string }>();
   const insets = useSafeAreaInsets();
 
-  const [currentTime, setCurrentTime] = useState(formatTime(new Date()));
   const [streamReady, setStreamReady] = useState(false);
   const [fallCount, setFallCount] = useState(0);
   const [fps, setFps] = useState(0);
@@ -134,13 +129,6 @@ export default function CameraLiveScreen() {
     const n = Number(raw || 0);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [params?.eventId]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(formatTime(new Date()));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     return subscribeActiveRoomChange((roomId) => {

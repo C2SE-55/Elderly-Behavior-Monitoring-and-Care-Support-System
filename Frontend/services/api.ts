@@ -896,8 +896,47 @@ export type GeneratedMealPlanDay = {
   };
 };
 
-const normalizeMealText = (value: unknown) =>
-  typeof value === "string" && value.trim() ? value.trim() : "";
+const EN_VI_MEAL_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bon the side\b/gi, "ăn kèm"],
+  [/\bsmall\b/gi, "nhỏ"],
+  [/\bwith\b/gi, "với"],
+  [/\band\b/gi, "và"],
+  [/\bserved\b/gi, "phục vụ"],
+  [/\bgrilled\b/gi, "nướng"],
+  [/\bstir-fried\b/gi, "xào"],
+  [/\bsteamed\b/gi, "hấp"],
+  [/\bbaked\b/gi, "đút lò"],
+  [/\bsauteed\b/gi, "xào nhanh"],
+  [/\bsalad\b/gi, "salad"],
+  [/\bsoup\b/gi, "súp"],
+  [/\brice\b/gi, "cơm"],
+  [/\broll\b/gi, "bánh mì cuộn"],
+  [/\bchicken breast\b/gi, "ức gà"],
+  [/\bsalmon\b/gi, "cá hồi"],
+  [/\bcod\b/gi, "cá tuyết"],
+  [/\bquinoa\b/gi, "diêm mạch"],
+  [/\bsweet potato mash\b/gi, "khoai lang nghiền"],
+  [/\bmixed green\b/gi, "rau xanh trộn"],
+  [/\blettuce\b/gi, "xà lách"],
+  [/\bspinach\b/gi, "rau bina"],
+  [/\bbell pepper(s)?\b/gi, "ớt chuông"],
+  [/\bcucumber\b/gi, "dưa leo"],
+  [/\btomato(es)?\b/gi, "cà chua"],
+  [/\bcarrot(s)?\b/gi, "cà rốt"],
+  [/\bgarlic\b/gi, "tỏi"],
+  [/\blemon juice\b/gi, "nước cốt chanh"],
+  [/\bpapaya\b/gi, "đu đủ"],
+  [/\bapple\b/gi, "táo"],
+];
+
+const normalizeMealText = (value: unknown) => {
+  if (!(typeof value === "string" && value.trim())) return "";
+  let text = value.trim();
+  for (const [pattern, replacement] of EN_VI_MEAL_REPLACEMENTS) {
+    text = text.replace(pattern, replacement);
+  }
+  return text.replace(/\s{2,}/g, " ").trim();
+};
 
 const parseMealPlanJson = (rawReply: string): GeneratedMealPlanDay[] => {
   const txt = String(rawReply || "").trim();
@@ -948,6 +987,8 @@ export const generateMealPlanByDateRange = async (
     `Khoảng ngày: ${startDate} → ${endDate}.`,
     `Chỉ tạo chi tiết cho các bữa: ${selectedMealsText}.`,
     'Các bữa không chọn để chuỗi rỗng "".',
+    "BẮT BUỘC viết nội dung món ăn bằng tiếng Việt tự nhiên, không dùng tiếng Anh.",
+    "Nếu có nguyên liệu tiếng Anh, hãy chuyển sang tiếng Việt tương ứng.",
     "",
     "Chỉ trả về JSON, không thêm giải thích.",
   ].join("\n");

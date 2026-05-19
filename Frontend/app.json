@@ -28,6 +28,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#56328C"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Ứng dụng cần camera để quét mã QR vào phòng chăm sóc.",

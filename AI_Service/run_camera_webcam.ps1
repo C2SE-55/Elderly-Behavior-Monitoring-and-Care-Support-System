@@ -27,4 +27,18 @@ $env:WEBCAM_HEIGHT = if ($env:WEBCAM_HEIGHT) { $env:WEBCAM_HEIGHT } else { "720"
 # Pose hơi nới khi khung nhiễu
 $env:POSE_MIN_SCORE = if ($env:POSE_MIN_SCORE) { $env:POSE_MIN_SCORE } else { "0.022" }
 
+# Phát hiện té nhạy hơn (camera 2 / webcam): té ngồi–nghiêng + nới ngưỡng, giữ logic nằm ngang cũ
+$env:FALL_USE_SLUMPED_HINT = if ($env:FALL_USE_SLUMPED_HINT) { $env:FALL_USE_SLUMPED_HINT } else { "1" }
+$env:FALL_TORSO_MIN_RATIO = if ($env:FALL_TORSO_MIN_RATIO) { $env:FALL_TORSO_MIN_RATIO } else { "0.52" }
+$env:FALL_KP_LYING_ASPECT = if ($env:FALL_KP_LYING_ASPECT) { $env:FALL_KP_LYING_ASPECT } else { "0.88" }
+$env:FALL_KP_MIN_COUNT_SPREAD = if ($env:FALL_KP_MIN_COUNT_SPREAD) { $env:FALL_KP_MIN_COUNT_SPREAD } else { "5" }
+$env:FALL_CLEARLY_LYING_ASPECT = if ($env:FALL_CLEARLY_LYING_ASPECT) { $env:FALL_CLEARLY_LYING_ASPECT } else { "1.00" }
+$env:FALL_SLUMP_BBOX_ASPECT = if ($env:FALL_SLUMP_BBOX_ASPECT) { $env:FALL_SLUMP_BBOX_ASPECT } else { "0.88" }
+$env:FALL_HORIZONTAL_FLOOR_ASPECT = if ($env:FALL_HORIZONTAL_FLOOR_ASPECT) { $env:FALL_HORIZONTAL_FLOOR_ASPECT } else { "1.08" }
+$env:FALL_GEOMETRY_LYING_MIN_FRAMES = if ($env:FALL_GEOMETRY_LYING_MIN_FRAMES) { $env:FALL_GEOMETRY_LYING_MIN_FRAMES } else { "2" }
+$env:FALL_FB1_MIN_STREAK = if ($env:FALL_FB1_MIN_STREAK) { $env:FALL_FB1_MIN_STREAK } else { "3" }
+$env:FALL_MOVEMENT_RATIO = if ($env:FALL_MOVEMENT_RATIO) { $env:FALL_MOVEMENT_RATIO } else { "0.018" }
+$env:FALL_YOLO_LYING_ASPECT = if ($env:FALL_YOLO_LYING_ASPECT) { $env:FALL_YOLO_LYING_ASPECT } else { "1.10" }
+$env:FALL_YOLO_DROP_CY_NORM = if ($env:FALL_YOLO_DROP_CY_NORM) { $env:FALL_YOLO_DROP_CY_NORM } else { "0.045" }
+
 python -m Camera_Service.api.main

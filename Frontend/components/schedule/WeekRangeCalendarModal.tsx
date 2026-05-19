@@ -9,6 +9,8 @@ type Props = {
   weekEnd: dayjs.Dayjs;
   valueStart: dayjs.Dayjs;
   valueEnd: dayjs.Dayjs;
+  restrictToSameWeek?: boolean;
+  showWeekHint?: boolean;
   onClose: () => void;
   onApply: (start: dayjs.Dayjs, end: dayjs.Dayjs) => void;
 };
@@ -63,6 +65,8 @@ export default function WeekRangeCalendarModal({
   weekEnd,
   valueStart,
   valueEnd,
+  restrictToSameWeek = true,
+  showWeekHint = true,
   onClose,
   onApply,
 }: Props) {
@@ -94,7 +98,7 @@ export default function WeekRangeCalendarModal({
     const next = d.startOf("day");
     // UX:
     // - Tap 1 lần: chọn 1 ngày (start=end) ngay lập tức.
-    // - Nếu muốn chọn khoảng: tap lần 2 để chọn ngày kết thúc (cùng tuần).
+    // - Nếu muốn chọn khoảng: tap lần 2 để chọn ngày kết thúc.
     if (!tempStart || !selectingEnd) {
       setTempStart(next);
       setTempEnd(next);
@@ -104,11 +108,13 @@ export default function WeekRangeCalendarModal({
     }
 
     // selecting end
-    const startWeek = getMonday(tempStart);
-    const endWeek = getMonday(next);
-    if (!startWeek.isSame(endWeek, "day")) {
-      setError("Ngày kết thúc phải nằm trong cùng 1 tuần với ngày bắt đầu.");
-      return;
+    if (restrictToSameWeek) {
+      const startWeek = getMonday(tempStart);
+      const endWeek = getMonday(next);
+      if (!startWeek.isSame(endWeek, "day")) {
+        setError("Ngày kết thúc phải nằm trong cùng 1 tuần với ngày bắt đầu.");
+        return;
+      }
     }
     setTempEnd(next);
     setSelectingEnd(false);
@@ -149,9 +155,11 @@ export default function WeekRangeCalendarModal({
             <Text style={styles.summaryText}>
               {effectiveStart.format("DD/MM/YY")} - {effectiveEnd.format("DD/MM/YY")}
             </Text>
-            <Text style={styles.weekHint}>
-              Tuần: {activeWeekStart.format("DD/MM")} - {activeWeekEnd.format("DD/MM")}
-            </Text>
+            {showWeekHint && (
+              <Text style={styles.weekHint}>
+                Tuần: {activeWeekStart.format("DD/MM")} - {activeWeekEnd.format("DD/MM")}
+              </Text>
+            )}
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -189,7 +197,10 @@ export default function WeekRangeCalendarModal({
                         const selected = isBetweenInclusive(d, effectiveStart, effectiveEnd);
                         const isStart = tempStart ? d.isSame(tempStart, "day") : false;
                         const isEnd = tempEnd ? d.isSame(tempEnd, "day") : d.isSame(effectiveEnd, "day");
-                        const outOfActiveWeek = tempStart ? d.isBefore(activeWeekStart, "day") || d.isAfter(activeWeekEnd, "day") : false;
+                        const outOfActiveWeek =
+                          restrictToSameWeek && tempStart
+                            ? d.isBefore(activeWeekStart, "day") || d.isAfter(activeWeekEnd, "day")
+                            : false;
                         return (
                           <TouchableOpacity
                             key={d.format("YYYY-MM-DD")}

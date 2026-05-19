@@ -120,6 +120,11 @@ const emitMedicationIntake = async (roomId, payload) => {
   await emitToRoomMembers(roomId, "medication:intake", { roomId: Number(roomId), ...payload });
 };
 
+/** HOST vừa tạo/sửa/xóa lịch uống — client caregiver cần reschedule OS notifications. */
+const emitMedicationSchedulesChanged = async (roomId) => {
+  await emitToRoomMembers(roomId, "medication:schedules_changed", { roomId: Number(roomId) });
+};
+
 const getSupportParticipantUserIds = async (conversationId) => {
   const conversation = await SupportChat.getConversationById(conversationId);
   if (!conversation) return [];
@@ -159,6 +164,7 @@ module.exports = {
   emitMessageSeen,
   emitNoteChanged,
   emitMedicationIntake,
+  emitMedicationSchedulesChanged,
   emitSupportMessageNew,
   emitSupportMessageSeen,
   emitSupportTyping,

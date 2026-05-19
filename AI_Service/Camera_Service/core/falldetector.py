@@ -66,6 +66,47 @@ def _visible_kp_count(arr: np.ndarray) -> int:
     return int(np.count_nonzero(arr[:, 2] > 0))
 
 
+def slumped_seated_hint(kps: np.ndarray) -> bool:
+    """Té ngồi / sụp: vai–hông thấp trong khung keypoint, thân nghiêng hoặc đầu không cao hơn vai."""
+    if not pipeline_config.FALL_USE_SLUMPED_HINT or kps is None or len(kps) < 13:
+        return False
+    for i in (5, 6, 11, 12):
+        if kps[i, 2] <= 0:
+            return False
+    ys = kps[kps[:, 2] > 0, 1]
+    if ys.size < 4:
+        return False
+    y_min = float(np.min(ys))
+    y_max = float(np.max(ys))
+    span = y_max - y_min
+    if span < max(40.0, float(pipeline_config.FALL_KP_MIN_SPAN_H) * 0.55):
+        return False
+    sy = 0.5 * (float(kps[5, 1]) + float(kps[6, 1]))
+    hy = 0.5 * (float(kps[11, 1]) + float(kps[12, 1]))
+    torso_mid = 0.5 * (sy + hy)
+    floor_band = y_min + pipeline_config.FALL_SLUMP_TORSO_Y_RATIO * span
+    if torso_mid < floor_band:
+        return False
+    sx = 0.5 * (float(kps[5, 0]) + float(kps[6, 0]))
+    hx = 0.5 * (float(kps[11, 0]) + float(kps[12, 0]))
+    dx = abs(sx - hx)
+    dy = abs(sy - hy) + 1e-6
+    tilted = dx >= pipeline_config.FALL_SLUMP_TORSO_MIN_RATIO * dy
+    head_low = False
+    if kps[0, 2] > 0:
+        head_low = float(kps[0, 1]) >= sy - max(12.0, 0.08 * span)
+    return tilted or head_low
+
+
+def min_lying_bbox_aspect(kps) -> float:
+    """Ngưỡng w/h bbox cho fallback — thấp hơn khi slumped (bbox pose vẫn dọc)."""
+    if kps is None:
+        return float(pipeline_config.FALL_CLEARLY_LYING_ASPECT)
+    if slumped_seated_hint(np.asarray(kps)):
+        return float(pipeline_config.FALL_SLUMP_BBOX_ASPECT)
+    return float(pipeline_config.FALL_CLEARLY_LYING_ASPECT)
+
+
 def legs_suggest_standing(kps: np.ndarray) -> bool:
     """Gối/mắt cá nằm rõ phía dưới hông (trục y ảnh tăng xuống) → thường là đứng/cúi, không phải nằm ngang."""
     if not pipeline_config.FALL_LEG_VETO or kps is None or len(kps) < 17:
@@ -112,9 +153,16 @@ def lying_hint_from_keypoints(kps) -> bool:
     if wk is not None and hk is not None and hk > 1e-6 and wk >= 1.02 * hk:
         keypoints_look_horizontal = True
 
-    # Cúi/đứng: chân dưới hông nhưng bbox kéo dọc — chặn FP. Không chặn khi keypoint đã rộng ngang (nằm thật).
+    # Cúi/đứng: chân dưới hông nhưng bbox kéo dọc — chặn FP. Không chặn té ngồi/sụp trên sàn.
     if legs_suggest_standing(arr) and not keypoints_look_horizontal:
-        return False
+        if not (
+            pipeline_config.FALL_LEG_VETO_RESPECT_SLUMP
+            and slumped_seated_hint(arr)
+        ):
+            return False
+
+    if slumped_seated_hint(arr):
+        return True
 
     if pipeline_config.FALL_USE_KEYPOINT_SPREAD:
         if _visible_kp_count(arr) >= pipeline_config.FALL_KP_MIN_COUNT_SPREAD:
@@ -279,7 +327,12 @@ class FallDetector:
                 had_movement = self._had_recent_movement(pos_list, diag)
                 was_upright_long_enough = rec.get("upright_frames_before_fall", 0) >= UPRIGHT_MIN_FRAMES
                 clearly_bbox = h_ > 1e-6 and w_ >= CLEARLY_LYING_ASPECT * h_
-                clearly_lying = clearly_bbox or lying_hint
+                slumped = (
+                    ann is not None
+                    and hasattr(ann, "data")
+                    and slumped_seated_hint(np.asarray(ann.data))
+                )
+                clearly_lying = clearly_bbox or lying_hint or slumped
                 enough_history = len(pos_list) >= MIN_HISTORY_FOR_LYING_ONLY
                 stable_lying = (
                     rec["state_frames"] >= STABLE_LYING_FALL_FRAMES

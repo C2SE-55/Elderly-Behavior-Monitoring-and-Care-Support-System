@@ -3,11 +3,13 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getCurrentToken, hydrateAuthFromStorage } from "@/services/api";
+import { getCurrentToken, hydrateAuthFromStorage, subscribeActiveRoomChange } from "@/services/api";
+import { handleRemoteMedicationIntake, syncMedicationOsNotificationsFromServer } from "@/services/medicationIntakeSync";
+import { connectRoomChatSocket, getRoomChatSocket } from "@/services/roomChatSocket";
 
 export const unstable_settings = {
   initialRouteName: 'index',
@@ -53,6 +55,46 @@ export default function RootLayout() {
       router.replace("/(tabs)");
     }
   }, [hydrated, root, router]);
+
+  /**
+   * Lịch nhắc thuốc (Expo local notifications) phải chạy ở layout gốc: nếu chỉ gắn trong (tabs),
+   * khi user (caregiver) vào (screens)/… thì tabs unmount → mất đồng bộ và mất listener socket.
+   */
+  useEffect(() => {
+    if (!hydrated || Platform.OS === "web") return;
+    if (!getCurrentToken()) return;
+
+    const runSync = () => void syncMedicationOsNotificationsFromServer();
+    void runSync();
+
+    const appSub = AppState.addEventListener("change", (next) => {
+      if (next === "active") void syncMedicationOsNotificationsFromServer();
+    });
+    const unsubRoom = subscribeActiveRoomChange(() => {
+      void syncMedicationOsNotificationsFromServer();
+    });
+
+    const socket = connectRoomChatSocket();
+    const onIntake = (payload: unknown) => {
+      void handleRemoteMedicationIntake(payload);
+    };
+    const onSchedulesChanged = () => {
+      void syncMedicationOsNotificationsFromServer();
+    };
+    if (socket) {
+      socket.off("medication:intake", onIntake);
+      socket.on("medication:intake", onIntake);
+      socket.off("medication:schedules_changed", onSchedulesChanged);
+      socket.on("medication:schedules_changed", onSchedulesChanged);
+    }
+
+    return () => {
+      appSub.remove();
+      unsubRoom();
+      getRoomChatSocket()?.off("medication:intake", onIntake);
+      getRoomChatSocket()?.off("medication:schedules_changed", onSchedulesChanged);
+    };
+  }, [hydrated, root]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

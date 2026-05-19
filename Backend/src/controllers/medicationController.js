@@ -2,6 +2,7 @@ const { HTTP_STATUS } = require("../config/constants");
 const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
+const { emitMedicationSchedulesChanged } = require("../services/socketServer");
 const { extractMedicationsFromImage } = require("../services/medicationImageExtraction");
 
 exports.getMedications = async (req, res) => {
@@ -90,6 +91,7 @@ exports.deleteMedication = async (req, res) => {
     if (!ok) {
       return sendFail(res, "Không tìm thấy thuốc", HTTP_STATUS.NOT_FOUND);
     }
+    void emitMedicationSchedulesChanged(context.roomId).catch(() => {});
     return sendSuccess(res, { id: medicationId }, "Xóa thuốc thành công", HTTP_STATUS.OK);
   } catch (error) {
     console.error("Lỗi xóa thuốc:", error);

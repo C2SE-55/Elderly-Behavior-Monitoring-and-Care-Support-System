@@ -3,6 +3,7 @@ const { sendSuccess, sendError, sendFail } = require("../utils/response");
 const { Room } = require("../models/Room");
 const MedicationSystem = require("../models/MedicationSystem");
 const { resolveAccessContext } = require("../services/accessControl");
+const { emitMedicationSchedulesChanged } = require("../services/socketServer");
 
 /**
  * Chuẩn hoá nội dung từ QR / OCR (dấu hai chấm Unicode, BOM, khoảng trắng quanh ":").
@@ -335,6 +336,7 @@ exports.updateMedicationDailyReminders = async (req, res) => {
     }
     const on = raw === true || raw === 1 || raw === "1" || raw === "true";
     await Room.setMedicationDailyRemindersEnabled(context.roomId, on);
+    void emitMedicationSchedulesChanged(context.roomId).catch(() => {});
     return sendSuccess(
       res,
       { medication_daily_reminders_enabled: on ? 1 : 0 },

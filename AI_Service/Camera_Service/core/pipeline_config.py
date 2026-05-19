@@ -115,4 +115,14 @@ FALL_GEOMETRY_LYING_MIN_FRAMES = max(1, int(os.environ.get("FALL_GEOMETRY_LYING_
 # Bật 1: coi bbox pose rộng>h cao là “nằm” mọi nơi khung (dễ FP). Mặc định tắt
 FALL_USE_POSE_BBOX_ASPECT = os.environ.get("FALL_USE_POSE_BBOX_ASPECT", "0").lower() in ("1", "true", "yes", "")
 # Mặc định tắt: kiểm tra “gần sàn” hay làm mất hết sự kiện té; bật lại: FALL_REQUIRE_FLOOR=1
-FALL_REQUIRE_FLOOR = os.environ.get("FALL_REQUIRE_FLOOR", "0").lower() in ("1", "true", "yes")
+FALL_REQUIRE_FLOOR = os.environ.get("FALL_REQUIRE_FLOOR", "0").lower() in ("1", "true", "yes", "")
+# Té ngồi / sụp nghiêng: thân thấp trong khung xương, không cần bbox w>h (camera 2 thường bật qua run_camera_webcam)
+FALL_USE_SLUMPED_HINT = os.environ.get("FALL_USE_SLUMPED_HINT", "0").lower() in ("1", "true", "yes", "")
+# Tâm vai–hông phải nằm dưới (y_min + ratio*span) trong spread keypoint
+FALL_SLUMP_TORSO_Y_RATIO = float(os.environ.get("FALL_SLUMP_TORSO_Y_RATIO", "0.52"))
+# |x_vai−x_hông| / |y_vai−y_hông| tối thiểu cho té nghiêng (nhỏ hơn FALL_TORSO_MIN_RATIO)
+FALL_SLUMP_TORSO_MIN_RATIO = float(os.environ.get("FALL_SLUMP_TORSO_MIN_RATIO", "0.38"))
+# Khi slumped_hint: không chặn bởi leg veto (tránh nhầm chân gập trên sàn với đứng)
+FALL_LEG_VETO_RESPECT_SLUMP = os.environ.get("FALL_LEG_VETO_RESPECT_SLUMP", "1").lower() in ("1", "true", "yes", "")
+# Fallback keypoint: w/h bbox tối thiểu khi đã có slumped_hint (cho phép bbox dọc)
+FALL_SLUMP_BBOX_ASPECT = float(os.environ.get("FALL_SLUMP_BBOX_ASPECT", "0.88"))
