@@ -119,6 +119,8 @@ The project consists of multiple services:
 
 </div>
 
+---
+
 # Prerequisites
 
 Before running the project, install:
