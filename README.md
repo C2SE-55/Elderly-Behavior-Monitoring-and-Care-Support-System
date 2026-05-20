@@ -118,7 +118,6 @@ The project consists of multiple services:
 | Automatic Prescription Service | OCR and medicine recognition |
 
 </div>
----
 
 # Prerequisites
 
