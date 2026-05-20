@@ -107,15 +107,17 @@ This project aims to support families and caregivers by providing continuous mon
 # System Architecture
 
 The project consists of multiple services:
+<div align="center">
 
 | Service | Description |
-|:---:|:---:|
+|---|---|
 | Frontend | React Native mobile application |
 | Backend | Node.js + Express server |
 | Camera Service | AI video processing and monitoring |
 | Chatbot Service | AI chatbot communication |
 | Automatic Prescription Service | OCR and medicine recognition |
 
+</div>
 ---
 
 # Prerequisites
