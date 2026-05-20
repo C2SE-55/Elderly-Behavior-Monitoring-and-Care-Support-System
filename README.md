@@ -109,7 +109,7 @@ This project aims to support families and caregivers by providing continuous mon
 The project consists of multiple services:
 
 | Service | Description |
-|---|---|
+|:---:|:---:|
 | Frontend | React Native mobile application |
 | Backend | Node.js + Express server |
 | Camera Service | AI video processing and monitoring |
